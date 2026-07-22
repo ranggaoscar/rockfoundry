@@ -1,0 +1,5 @@
+*.zip
+playwright-report/
+test-results/
+.env
+.env.local

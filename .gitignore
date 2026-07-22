@@ -1,0 +1,13 @@
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+dist/
+**/dist/
+playwright-report/
+test-results/
+*.log
+*.zip
+.env
+.env.*
+!.env.example

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "0.1",
+  "product": {"name": "RockFoundry", "stage": "mvp", "workingTagline": "Turn rough ideas into build-ready specs."},
+  "positioning": {"audience": "non-coders and vibe coders", "job": "turn an idea into an agent-ready, internally consistent build package", "not": ["code generator", "generic PRD form"]},
+  "plans": {
+    "community": {"priceIdr": 0, "deployment": "self_hosted", "ai": "byok", "projects": "unlimited"},
+    "cloud_starter": {"priceIdr": 49000, "termDays": 30, "ai": "managed_standard_with_byok_fallback", "limits": {"activeProjects": 5, "completeExportsPerTerm": 3, "referenceUrlsPerProject": 3, "publicReposPerProject": 1, "historyDays": 30}}
+  },
+  "coreEntities": ["User", "Workspace", "Project", "ProjectState", "InterviewRound", "Question", "Answer", "Decision", "Assumption", "Contradiction", "Reference", "ReferenceAnalysis", "Export", "Subscription", "PaymentInvoice", "PaymentEvent"],
+  "readinessLevels": ["prototype_ready", "mvp_ready", "production_ready"],
+  "decisions": [
+    {"id": "D-001", "decision": "Use structured project state as canonical source; Markdown is rendered output.", "status": "accepted"},
+    {"id": "D-002", "decision": "Offer self-hosted BYOK and Cloud Starter Rp49,000 / 30 days.", "status": "accepted"},
+    {"id": "D-003", "decision": "Use 9Router only behind the server-side AI gateway.", "status": "accepted"},
+    {"id": "D-004", "decision": "Start QRIS billing as manual renewal; no auto-debit claim.", "status": "accepted"}
+  ],
+  "openQuestions": ["Choose app stack and database host.", "Verify SumoPod webhook signature and QRIS expiry fields from current docs.", "Choose managed-model suppliers and privacy policy before public launch."],
+  "export": {"format": "zip", "contents": ["manifest", "markdown_docs", "agent_instructions"]}
+}
