@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
 import { runJob } from "@/lib/jobs";
+import { getSubscriptionInfo } from "@/lib/entitlements";
 import { mergeExtraction, evaluateReadinessDirectly } from "@rockfoundry/core";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -12,6 +13,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const member = await prisma.projectMember.findUnique({ where: { userId_projectId: { userId: session.user.id, projectId: id } } });
     if (!member) return jsonError("Project not found", 404);
+    const { info, service } = await getSubscriptionInfo(session.user.id);
+    const entitlement = service.checkAiLimit(info);
+    if (!entitlement.allowed) return jsonError(entitlement.reason || "Managed AI limit reached", 429);
 
     const project = await prisma.project.findUnique({ where: { id } });
     if (!project || project.deletedAt) return jsonError("Project not found", 404);
@@ -58,6 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             where: { id: run.id },
             data: { status: "completed", completedAt: new Date(), tokenUsage: aiResult.tokenUsage || 0, latencyMs: Date.now() - startedAt },
           }),
+          prisma.usageEvent.create({ data: { userId: session.user.id, type: "ai_generation", costTokens: aiResult.tokenUsage || 0 } }),
         ]);
 
         return {

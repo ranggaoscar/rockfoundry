@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
 import { ProjectStateSchema } from "@rockfoundry/core";
+import { getSubscriptionInfo } from "@/lib/entitlements";
 import { z } from "zod";
 
 const CreateProjectSchema = z.object({
@@ -44,14 +45,9 @@ export async function POST(req: NextRequest) {
     const session = await requireAuth(req);
     const body = await req.json();
 
-    // Check project limit (5 active projects per user)
-    const projectCount = await prisma.projectMember.count({
-      where: { userId: session.user.id }
-    });
-
-    if (projectCount >= 5) {
-      return jsonError("Project limit reached (5 max)", 429);
-    }
+    const { info, service } = await getSubscriptionInfo(session.user.id);
+    const entitlement = service.checkProjectLimit(info);
+    if (!entitlement.allowed) return jsonError(entitlement.reason || "Project limit reached", 429);
 
     const parsed = CreateProjectSchema.safeParse(body);
     if (!parsed.success) {

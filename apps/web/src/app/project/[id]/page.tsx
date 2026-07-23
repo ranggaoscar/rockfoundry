@@ -40,10 +40,10 @@ type Reference = {
   metadata: any;
 };
 
-type ExportDocs = Record<string, string>;
+type Revision = { id: string; version: number; createdAt: string };
 
 // Tabs
-type Tab = "overview" | "understanding" | "questions" | "references" | "readiness" | "documents";
+type Tab = "overview" | "understanding" | "questions" | "references" | "readiness" | "documents" | "history";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -52,6 +52,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "references", label: "References" },
   { id: "readiness", label: "Readiness" },
   { id: "documents", label: "Documents" },
+  { id: "history", label: "History" },
 ];
 
 export default function ProjectWorkspace({ params }: { params: Promise<{ id: string }> }) {
@@ -60,6 +61,7 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
   const [project, setProject] = useState<ProjectData | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
 
   // Idea state
   const [rawIdea, setRawIdea] = useState("");
@@ -78,8 +80,10 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
   const [addingRef, setAddingRef] = useState(false);
 
   // Export state
-  const [exportDocs, setExportDocs] = useState<ExportDocs | null>(null);
+  const [exportReady, setExportReady] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [revisions, setRevisions] = useState<Revision[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Initialize project
   useEffect(() => {
@@ -91,14 +95,18 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
 
   const fetchProject = async (id: string) => {
     try {
+      setPageError("");
       const res = await fetch(`/api/projects/${id}`);
       if (res.status === 401) { router.push("/login"); return; }
-      if (!res.ok) { router.push("/dashboard"); return; }
+      if (!res.ok) {
+        setPageError(res.status === 404 ? "Project not found or you do not have access." : "Unable to load this project.");
+        return;
+      }
       const data = await res.json();
       setProject(data.project);
       setRawIdea(data.project.description || "");
     } catch {
-      router.push("/dashboard");
+      setPageError("Unable to load this project. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -189,41 +197,58 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
     }
   };
 
+  const fetchRevisions = useCallback(async () => {
+    if (!projectId) return;
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/revisions`);
+      if (!res.ok) throw new Error("Unable to load history");
+      const data = await res.json();
+      setRevisions(data.revisions || []);
+    } catch {
+      setPageError("Unable to load project history.");
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (tab === "history" && projectId) fetchRevisions();
+  }, [tab, projectId, fetchRevisions]);
+
   // Export
   const handleExport = async () => {
     setExporting(true);
     try {
       const res = await fetch(`/api/projects/${projectId}/export`, { method: "POST" });
       const data = await res.json();
-      setExportDocs(data.documents);
+      if (!res.ok) throw new Error(data.error || "Export failed");
+      setExportReady(Boolean(data.downloadUrl));
     } finally {
       setExporting(false);
     }
   };
 
   const downloadZip = () => {
-    if (!exportDocs) return;
-    // Client-side zip creation using JSZip
-    import("jszip").then(({ default: JSZip }) => {
-      const zip = new JSZip();
-      for (const [path, content] of Object.entries(exportDocs)) {
-        zip.file(path, content);
-      }
-      zip.generateAsync({ type: "blob" }).then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `rockfoundry-build-package.zip`;
-        a.click();
-        URL.revokeObjectURL(url);
-      });
-    });
+    window.location.assign(`/api/projects/${projectId}/export`);
   };
 
-  if (loading || !project) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center" role="status" aria-live="polite">
         <p className="text-sm text-gray-500">Loading project...</p>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-4" role="alert">
+          <h1 className="text-lg font-semibold">Project unavailable</h1>
+          <p className="text-sm text-gray-600">{pageError || "This project could not be loaded."}</p>
+          <Button onClick={() => router.push("/dashboard")}>Back to projects</Button>
+        </div>
       </div>
     );
   }
@@ -266,6 +291,12 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
             </button>
           ))}
         </div>
+
+        {pageError && (
+          <div className="mb-6 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md" role="alert">
+            {pageError}
+          </div>
+        )}
 
         {/* Tab content */}
         {tab === "overview" && (
@@ -311,11 +342,15 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
 
         {tab === "documents" && (
           <DocumentsTab
-            exportDocs={exportDocs}
+            exportReady={exportReady}
             exporting={exporting}
             onExport={handleExport}
             onDownload={downloadZip}
           />
+        )}
+
+        {tab === "history" && (
+          <HistoryTab revisions={revisions} loading={loadingHistory} />
         )}
       </div>
     </div>
@@ -608,36 +643,41 @@ function StatCard({ label, count, alert }: { label: string; count: number; alert
 }
 
 // ========== DOCUMENTS TAB ==========
-function DocumentsTab({ exportDocs, exporting, onExport, onDownload }: any) {
+function HistoryTab({ revisions, loading }: { revisions: Revision[]; loading: boolean }) {
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Project history</h2>
+        <p className="mt-1 text-sm text-gray-600">A read-only timeline of saved project state versions.</p>
+      </div>
+      {loading ? (
+        <div className="p-6 bg-white border rounded-lg text-sm text-gray-500" role="status">Loading history...</div>
+      ) : revisions.length === 0 ? (
+        <div className="p-6 bg-white border rounded-lg text-sm text-gray-500" role="status">No saved revisions yet. Analyze your idea to create the first revision.</div>
+      ) : (
+        <ol className="space-y-3" aria-label="Project revisions">
+          {revisions.map((revision) => (
+            <li key={revision.id} className="p-4 bg-white border rounded-lg flex items-center justify-between">
+              <span className="font-medium text-sm">Version {revision.version}</span>
+              <time className="text-xs text-gray-500" dateTime={revision.createdAt}>{new Date(revision.createdAt).toLocaleString()}</time>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function DocumentsTab({ exportReady, exporting, onExport, onDownload }: { exportReady: boolean; exporting: boolean; onExport: () => void; onDownload: () => void }) {
   return (
     <div className="max-w-2xl space-y-6">
       <h2 className="text-lg font-semibold">Build Package</h2>
-      <p className="text-sm text-gray-600">
-        Generate a complete documentation package that coding agents can use to build your product.
-      </p>
-
+      <p className="text-sm text-gray-600">Generate a documentation package for your coding agent, then download the ZIP.</p>
       <div className="flex gap-3">
-        <Button onClick={onExport} disabled={exporting}>
-          {exporting ? "Generating..." : "Generate Build Package"}
-        </Button>
-        {exportDocs && (
-          <Button variant="outline" onClick={onDownload}>
-            Download ZIP
-          </Button>
-        )}
+        <Button onClick={onExport} disabled={exporting}>{exporting ? "Generating..." : "Generate Build Package"}</Button>
+        {exportReady && <Button variant="outline" onClick={onDownload}>Download ZIP</Button>}
       </div>
-
-      {exportDocs && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium">Generated files:</h3>
-          {Object.keys(exportDocs).map((path) => (
-            <div key={path} className="p-3 bg-white border rounded-lg flex items-center gap-3">
-              <span className="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded">{path.split("/").pop()}</span>
-              <span className="text-xs text-gray-400">{(exportDocs[path].length / 1024).toFixed(1)} KB</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {exportReady && <p className="rounded-lg border bg-white p-3 text-sm text-green-700">Build package ready for download.</p>}
     </div>
   );
 }

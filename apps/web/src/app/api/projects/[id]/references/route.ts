@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
 import { runJob } from "@/lib/jobs";
+import { getSubscriptionInfo } from "@/lib/entitlements";
 import { safeExtractFromUrl, analyzeGitHubRepo, parseGitHubUrl } from "@rockfoundry/core";
 
 // GET /api/projects/[id]/references — list references
@@ -38,6 +39,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { userId_projectId: { userId: session.user.id, projectId: id } },
     });
     if (!member) return jsonError("Project not found", 404);
+    const { info, service } = await getSubscriptionInfo(session.user.id);
+    const entitlement = service.checkReferenceLimit(info);
+    if (!entitlement.allowed) return jsonError(entitlement.reason || "Reference limit reached", 429);
 
     const body = await req.json();
     const { url, type = "URL" } = body;

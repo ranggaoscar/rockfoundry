@@ -1,70 +1,54 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
-import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
 import { prisma } from "@rockfoundry/db";
+import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
+import { getSubscriptionInfo } from "@/lib/entitlements";
 
-// POST /api/billing/simulate
+const simulationEnabled = () => process.env.NODE_ENV !== "production";
+
 export async function POST(req: NextRequest) {
   try {
+    if (!simulationEnabled()) return jsonError("Billing simulation is unavailable in production", 404);
     const session = await requireAuth(req);
-    
-    // Simulate Cloud Starter invoice creation (Pending state)
-    const sub = await prisma.subscription.create({
-      data: {
-        userId: session.user.id,
-        plan: "cloud_starter",
-        status: "pending",
-        startsAt: new Date(),
-        expiresAt: new Date(), 
-      }
+    const pending = await prisma.payment.findFirst({
+      where: { subscription: { userId: session.user.id }, status: "pending", provider: "sumopod_simulated" },
+      orderBy: { createdAt: "desc" },
     });
+    if (pending) return Response.json({ payment: pending, duplicate: true });
 
-    const invoiceId = `inv_${Date.now()}`;
-
+    const subscription = await prisma.subscription.create({
+      data: { userId: session.user.id, plan: "cloud_starter", status: "pending", startsAt: new Date(), expiresAt: new Date() },
+    });
+    const invoiceId = `inv_${crypto.randomUUID()}`;
     const payment = await prisma.payment.create({
-      data: {
-        id: invoiceId,
-        subscriptionId: sub.id,
-        provider: "sumopod_simulated",
-        amount: 49000,
-        currency: "IDR",
-        status: "pending",
-        metadata: { simulated: true }
-      }
+      data: { id: invoiceId, subscriptionId: subscription.id, provider: "sumopod_simulated", amount: 49000, currency: "IDR", status: "pending", metadata: { simulated: true } },
     });
-
-    // In a real flow, we'd return a checkout URL here.
-    // We return the pending entities. The client will call the mock webhook to simulate payment completion.
-    return Response.json({ 
-      checkoutUrl: `/simulate-checkout?invoiceId=${invoiceId}&subscriptionId=${sub.id}`,
-      subscription: sub, 
-      payment 
-    });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    return jsonError("Internal error", 500);
+    return Response.json({ checkoutUrl: `/account?invoiceId=${invoiceId}`, subscription, payment }, { status: 201 });
+  } catch (error) {
+    if (error instanceof AuthError) return jsonError(error.message, error.status);
+    return jsonError("Unable to create invoice", 500);
   }
 }
 
-// GET /api/billing/status
 export async function GET(req: NextRequest) {
   try {
     const session = await requireAuth(req);
-    
-    const sub = await prisma.subscription.findFirst({
-      where: {
-        userId: session.user.id,
-        status: "active",
-        expiresAt: { gt: new Date() }
-      },
-      orderBy: { createdAt: "desc" }
+    const { info, subscription, plan } = await getSubscriptionInfo(session.user.id);
+    const pendingPayment = await prisma.payment.findFirst({
+      where: { subscription: { userId: session.user.id }, status: "pending" },
+      select: { id: true, amount: true, status: true, subscriptionId: true },
+      orderBy: { createdAt: "desc" },
     });
-
-    return Response.json({ 
-      active: !!sub,
-      subscription: sub
+    return Response.json({
+      active: info.status === "active" && subscription?.plan === "cloud_starter",
+      subscription: subscription ? { id: subscription.id, plan: subscription.plan, status: info.status, expiresAt: subscription.expiresAt } : null,
+      pendingPayment,
+      usage: { projects: info.projectsUsed, exports: info.exportsUsed, references: info.referencesUsed, aiCalls: info.aiCallsUsed },
+      limits: { projects: plan.maxActiveProjects, exports: plan.maxExportsPerPeriod, references: plan.maxReferences, aiCalls: plan.maxAiCalls },
+      simulationEnabled: simulationEnabled(),
     });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    return jsonError("Internal error", 500);
+  } catch (error) {
+    if (error instanceof AuthError) return jsonError(error.message, error.status);
+    return jsonError("Unable to load billing status", 500);
   }
 }

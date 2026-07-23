@@ -89,6 +89,7 @@ export default function DashboardPage() {
           <Link href="/dashboard" className="font-semibold text-sm">RockFoundry</Link>
           <div className="flex items-center gap-4">
             <span className="text-xs text-gray-500">{session?.user?.email}</span>
+            <Link href="/account" className="text-sm text-gray-600 hover:text-gray-900">Account</Link>
             <Button variant="ghost" size="sm" onClick={handleSignOut}>Log out</Button>
           </div>
         </div>

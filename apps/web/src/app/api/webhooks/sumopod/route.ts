@@ -1,67 +1,27 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 
-// POST /api/webhooks/sumopod (Simulated webhook endpoint)
 export async function POST(req: NextRequest) {
+  if (process.env.NODE_ENV === "production") return new Response("Webhook simulation disabled in production", { status: 403 });
   try {
     const payload = await req.json();
-    
-    // Simulate webhook signature verification in development
-    if (process.env.NODE_ENV === "production") {
-       return new Response("Webhook simulation disabled in production", { status: 403 });
-    }
+    if (payload.event !== "payment.success") return new Response("Event ignored", { status: 200 });
+    const { invoiceId, amount, subscriptionId } = payload.data || {};
+    if (!invoiceId || !subscriptionId || typeof amount !== "number") return new Response("Invalid webhook payload", { status: 400 });
 
-    const { event, data } = payload;
-
-    if (event !== "payment.success") {
-      return new Response("Event ignored", { status: 200 });
-    }
-
-    const { invoiceId, amount, subscriptionId } = data;
-
-    // Verify idempotency
-    const existingPayment = await prisma.payment.findUnique({
-      where: { id: invoiceId } // Assuming invoiceId maps to our payment.id, or we search by metadata
-    });
-
-    if (existingPayment?.status === "paid") {
-      return new Response("Already processed", { status: 200 });
-    }
-
-    // Process payment and activate subscription
     await prisma.$transaction(async (tx) => {
-      // Create or update payment
-      await tx.payment.upsert({
-        where: { id: invoiceId },
-        update: { status: "paid", amount },
-        create: {
-          id: invoiceId,
-          subscriptionId,
-          provider: "sumopod_simulated",
-          amount,
-          currency: "IDR",
-          status: "paid"
-        }
+      const payment = await tx.payment.findUnique({ where: { id: invoiceId } });
+      if (!payment || payment.subscriptionId !== subscriptionId || payment.amount !== amount) throw new Error("Invoice does not match subscription");
+      // A second delivery must not alter expiry. The paid transition is the idempotency gate.
+      const paid = await tx.payment.updateMany({ where: { id: invoiceId, status: "pending" }, data: { status: "paid" } });
+      if (!paid.count) return;
+      await tx.subscription.update({
+        where: { id: subscriptionId },
+        data: { status: "active", startsAt: new Date(), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
       });
-
-      // Extend or activate subscription
-      const sub = await tx.subscription.findUnique({ where: { id: subscriptionId } });
-      if (sub) {
-        // Activate for 30 days from now
-        await tx.subscription.update({
-          where: { id: subscriptionId },
-          data: {
-            status: "active",
-            startsAt: new Date(),
-            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-          }
-        });
-      }
     });
-
     return new Response("Webhook processed", { status: 200 });
-  } catch (e) {
-    console.error("Webhook error:", e);
-    return new Response("Internal error", { status: 500 });
+  } catch (error) {
+    return new Response(error instanceof Error ? error.message : "Webhook failed", { status: 400 });
   }
 }
