@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
+import { runJob } from "@/lib/jobs";
 import { safeExtractFromUrl, analyzeGitHubRepo, parseGitHubUrl } from "@rockfoundry/core";
 
 // GET /api/projects/[id]/references — list references
@@ -75,70 +76,38 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
 
-    // Run analysis (synchronous for alpha)
     try {
-      if (type === "GITHUB_REPO") {
-        const repoInfo = parseGitHubUrl(url)!;
-        const result = await analyzeGitHubRepo(repoInfo);
-
-        if (result.success) {
-          await prisma.reference.update({
-            where: { id: ref.id },
-            data: {
-              status: "analyzed",
-              metadata: result.data as any,
-            },
-          });
-        } else {
-          await prisma.reference.update({
-            where: { id: ref.id },
-            data: {
-              status: "failed",
-              metadata: { error: result.error },
-            },
-          });
-          return jsonError(`Analysis failed: ${result.error}`, 422);
+      const jobType = type === "GITHUB_REPO" ? "github_reference_analysis" : "website_reference_analysis";
+      await runJob(jobType, `reference:${ref.id}`, { referenceId: ref.id }, async () => {
+        if (type === "GITHUB_REPO") {
+          const analysis = await analyzeGitHubRepo(parseGitHubUrl(url)!);
+          if (!analysis.success) throw new Error(analysis.error || "Reference analysis failed");
+          return prisma.reference.update({ where: { id: ref.id }, data: { status: "analyzed", metadata: analysis.data as never } });
         }
-      } else {
-        // Website URL analysis using safe extraction
-        const result = await safeExtractFromUrl(url);
 
-        if (result.success) {
-          await prisma.reference.update({
-            where: { id: ref.id },
-            data: {
-              status: "analyzed",
-              metadata: {
-                title: result.title,
-                headers: result.headers?.slice(0, 20),
-                textPreview: result.text?.substring(0, 5000),
-                summary: result.title || result.text?.substring(0, 200) || "Analyzed" ,
-              },
+        const analysis = await safeExtractFromUrl(url);
+        if (!analysis.success) throw new Error(analysis.error || "Reference analysis failed");
+        return prisma.reference.update({
+          where: { id: ref.id },
+          data: {
+            status: "analyzed",
+            metadata: {
+              title: analysis.title,
+              headers: analysis.headers?.slice(0, 20),
+              textPreview: analysis.text?.substring(0, 5000),
+              summary: analysis.title || analysis.text?.substring(0, 200) || "Analyzed",
             },
-          });
-        } else {
-          await prisma.reference.update({
-            where: { id: ref.id },
-            data: {
-              status: "failed",
-              metadata: { error: result.error },
-            },
-          });
-          return jsonError(`Analysis failed: ${result.error}`, 422);
-        }
-      }
-
+          },
+        });
+      });
       const updated = await prisma.reference.findUnique({ where: { id: ref.id } });
       return Response.json({ reference: updated });
-    } catch (err: any) {
+    } catch (error) {
       await prisma.reference.update({
         where: { id: ref.id },
-        data: {
-          status: "failed",
-          metadata: { error: err.message },
-        },
+        data: { status: "failed", metadata: { error: error instanceof Error ? error.message : "Reference analysis failed" } },
       });
-      return jsonError(`Reference analysis failed: ${err.message}`, 422);
+      return jsonError(error instanceof Error ? `Reference analysis failed: ${error.message}` : "Reference analysis failed", 422);
     }
   } catch (e) {
     if (e instanceof AuthError) return jsonError(e.message, e.status);

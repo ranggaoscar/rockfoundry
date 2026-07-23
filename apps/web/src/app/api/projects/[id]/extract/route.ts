@@ -1,20 +1,16 @@
 export const dynamic = "force-dynamic";
+import { createHash } from "node:crypto";
 import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
-import { mergeExtraction, ProjectStateSchema, detectContradictions, evaluateReadinessDirectly } from "@rockfoundry/core";
-import { z } from "zod";
+import { runJob } from "@/lib/jobs";
+import { mergeExtraction, evaluateReadinessDirectly } from "@rockfoundry/core";
 
-// POST /api/projects/[id]/extract — run initial idea extraction
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireAuth(req);
     const { id } = await params;
-
-    // Verify ownership
-    const member = await prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId: session.user.id, projectId: id } },
-    });
+    const member = await prisma.projectMember.findUnique({ where: { userId_projectId: { userId: session.user.id, projectId: id } } });
     if (!member) return jsonError("Project not found", 404);
 
     const project = await prisma.project.findUnique({ where: { id } });
@@ -24,114 +20,71 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const rawIdea = body.rawIdea || project.description || "";
     if (!rawIdea.trim()) return jsonError("No raw idea provided", 400);
 
-    // Create AI run record
-    const run = await prisma.aiRun.create({
-      data: {
-        projectId: id,
-        taskType: "initial_idea_extraction",
-        provider: process.env.NINE_ROUTER_PROVIDER || "openai",
-        model: process.env.NINE_ROUTER_DEFAULT_MODEL || "gpt-4o-mini",
-        promptVersion: "v1.0.0",
-        status: "running",
-        startedAt: new Date(),
-      },
+    const key = `extract:${id}:${createHash("sha256").update(rawIdea).digest("hex")}`;
+    const job = await runJob("initial_idea_extraction", key, { projectId: id }, async () => {
+      const run = await prisma.aiRun.create({
+        data: {
+          projectId: id,
+          taskType: "initial_idea_extraction",
+          provider: process.env.NINE_ROUTER_PROVIDER || "mock",
+          model: process.env.NINE_ROUTER_DEFAULT_MODEL || "mock",
+          promptVersion: "v1.0.0",
+          status: "running",
+          startedAt: new Date(),
+        },
+      });
+
+      const startedAt = Date.now();
+      try {
+        const { aiGateway } = await import("@/lib/ai-provider");
+        const aiResult = await aiGateway.runInitialExtraction(rawIdea);
+        const currentProject = await prisma.project.findUniqueOrThrow({ where: { id } });
+        const merged = mergeExtraction(currentProject.canonicalState as any, aiResult.extraction);
+        const readiness = evaluateReadinessDirectly(merged.state);
+        merged.state.readiness = readiness.level as typeof merged.state.readiness;
+        merged.state.generationMetadata = {
+          ...merged.state.generationMetadata,
+          lastExtractionAt: new Date().toISOString(),
+          lastExtractionRunId: run.id,
+          lastReadinessScore: readiness.score,
+        };
+        const version = currentProject.version + 1;
+
+        // Canonical state changes only after extraction and schema validation succeed.
+        await prisma.$transaction([
+          prisma.project.update({ where: { id }, data: { canonicalState: merged.state, version, description: rawIdea } }),
+          prisma.projectStateRevision.create({ data: { projectId: id, version, state: merged.state } }),
+          prisma.aiRun.update({
+            where: { id: run.id },
+            data: { status: "completed", completedAt: new Date(), tokenUsage: aiResult.tokenUsage || 0, latencyMs: Date.now() - startedAt },
+          }),
+        ]);
+
+        return {
+          extraction: aiResult.extraction,
+          merge: {
+            appliedChanges: merged.appliedChanges,
+            skippedChanges: merged.skippedChanges,
+            assumptionsCreated: merged.assumptionsCreated,
+            questionsCreated: merged.questionsCreated,
+            conflictsDetected: merged.conflictsDetected,
+          },
+          state: merged.state,
+          runId: run.id,
+          version,
+        };
+      } catch (error) {
+        await prisma.aiRun.update({
+          where: { id: run.id },
+          data: { status: "failed", completedAt: new Date(), latencyMs: Date.now() - startedAt, failureReason: error instanceof Error ? error.message : "Unknown AI error" },
+        });
+        throw error;
+      }
     });
 
-    // Call AI gateway
-    const aiResult = await callAiExtraction(rawIdea, run.id);
-
-    // Update run status
-    await prisma.aiRun.update({
-      where: { id: run.id },
-      data: {
-        status: aiResult.success ? "completed" : "failed",
-        completedAt: new Date(),
-        tokenUsage: aiResult.usage || 0,
-        latencyMs: aiResult.latency || 0,
-        failureReason: aiResult.error || null,
-      },
-    });
-
-    if (!aiResult.success) {
-      return jsonError(`AI extraction failed: ${aiResult.error}`, 500);
-    }
-
-    // Merge extraction into canonical state
-    const currentState = project.canonicalState as any;
-    const merged = mergeExtraction(currentState, aiResult.draft!);
-
-    // Recalculate readiness
-    const readinessResult = evaluateReadinessDirectly(merged.state);
-    merged.state.readiness = readinessResult.level as any;
-
-    merged.state.generationMetadata = {
-      ...merged.state.generationMetadata,
-      lastExtractionAt: new Date().toISOString(),
-      lastExtractionRunId: run.id,
-      lastReadinessScore: readinessResult.score,
-    };
-
-    // Save updated state
-    const newVersion = project.version + 1;
-    await prisma.project.update({
-      where: { id },
-      data: {
-        canonicalState: merged.state as any,
-        version: newVersion,
-        description: rawIdea,
-      },
-    });
-
-    // Create revision
-    await prisma.projectStateRevision.create({
-      data: {
-        projectId: id,
-        version: newVersion,
-        state: merged.state as any,
-      },
-    });
-
-    return Response.json({
-      extraction: aiResult.draft,
-      merge: {
-        appliedChanges: merged.appliedChanges,
-        skippedChanges: merged.skippedChanges,
-        assumptionsCreated: merged.assumptionsCreated,
-        questionsCreated: merged.questionsCreated,
-        conflictsDetected: merged.conflictsDetected,
-      },
-      state: merged.state,
-      runId: run.id,
-      version: newVersion,
-    });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    console.error("Extraction error:", e);
-    return jsonError("Internal error", 500);
-  }
-}
-
-// Call AI extraction through the gateway
-// AiGateway.runInitialExtraction now returns { extraction, promptVersion, model, latency, tokenUsage }
-async function callAiExtraction(rawIdea: string, runId: string) {
-  const startTime = Date.now();
-
-  try {
-    const { aiGateway } = await import("@/lib/ai-provider");
-    const result = await aiGateway.runInitialExtraction(rawIdea);
-    return {
-      success: true,
-      draft: result.extraction,
-      usage: result.tokenUsage,
-      latency: Date.now() - startTime,
-    };
-  } catch (e: any) {
-    return {
-      success: false,
-      draft: null,
-      usage: 0,
-      latency: Date.now() - startTime,
-      error: e.message || "Unknown AI error",
-    };
+    return Response.json({ ...job.result, duplicate: job.duplicate });
+  } catch (error) {
+    if (error instanceof AuthError) return jsonError(error.message, error.status);
+    return jsonError(error instanceof Error ? `AI extraction failed: ${error.message}` : "AI extraction failed", 422);
   }
 }

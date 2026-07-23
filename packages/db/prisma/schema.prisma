@@ -239,14 +239,19 @@ model UsageEvent {
 }
 
 model BackgroundJob {
-  id          String   @id @default(cuid())
-  type        String   // extract_idea, analyze_repo, render_zip
-  status      String   @default("queued") // queued, processing, completed, failed
-  
-  payload     Json?
-  result      Json?
-  error       String?
+  id             String   @id @default(cuid())
+  type           String   // initial_idea_extraction, website_reference_analysis, zip_generation
+  status         String   @default("queued") // queued, running, completed, failed
+  payload        Json?
+  result         Json?
+  failureReason  String?
+  progress       Int      @default(0)
+  retryCount     Int      @default(0)
+  idempotencyKey String   @unique
+  startedAt      DateTime?
+  completedAt    DateTime?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@index([status, updatedAt])
 }
