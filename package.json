@@ -1,16 +1,35 @@
 {
-  "name": "rock-foundry",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "rockfoundry",
+  "version": "0.2.0-alpha",
+  "private": true,
+  "description": "Turn rough product ideas into structured build packages that coding agents can execute.",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter web build",
+    "start": "pnpm --filter web start",
+    "lint": "pnpm --filter web lint",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "typecheck": "pnpm -r exec tsc --noEmit",
+    "test": "pnpm -r test",
+    "test:core": "pnpm --filter @rockfoundry/core test",
+    "test:ai": "pnpm --filter @rockfoundry/ai test",
+    "test:integration": "echo \"Integration tests: TBD\"",
+    "test:e2e": "pnpm exec playwright test --config apps/web/playwright.config.ts",
+    "ai:smoke": "pnpm --filter @rockfoundry/ai exec tsx src/smoke.ts",
+    "db:migrate": "pnpm --filter @rockfoundry/db exec prisma migrate deploy",
+    "db:generate": "pnpm --filter @rockfoundry/db exec prisma generate",
+    "db:push": "pnpm --filter @rockfoundry/db exec prisma db push",
+    "db:studio": "pnpm --filter @rockfoundry/db exec prisma studio",
+    "clean": "pnpm -r exec rm -rf dist .next"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
-    "ts-node": "^10.9.2"
-  }
+    "prettier": "^3.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0"
+  },
+  "packageManager": "pnpm@10.0.0"
 }

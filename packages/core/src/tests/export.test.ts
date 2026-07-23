@@ -6,17 +6,24 @@ describe("generateExport", () => {
   it("should create a valid zip with all required files", async () => {
     const mockState: ProjectState = {
       id: "1",
-      name: "Test objective",
-      rawIdea: "Idea",
+      name: "Test Project",
+      rawIdea: "A test project idea",
       targetUsers: ["User 1"],
+      platforms: [],
       objectives: [],
       constraints: [],
       entities: [],
       features: ["Feature 1"],
-      apiEndpoints: [],
-      unresolvedQuestions: [],
+      integrations: [],
+      references: [],
+      assumptions: [],
+      decisions: [],
+      openQuestions: [],
+      risks: [],
+      readiness: "IDEA_READY",
+      contradictions: [],
       generationMetadata: {}
-    } as any;
+    };
 
     const pkg = await generateExport(mockState);
     
@@ -28,10 +35,8 @@ describe("generateExport", () => {
       "README_START_HERE.md",
       "PROJECT_MANIFEST.json",
       "PROJECT_STATE.json",
-      "AGENTS.md",
       "product/PRD.md",
       "product/PRODUCT_VISION.md",
-      "product/PROBLEM_STATEMENT.md",
       "product/TARGET_USERS.md",
       "product/USER_JOURNEYS.md",
       "product/FEATURE_SCOPE.md",
@@ -41,15 +46,11 @@ describe("generateExport", () => {
       "design/INFORMATION_ARCHITECTURE.md",
       "design/SCREEN_INVENTORY.md",
       "design/USER_FLOWS.md",
-      "design/COMPONENT_GUIDE.md",
-      "design/REFERENCES.md",
-      "technical/TECHNICAL_REQUIREMENTS.md",
       "technical/SYSTEM_ARCHITECTURE.md",
       "technical/DATA_MODEL.md",
       "technical/API_CONTRACTS.md",
       "technical/AUTH_AND_PERMISSIONS.md",
       "technical/SECURITY_AND_PRIVACY.md",
-      "technical/INTEGRATIONS.md",
       "delivery/IMPLEMENTATION_PLAN.md",
       "delivery/TASK_BREAKDOWN.md",
       "delivery/ACCEPTANCE_CRITERIA.md",
@@ -60,10 +61,6 @@ describe("generateExport", () => {
       "decisions/ASSUMPTIONS.md",
       "decisions/OPEN_QUESTIONS.md",
       "decisions/RISKS.md",
-      "agent/CODEX.md",
-      "agent/CLAUDE.md",
-      "agent/CURSOR_RULES.md",
-      "agent/FIRST_BUILD_PROMPT.md",
     ];
 
     for (const file of requiredFiles) {

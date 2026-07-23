@@ -5,7 +5,7 @@ import { mergeExtraction } from "../ai/merger";
 
 describe("AI Deterministic Merger", () => {
   const getEmptyState = (): ProjectState => ({
-    id: "test", name: "test", rawIdea: "test", targetUsers: [], entities: [], features: [], objectives: [], constraints: [], integrations: [], references: [], assumptions: [], decisions: [], openQuestions: [], risks: [], readiness: "IDEA_READY", contradictions: [], generationMetadata: {}
+    id: "test", name: "test", rawIdea: "test", targetUsers: [], entities: [], features: [], platforms: [], objectives: [], constraints: [], integrations: [], references: [], assumptions: [], decisions: [], openQuestions: [], risks: [], readiness: "IDEA_READY", contradictions: [], generationMetadata: {}
   });
 
   it("merges explicit facts into arrays", () => {

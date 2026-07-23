@@ -54,6 +54,7 @@ export const ProjectStateSchema = z.object({
   normalizedSummary: z.string().optional(),
   productType: z.string().optional(),
   targetUsers: z.array(z.string()).default([]),
+  platforms: z.array(z.string()).default([]),
   
   // Scope
   objectives: z.array(z.string()).default([]),

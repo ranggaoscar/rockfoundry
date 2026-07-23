@@ -112,6 +112,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // Call AI extraction through the gateway
+// AiGateway.runInitialExtraction now returns { extraction, promptVersion, model, latency, tokenUsage }
 async function callAiExtraction(rawIdea: string, runId: string) {
   const startTime = Date.now();
 
@@ -120,8 +121,8 @@ async function callAiExtraction(rawIdea: string, runId: string) {
     const result = await aiGateway.runInitialExtraction(rawIdea);
     return {
       success: true,
-      draft: result,
-      usage: 0,
+      draft: result.extraction,
+      usage: result.tokenUsage,
       latency: Date.now() - startTime,
     };
   } catch (e: any) {

@@ -5,3 +5,8 @@ export * from "./questions";
 export * from "./export";
 export * from "./ai";
 export * from "./ai/reference";
+export * from "./storage/provider";
+export * from "./billing/plans";
+export * from "./billing/entitlements";
+export { validateConsistency } from "./export/consistency";
+export type { ConsistencyReport, ConsistencyIssue, ExportStatus } from "./export/consistency";

@@ -5,6 +5,8 @@ export interface InferenceRequest<T> {
   modelTier?: "cheap" | "default" | "strong";
   temperature?: number;
   responseSchema?: Record<string, any>;
+  taskType?: string;
+  maxRetries?: number;
 }
 
 export interface InferenceResponse<T> {

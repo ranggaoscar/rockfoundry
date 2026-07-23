@@ -49,6 +49,7 @@ describe("Requirements Engine", () => {
       targetUsers: ["Dentists", "Receptionists"],
       entities: ["Appointments", "Patients"],
       features: [],
+      platforms: [],
       objectives: [],
       constraints: [],
       integrations: [],
@@ -78,6 +79,7 @@ describe("Contradiction Detection", () => {
       targetUsers: ["Internal Employees"],
       features: ["Public registration"],
       entities: [],
+      platforms: [],
       objectives: [],
       constraints: [],
       integrations: [],
@@ -101,7 +103,7 @@ describe("Question Engine", () => {
   it("rejects generic or overly technical questions", () => {
     const qEngine = new QuestionEngine();
     const state: ProjectState = {
-      id: "test", name: "test", rawIdea: "test", targetUsers: ["Users"], entities: ["Records"], features: [], objectives: [], constraints: [], integrations: [], references: [], assumptions: [], decisions: [], openQuestions: [], risks: [], readiness: "IDEA_READY", contradictions: [], generationMetadata: {}
+      id: "test", name: "test", rawIdea: "test", targetUsers: ["Users"], entities: ["Records"], features: [], platforms: [], objectives: [], constraints: [], integrations: [], references: [], assumptions: [], decisions: [], openQuestions: [], risks: [], readiness: "IDEA_READY", contradictions: [], generationMetadata: {}
     };
 
     const questions = qEngine.generateQuestions(state, mockNodes, 2);
@@ -128,6 +130,7 @@ describe("Deterministic Export", () => {
       rawIdea: "Idea text",
       targetUsers: [],
       entities: [],
+      platforms: [],
       features: ["Cool feature"],
       objectives: [],
       constraints: [],

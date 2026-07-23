@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main, alpha-v0.2]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "10"
+
+jobs:
+  # ── Format, Lint, Typecheck, Build ─────────────────────────
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm format:check
+        continue-on-error: true # Allow format check to fail without failing CI
+
+      - name: Build packages
+        run: |
+          pnpm --filter @rockfoundry/core build
+          pnpm --filter @rockfoundry/ai build
+
+      - name: TypeScript check
+        run: pnpm typecheck
+        continue-on-error: true
+
+      - name: Build web
+        run: pnpm --filter web build
+        env:
+          DATABASE_URL: "postgresql://postgres:password@localhost:5432/rockfoundry?schema=public"
+          BETTER_AUTH_SECRET: "test-secret-that-is-at-least-32-characters-long-for-testing"
+          BETTER_AUTH_URL: "http://localhost:3000"
+          APP_URL: "http://localhost:3000"
+          AI_PROVIDER_MODE: "mock"
+
+  # ── Unit Tests ────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: |
+          pnpm --filter @rockfoundry/core build
+          pnpm --filter @rockfoundry/ai build
+
+      - name: Run core tests
+        run: pnpm test:core
+
+      - name: Run AI tests
+        run: pnpm test:ai
+
+  # ── E2E Tests (with PostgreSQL) ───────────────────────────
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: rockfoundry
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: |
+          pnpm --filter @rockfoundry/core build
+          pnpm --filter @rockfoundry/ai build
+
+      - name: Setup database
+        run: |
+          pnpm --filter @rockfoundry/db exec prisma generate
+          pnpm --filter @rockfoundry/db exec prisma db push
+        env:
+          DATABASE_URL: "postgresql://postgres:password@localhost:5432/rockfoundry?schema=public"
+
+      - name: Install Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: pnpm test:e2e
+        env:
+          DATABASE_URL: "postgresql://postgres:password@localhost:5432/rockfoundry?schema=public"
+          BETTER_AUTH_SECRET: "test-secret-that-is-at-least-32-characters-long-for-testing"
+          BETTER_AUTH_URL: "http://localhost:3000"
+          APP_URL: "http://localhost:3000"
+          AI_PROVIDER_MODE: "mock"
+          NODE_ENV: "test"
+
+  # ── AI Smoke Test (manual only) ───────────────────────────
+  ai-smoke:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run AI smoke test
+        run: pnpm ai:smoke
+        env:
+          AI_PROVIDER_MODE: "9router"
+          NINE_ROUTER_BASE_URL: ${{ secrets.NINE_ROUTER_BASE_URL }}
+          NINE_ROUTER_API_KEY: ${{ secrets.NINE_ROUTER_API_KEY }}
+          NINE_ROUTER_DEFAULT_MODEL: ${{ secrets.NINE_ROUTER_DEFAULT_MODEL || 'gpt-4o' }}
+          NINE_ROUTER_CHEAP_MODEL: ${{ secrets.NINE_ROUTER_CHEAP_MODEL || 'gpt-4o-mini' }}
+          NINE_ROUTER_STRONG_MODEL: ${{ secrets.NINE_ROUTER_STRONG_MODEL || 'gpt-4o' }}

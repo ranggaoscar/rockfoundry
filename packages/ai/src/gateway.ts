@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AiGatewayProvider, InferenceRequest, InferenceResponse } from "./schema";
+import { TASK_TIMEOUT, TASK_MAX_RETRIES } from "./prompts";
 
 export class NineRouterGateway implements AiGatewayProvider {
   constructor(
@@ -9,8 +10,42 @@ export class NineRouterGateway implements AiGatewayProvider {
   ) {}
 
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
+    const taskType = req.taskType || "initial_idea_extraction";
+    const timeout = TASK_TIMEOUT[taskType] || 60000;
+    const maxRetries = req.maxRetries ?? TASK_MAX_RETRIES[taskType] ?? 2;
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.attemptRequest(req, timeout);
+      } catch (error) {
+        lastError = error as Error;
+
+        // Don't retry if it's a schema validation error (bad request from us)
+        if (error instanceof z.ZodError) {
+          throw error;
+        }
+
+        // Don't retry if it's a 4xx error (client error)
+        if (error instanceof ApiError && error.statusCode >= 400 && error.statusCode < 500) {
+          throw error;
+        }
+
+        if (attempt < maxRetries) {
+          const backoff = Math.min(1000 * Math.pow(2, attempt), 10000);
+          console.warn(`AI request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${backoff}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+        }
+      }
+    }
+
+    throw lastError || new Error("AI request failed after all retries");
+  }
+
+  private async attemptRequest<T>(req: InferenceRequest<T>, timeout: number): Promise<InferenceResponse<T>> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     const startTime = Date.now();
     let model = this.models.default;
@@ -22,32 +57,39 @@ export class NineRouterGateway implements AiGatewayProvider {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${this.apiKey}`
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model,
           messages: req.messages,
           temperature: req.temperature ?? 0.7,
-          response_format: req.responseSchema ? {
-            type: "json_schema",
-            json_schema: {
-              name: "output",
-              schema: req.responseSchema,
-              strict: true
-            }
-          } : undefined
+          response_format: req.responseSchema
+            ? {
+                type: "json_schema",
+                json_schema: {
+                  name: "output",
+                  schema: req.responseSchema,
+                  strict: true,
+                },
+              }
+            : undefined,
         }),
-        signal: controller.signal
+        signal: controller.signal,
       });
 
       const latency = Date.now() - startTime;
 
       if (!response.ok) {
-        throw new Error(`9Router API error: ${response.status} ${response.statusText}`);
+        const errorBody = await response.text().catch(() => "");
+        throw new ApiError(
+          `9Router API error: ${response.status} ${response.statusText}`,
+          response.status,
+          errorBody
+        );
       }
 
       const data = await response.json();
-      const content = data.choices[0]?.message?.content;
+      const content = data.choices?.[0]?.message?.content;
 
       if (!content) {
         throw new Error("No content returned from AI provider");
@@ -58,7 +100,7 @@ export class NineRouterGateway implements AiGatewayProvider {
         try {
           parsed = JSON.parse(content);
         } catch (e) {
-          throw new Error("Failed to parse JSON response");
+          throw new Error("Failed to parse JSON response from AI provider");
         }
       } else {
         parsed = content as unknown as T;
@@ -69,16 +111,34 @@ export class NineRouterGateway implements AiGatewayProvider {
         usage: {
           promptTokens: data.usage?.prompt_tokens,
           completionTokens: data.usage?.completion_tokens,
-          totalTokens: data.usage?.total_tokens
+          totalTokens: data.usage?.total_tokens,
         },
         metadata: {
           provider: "9router",
           model,
-          latency
-        }
+          latency,
+        },
       };
+    } catch (error: unknown) {
+      if (error instanceof ApiError) throw error;
+      if (error instanceof z.ZodError) throw error;
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error(`AI request timed out after ${timeout}ms`);
+      }
+      throw error;
     } finally {
-      clearTimeout(timeout);
+      clearTimeout(timeoutId);
     }
+  }
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number,
+    public readonly body?: string
+  ) {
+    super(message);
+    this.name = "ApiError";
   }
 }

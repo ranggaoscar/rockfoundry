@@ -1,76 +1,133 @@
-import { InitialIdeaExtraction, InitialIdeaExtractionSchema } from "@rockfoundry/core";
-import { AiGatewayProvider as CoreAiGatewayProvider, InferenceRequest, InferenceResponse } from "./schema";
+import { InitialIdeaExtraction } from "@rockfoundry/core";
+import { AiGatewayProvider, InferenceRequest, InferenceResponse } from "./schema";
 
 export * from "./schema";
 export * from "./gateway";
+export * from "./prompts";
+export * from "./env";
 
-export class MockGatewayProvider implements CoreAiGatewayProvider {
+import { PROMPT_VERSIONS, SYSTEM_PROMPTS, TASK_MODEL_TIER, TASK_TEMPERATURE } from "./prompts";
+
+export class MockGatewayProvider implements AiGatewayProvider {
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
-    // Basic mock implementation simulating an LLM response
-    const mockIdea: InitialIdeaExtraction = {
-      normalizedSummary: { value: "A normalized version of the idea.", confidence: "EXPLICIT", extractionReason: "Mocked" },
+    // Simulate realistic latency
+    await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 500));
+
+    const taskType = req.taskType || "initial_idea_extraction";
+
+    if (taskType === "initial_idea_extraction") {
+      return this.mockExtraction(req) as any;
+    }
+
+    // Generic mock for other task types
+    return {
+      data: {
+        mock: true,
+        taskType,
+        message: `Mock response for ${taskType}`,
+        analysis: `This is a simulated analysis for ${taskType}. In development mode, the AI provider returns this mock result.`,
+      } as unknown as T,
+      usage: { promptTokens: 100, completionTokens: 150, totalTokens: 250 },
+      metadata: { provider: "mock", model: "mock", latency: 500 },
+    };
+  }
+
+  private mockExtraction(req: InferenceRequest<any>): InferenceResponse<any> {
+    const userMsg = req.messages.find((m) => m.role === "user")?.content || "";
+    const rawIdea = userMsg.split("---\n")[1]?.split("\n---")[0]?.trim() || userMsg;
+
+    // Extract meaningful info from raw idea for realistic mock
+    const words = rawIdea.toLowerCase().split(/\s+/);
+    const hasMobile = words.includes("mobile") || words.includes("ios") || words.includes("android");
+    const hasWeb = words.includes("web") || words.includes("website") || words.includes("saas");
+    const hasPayment = words.includes("pay") || words.includes("payment") || words.includes("billing");
+
+    const response: InitialIdeaExtraction = {
+      normalizedSummary: {
+        value: rawIdea.substring(0, 200),
+        confidence: "EXPLICIT",
+        evidenceText: rawIdea.substring(0, 100),
+        extractionReason: "Direct from user input",
+      },
+      productType: hasMobile
+        ? { value: "Mobile App", confidence: "STRONGLY_INFERRED", evidenceText: "mobile mentioned", extractionReason: "Mobile platform referenced" }
+        : hasWeb
+        ? { value: "Web Application", confidence: "STRONGLY_INFERRED", evidenceText: "web platform mentioned", extractionReason: "Web platform referenced" }
+        : { value: "Software Product", confidence: "WEAKLY_INFERRED", evidenceText: "general software", extractionReason: "General software product" },
       primaryUsers: [
-        { value: "End User", confidence: "EXPLICIT", extractionReason: "Standard user" }
+        { value: "End Users", confidence: "WEAKLY_INFERRED", evidenceText: "no specific users", extractionReason: "No specific users mentioned" },
       ],
       userProblems: [],
-      objectives: [],
+      objectives: [
+        { value: `Build a ${hasMobile ? "mobile" : hasWeb ? "web" : "software"} product`, confidence: "EXPLICIT", evidenceText: rawIdea.substring(0, 80), extractionReason: "Primary objective" },
+      ],
       proposedCapabilities: [],
       coreEntities: [
-        { value: "Account", confidence: "STRONGLY_INFERRED", extractionReason: "Most apps need accounts" }
+        { value: "User Account", confidence: "STRONGLY_INFERRED", evidenceText: "product described", extractionReason: "Most products need user accounts" },
       ],
       expectedWorkflows: [],
-      integrationsMentioned: [],
-      platforms: [],
+      integrationsMentioned: hasPayment
+        ? [{ value: "Payment Processing", confidence: "EXPLICIT", evidenceText: "payment mentioned", extractionReason: "Payment explicitly mentioned" }]
+        : [],
+      platforms: hasMobile
+        ? [{ value: "iOS", confidence: "WEAKLY_INFERRED", evidenceText: "mobile", extractionReason: "Mobile apps typically need iOS" }]
+        : hasWeb
+        ? [{ value: "Web", confidence: "EXPLICIT", evidenceText: "web platform", extractionReason: "Web platform" }]
+        : [],
+      businessModel: { value: "To be determined", confidence: "UNKNOWN", evidenceText: "not specified", extractionReason: "Business model not mentioned" },
       privacySignals: [],
       scaleSignals: [],
       designSignals: [],
       constraints: [],
-      assumptions: [],
+      assumptions: [
+        { value: "Users have reliable internet access", confidence: "STRONGLY_INFERRED", evidenceText: "software product", extractionReason: "Most software assumes internet" },
+      ],
       ambiguities: [
-        { value: "Unclear scale", confidence: "WEAKLY_INFERRED", extractionReason: "Scale was not mentioned" }
+        { value: "Target user demographics not specified", confidence: "UNKNOWN", evidenceText: "no user details", extractionReason: "No user demographics mentioned" },
       ],
       possibleContradictions: [],
-      unsupportedClaims: []
+      unsupportedClaims: [],
     };
-    
+
     return {
-      data: mockIdea as unknown as T,
-      usage: { totalTokens: 100 },
-      metadata: { provider: "mock", model: "mock", latency: 10 }
+      data: response,
+      usage: { promptTokens: 200, completionTokens: 350, totalTokens: 550 },
+      metadata: { provider: "mock", model: "mock", latency: 1000 },
     };
   }
 }
 
 export class AiGateway {
-  constructor(private provider: CoreAiGatewayProvider = new MockGatewayProvider()) {}
+  constructor(private provider: AiGatewayProvider = new MockGatewayProvider()) {}
 
-  async runInitialExtraction(rawIdea: string): Promise<InitialIdeaExtraction> {
+  async runInitialExtraction(rawIdea: string): Promise<{
+    extraction: InitialIdeaExtraction;
+    promptVersion: string;
+    model: string;
+    latency: number;
+    tokenUsage: number;
+  }> {
+    const taskType = "initial_idea_extraction";
+    const promptInfo = PROMPT_VERSIONS[taskType];
+    const systemPrompt = SYSTEM_PROMPTS[taskType];
+    const modelTier = TASK_MODEL_TIER[taskType];
+
     const result = await this.provider.complete({
-      modelTier: "default",
+      taskType,
+      modelTier,
       messages: [
-        {
-          role: "system",
-          content: `You are a product analyst. Extract structured information from a raw product idea.
-
-RULES:
-- ONLY extract information explicitly supported by the raw idea
-- Mark confidence as EXPLICIT for directly stated facts
-- Mark confidence as STRONGLY_INFERRED for high-probability inferences
-- Mark confidence as WEAKLY_INFERRED for low-confidence guesses
-- Mark confidence as UNKNOWN for unclear areas
-- NEVER invent target users, monetization, or technical stack
-- NEVER return markdown or prose outside the schema
-- Preserve domain-specific terminology exactly
-- Detect ambiguous words and multiple interpretations
-- Always provide evidenceText showing the source span from the raw idea
-- Always provide extractionReason explaining why this was extracted`
-        },
-        { role: "user", content: `Extract structured information from this product idea:\n\n---\n${rawIdea}\n---` }
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Extract structured information from this product idea:\n\n---\n${rawIdea}\n---` },
       ],
-      temperature: 0.1,
-      responseSchema: InitialIdeaExtractionSchema as any
+      temperature: TASK_TEMPERATURE[taskType],
     });
 
-    return InitialIdeaExtractionSchema.parse(result.data);
+    return {
+      extraction: result.data as unknown as InitialIdeaExtraction,
+      promptVersion: promptInfo?.version || "unknown",
+      model: result.metadata?.model || "unknown",
+      latency: result.metadata?.latency || 0,
+      tokenUsage: result.usage?.totalTokens || 0,
+    };
   }
 }

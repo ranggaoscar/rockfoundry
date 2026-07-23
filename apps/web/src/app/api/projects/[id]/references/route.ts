@@ -1,8 +1,33 @@
+export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
-import { extractTextFromUrl } from "@rockfoundry/core";
+import { safeExtractFromUrl, analyzeGitHubRepo, parseGitHubUrl } from "@rockfoundry/core";
 
+// GET /api/projects/[id]/references — list references
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await requireAuth(req);
+    const { id } = await params;
+
+    const member = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId: session.user.id, projectId: id } },
+    });
+    if (!member) return jsonError("Project not found", 404);
+
+    const references = await prisma.reference.findMany({
+      where: { projectId: id },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return Response.json({ references });
+  } catch (e) {
+    if (e instanceof AuthError) return jsonError(e.message, e.status);
+    return jsonError("Internal error", 500);
+  }
+}
+
+// POST /api/projects/[id]/references — add a new reference
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireAuth(req);
@@ -18,7 +43,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     
     if (!url) return jsonError("URL is required", 400);
 
-    let parsedUrl;
+    // Validate URL format
+    let parsedUrl: URL;
     try {
       parsedUrl = new URL(url);
     } catch {
@@ -29,20 +55,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return jsonError("Only HTTP/HTTPS URLs are supported", 400);
     }
 
-    const hostname = parsedUrl.hostname;
-    if (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "::1" ||
-      hostname.startsWith("10.") ||
-      hostname.startsWith("192.168.") ||
-      (hostname.startsWith("172.") && parseInt(hostname.split(".")[1]) >= 16 && parseInt(hostname.split(".")[1]) <= 31)
-    ) {
-      return jsonError("Internal IP ranges are not permitted", 400);
-    }
-
-    if (type === "GITHUB_REPO" && hostname !== "github.com") {
-      return jsonError("GitHub references must point to github.com", 400);
+    // Validate for GitHub repos
+    if (type === "GITHUB_REPO") {
+      if (parsedUrl.hostname !== "github.com") {
+        return jsonError("GitHub references must point to github.com", 400);
+      }
+      const repoInfo = parseGitHubUrl(url);
+      if (!repoInfo) {
+        return jsonError("Invalid GitHub URL format. Use https://github.com/owner/repo", 400);
+      }
     }
 
     const ref = await prisma.reference.create({
@@ -50,33 +71,65 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         projectId: id,
         url,
         type,
-        status: "processing", // We do sync for now in alpha
+        status: "processing",
       },
     });
 
+    // Run analysis (synchronous for alpha)
     try {
-      let extracted = "";
-      if (type === "URL") {
-        extracted = await extractTextFromUrl(url);
-      } else {
-        // Mock GitHub extraction
-        const parts = parsedUrl.pathname.split("/").filter(Boolean);
-        if (parts.length >= 2) {
-          extracted = `GitHub Repo: ${parts[0]}/${parts[1]}\nFound typical SaaS structure. Auth, database, UI components.`;
+      if (type === "GITHUB_REPO") {
+        const repoInfo = parseGitHubUrl(url)!;
+        const result = await analyzeGitHubRepo(repoInfo);
+
+        if (result.success) {
+          await prisma.reference.update({
+            where: { id: ref.id },
+            data: {
+              status: "analyzed",
+              metadata: result.data as any,
+            },
+          });
         } else {
-          extracted = `GitHub URL requires org/repo format.`;
+          await prisma.reference.update({
+            where: { id: ref.id },
+            data: {
+              status: "failed",
+              metadata: { error: result.error },
+            },
+          });
+          return jsonError(`Analysis failed: ${result.error}`, 422);
+        }
+      } else {
+        // Website URL analysis using safe extraction
+        const result = await safeExtractFromUrl(url);
+
+        if (result.success) {
+          await prisma.reference.update({
+            where: { id: ref.id },
+            data: {
+              status: "analyzed",
+              metadata: {
+                title: result.title,
+                headers: result.headers?.slice(0, 20),
+                textPreview: result.text?.substring(0, 5000),
+                summary: result.title || result.text?.substring(0, 200) || "Analyzed" ,
+              },
+            },
+          });
+        } else {
+          await prisma.reference.update({
+            where: { id: ref.id },
+            data: {
+              status: "failed",
+              metadata: { error: result.error },
+            },
+          });
+          return jsonError(`Analysis failed: ${result.error}`, 422);
         }
       }
 
-      await prisma.reference.update({
-        where: { id: ref.id },
-        data: {
-          status: "analyzed",
-          metadata: { summary: extracted.substring(0, 1000) },
-        },
-      });
-
-      return Response.json({ reference: { ...ref, status: "analyzed", metadata: { summary: extracted.substring(0, 500) + "..." } } });
+      const updated = await prisma.reference.findUnique({ where: { id: ref.id } });
+      return Response.json({ reference: updated });
     } catch (err: any) {
       await prisma.reference.update({
         where: { id: ref.id },
