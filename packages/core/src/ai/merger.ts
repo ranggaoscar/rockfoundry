@@ -10,11 +10,16 @@ export type MergeResult = {
   conflictsDetected: number;
 };
 
+function stableId(prefix: string, value: unknown): string {
+  const normalized = String(value).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${prefix}-${normalized || "item"}`;
+}
+
 export function mergeExtraction(
-  currentState: ProjectState, 
+  currentState: ProjectState,
   draft: InitialIdeaExtraction
 ): MergeResult {
-  
+
   // Clone to avoid mutation
   const nextState = JSON.parse(JSON.stringify(currentState)) as ProjectState;
   
@@ -42,18 +47,28 @@ export function mergeExtraction(
           result.skippedChanges.push(`Already had ${targetName}: ${valStr}`);
         }
       } else if (item.confidence === "STRONGLY_INFERRED") {
-        nextState.assumptions.push({
-          id: `assump-${Date.now()}-${Math.random().toString(36).substr(2,9)}`,
-          statement: `Assume ${targetName} includes ${valStr} because: ${item.extractionReason}`,
-          confidence: "MEDIUM",
-          impact: "MEDIUM"
-        });
-        result.assumptionsCreated++;
-        result.appliedChanges.push(`Added strong inference as assumption for ${targetName}: ${valStr}`);
+        const statement = `Assume ${targetName} includes ${valStr} because: ${item.extractionReason}`;
+        if (!nextState.assumptions.some((assumption) => assumption.statement === statement)) {
+          nextState.assumptions.push({
+            id: stableId("assump", statement),
+            statement,
+            confidence: "MEDIUM",
+            impact: "MEDIUM"
+          });
+          result.assumptionsCreated++;
+          result.appliedChanges.push(`Added strong inference as assumption for ${targetName}: ${valStr}`);
+        } else {
+          result.skippedChanges.push(`Already had assumption for ${targetName}: ${valStr}`);
+        }
       } else if (item.confidence === "WEAKLY_INFERRED") {
-        nextState.openQuestions.push(`Verify ${targetName}: Do you need ${valStr}? (Reason: ${item.extractionReason})`);
-        result.questionsCreated++;
-        result.appliedChanges.push(`Added weak inference as question for ${targetName}: ${valStr}`);
+        const question = `Verify ${targetName}: Do you need ${valStr}? (Reason: ${item.extractionReason})`;
+        if (!nextState.openQuestions.includes(question)) {
+          nextState.openQuestions.push(question);
+          result.questionsCreated++;
+          result.appliedChanges.push(`Added weak inference as question for ${targetName}: ${valStr}`);
+        } else {
+          result.skippedChanges.push(`Already had question for ${targetName}: ${valStr}`);
+        }
       }
     }
   };
@@ -79,20 +94,26 @@ export function mergeExtraction(
 
   // Ambiguities become questions
   for (const amb of draft.ambiguities) {
-    nextState.openQuestions.push(`Clarify ambiguity: ${amb.value} (${amb.extractionReason})`);
-    result.questionsCreated++;
+    const question = `Clarify ambiguity: ${amb.value} (${amb.extractionReason})`;
+    if (!nextState.openQuestions.includes(question)) {
+      nextState.openQuestions.push(question);
+      result.questionsCreated++;
+    }
   }
   
   // Possible contradictions become soft warnings or contradictions
   for (const contra of draft.possibleContradictions) {
-    nextState.contradictions.push({
-      id: `contra-${Date.now()}-${Math.random().toString(36).substr(2,9)}`,
-      severity: "WARNING",
-      conflictingFields: [],
-      explanation: `AI noted potential conflict: ${contra.value}. Reason: ${contra.extractionReason}`,
-      recommendedResolution: "Review project scope to resolve this tension."
-    });
-    result.conflictsDetected++;
+    const explanation = `AI noted potential conflict: ${contra.value}. Reason: ${contra.extractionReason}`;
+    if (!nextState.contradictions.some((existing) => existing.explanation === explanation)) {
+      nextState.contradictions.push({
+        id: stableId("contra", explanation),
+        severity: "WARNING",
+        conflictingFields: [],
+        explanation,
+        recommendedResolution: "Review project scope to resolve this tension."
+      });
+      result.conflictsDetected++;
+    }
   }
 
   return result;

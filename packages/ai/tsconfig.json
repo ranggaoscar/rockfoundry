@@ -1,1 +1,1 @@
-{ "compilerOptions": { "strict": true, "esModuleInterop": true, "skipLibCheck": true, "forceConsistentCasingInFileNames": true, "moduleResolution": "bundler", "module": "commonjs", "outDir": "dist", "rootDir": "src", "declaration": true } }
+{ "compilerOptions": { "strict": true, "esModuleInterop": true, "skipLibCheck": true, "forceConsistentCasingInFileNames": true, "moduleResolution": "bundler", "module": "commonjs", "outDir": "dist", "rootDir": "src", "declaration": true, "types": ["node"] } }

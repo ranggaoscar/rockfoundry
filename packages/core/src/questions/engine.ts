@@ -23,7 +23,7 @@ export class QuestionEngine {
         priority: 9,
         condition: (state) => state.entities.length > 0,
         generate: (state) => ({
-          id: `q-data-relations-${Date.now()}`,
+          id: "q-req-db-type",
           text: `Because ${state.name || "this product"} tracks ${state.entities.slice(0, 3).join(", ")}, should all related records stay connected in one history (like linking a customer to their orders), or can each record exist independently?`,
           contextReferences: ["entities"],
           relatedRequirementIds: ["req-db-type"],
@@ -78,14 +78,14 @@ export class QuestionEngine {
         priority: 10,
         condition: (state) => state.targetUsers.length > 0,
         generate: (state) => ({
-          id: `q-auth-${Date.now()}`,
+          id: "q-req-auth-type",
           text: `How should your ${state.targetUsers.slice(0, 2).join(" and ") || "users"} identify themselves when using ${state.name || "this product"}?`,
           contextReferences: ["targetUsers"],
           relatedRequirementIds: ["req-auth-type"],
           answerType: "MULTIPLE_CHOICE",
           options: [
             { id: "email", label: "Email and password", description: "Standard login form." },
-            { id: "social", label: "Sign in with Google or Apple", description: "OAuth social login." },
+            { id: "oauth", label: "Sign in with Google or Apple", description: "Social sign-in." },
             { id: "magic", label: "Magic link (passwordless)", description: "Email a one-time sign-in link." },
             { id: "sso", label: "Enterprise SSO", description: "SAML/SSO for company accounts." },
             { id: "none", label: "No login needed", description: "Fully anonymous / no accounts." },
