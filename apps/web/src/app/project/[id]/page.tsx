@@ -123,11 +123,14 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
         body: JSON.stringify({ rawIdea }),
       });
       const data = await res.json();
-      if (data.error) { alert(data.error); return; }
+      if (!res.ok || data.error) {
+        setPageError(data.error || "Extraction failed.");
+        return;
+      }
       setExtractionResult(data);
       setProject((prev) => prev ? { ...prev, canonicalState: data.state, version: data.version } : prev);
-    } catch (e: any) {
-      alert("Extraction failed: " + e.message);
+    } catch {
+      setPageError("Extraction failed. Check your connection and try again.");
     } finally {
       setExtracting(false);
     }
@@ -159,11 +162,17 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
         body: JSON.stringify({ questionId, answer }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        setPageError(data.error || "Unable to save your answer.");
+        return;
+      }
       if (data.state) {
         setProject((prev) => prev ? { ...prev, canonicalState: data.state, version: data.version } : prev);
       }
       // Refresh questions
       fetchQuestions();
+    } catch {
+      setPageError("Unable to save your answer.");
     } finally {
       setAnswerLoading(null);
     }
@@ -185,13 +194,20 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
     e.preventDefault();
     setAddingRef(true);
     try {
-      await fetch(`/api/projects/${projectId}/references`, {
+      const res = await fetch(`/api/projects/${projectId}/references`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: newRefType, url: newRefUrl }),
       });
+      const data = await res.json();
+      if (!res.ok) {
+        setPageError(data.error || "Unable to add reference.");
+        return;
+      }
       setNewRefUrl("");
-      fetchReferences();
+      void fetchReferences();
+    } catch {
+      setPageError("Unable to add reference.");
     } finally {
       setAddingRef(false);
     }
@@ -224,6 +240,8 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Export failed");
       setExportReady(Boolean(data.downloadUrl));
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "Export failed.");
     } finally {
       setExporting(false);
     }
@@ -235,8 +253,11 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center" role="status" aria-live="polite">
-        <p className="text-sm text-gray-500">Loading project...</p>
+      <div className="min-h-screen bg-background dark text-foreground flex items-center justify-center" role="status" aria-live="polite">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          <p className="text-sm text-muted-foreground animate-pulse">Loading project...</p>
+        </div>
       </div>
     );
   }
@@ -256,14 +277,19 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
   const state = project.canonicalState || {};
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background dark text-foreground selection:bg-primary/30 relative">
+      {/* Abstract Background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[100px]" />
+      </div>
+
       {/* Top bar */}
-      <nav className="bg-white border-b">
+      <nav className="glass sticky top-0 z-50 border-b border-white/5">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-900">Projects</Link>
-            <span className="text-gray-300">/</span>
-            <span className="font-medium text-sm">{project.name}</span>
+            <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground">Projects</Link>
+            <span className="text-border">/</span>
+            <span className="font-medium text-sm text-foreground">{project.name}</span>
             <span className="text-xs text-gray-400">v{project.version}</span>
           </div>
           <div className="flex items-center gap-3">
@@ -276,15 +302,17 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ id: str
 
       <div className="max-w-6xl mx-auto px-6 py-6">
         {/* Tab navigation */}
-        <div className="flex gap-1 border-b mb-6">
+        <div className="flex gap-1 overflow-x-auto border-b mb-6" role="tablist" aria-label="Workspace sections">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
+              role="tab"
+              aria-selected={tab === t.id}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 tab === t.id
-                  ? "border-gray-900 text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               {t.label}
