@@ -2,7 +2,7 @@
 
 ## Primary developer experience
 
-RockFoundry V1 runs as a local Next.js process with SQLite. Docker is optional and is not part of the first-run path.
+RockFoundry V1 runs as a local Next.js process with SQLite. Docker support is intentionally outside the active V1 tree.
 
 ```bash
 pnpm install

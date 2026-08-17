@@ -113,12 +113,12 @@ Default stack:
 Expected application data lives under an OS-aware app-data directory such as:
 
 ```text
-Windows: %APPDATA%/RockFoundry/
+Windows: %LOCALAPPDATA%/RockFoundry/
 macOS:   ~/Library/Application Support/RockFoundry/
 Linux:   ~/.local/share/rockfoundry/
 ```
 
-The exact resolved path is printed by the local app. Previous Alpha PostgreSQL databases are not automatically migrated into Agentic V1. Docker is optional and is not a prerequisite for SQLite.
+The exact resolved path is printed by the local app. Previous Alpha PostgreSQL databases are not automatically migrated into Agentic V1. Docker is intentionally outside the active V1 tree and is not a prerequisite for SQLite.
 
 ## Install
 
@@ -127,6 +127,7 @@ Prerequisites: Node.js 20+, pnpm.
 ```bash
 git clone https://github.com/ranggaoscar/rockfoundry.git
 cd rockfoundry
+git switch agentic-v1
 pnpm install
 pnpm db:generate
 pnpm db:migrate
@@ -200,7 +201,7 @@ Read [`SECURITY.md`](SECURITY.md) and [`docs/PRIVACY.md`](docs/PRIVACY.md). In V
 
 ## Contributing
 
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md), [`AGENTS.md`](AGENTS.md), and [`agent/AGENTS.md`](agent/AGENTS.md) before changing code. Work on `agentic-v1` for this reset. Do not merge into `main`, publish a release, or reintroduce the cancelled hosted SaaS direction.
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`agent/AGENTS.md`](agent/AGENTS.md) before changing code. Work on `agentic-v1` for this reset. Do not merge into `main`, publish a release, or reintroduce the cancelled hosted SaaS direction.
 
 ## License
 

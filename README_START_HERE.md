@@ -69,6 +69,7 @@ The intended developer experience is:
 ```bash
 git clone https://github.com/ranggaoscar/rockfoundry.git
 cd rockfoundry
+git switch agentic-v1
 pnpm install
 pnpm db:generate
 pnpm db:migrate
@@ -77,15 +78,16 @@ pnpm dev
 
 Then open `http://localhost:3000`.
 
-SQLite must work without Docker. Docker may remain an optional distribution path, but PostgreSQL and MinIO are not prerequisites. The previous Alpha PostgreSQL database is not migrated automatically into V1.
+SQLite must work without Docker. Docker is intentionally outside the active V1 tree, and PostgreSQL and MinIO are not prerequisites. The previous Alpha PostgreSQL database is not migrated automatically into V1.
 
 ## Local data
 
 RockFoundry resolves an OS-aware application data directory, conceptually:
 
 ```text
-~/.rockfoundry/
-├── rockfoundry.db
+Windows: %LOCALAPPDATA%/RockFoundry/
+macOS:   ~/Library/Application Support/RockFoundry/
+Linux:   ~/.local/share/rockfoundry/
 ├── config/
 └── projects/<project-id>/
     ├── BRD.md
@@ -106,7 +108,6 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
-pnpm test:integration
 pnpm test:e2e
 pnpm build
 ```

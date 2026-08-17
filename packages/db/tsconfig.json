@@ -11,5 +11,5 @@
     "declaration": true,
     "target": "ES2022"
   },
-  "include": ["index.ts"]
+  "include": ["index.ts", "paths.ts", "prisma.config.ts"]
 }

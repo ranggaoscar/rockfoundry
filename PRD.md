@@ -317,14 +317,16 @@ A provider failure is visible and actionable. The app must not silently fall bac
 The default data directory is OS-aware:
 
 ```text
-~/.rockfoundry/
-├── rockfoundry.db
-├── config/
-└── projects/
-    └── <project-id>/
-        ├── BRD.md
-        ├── PRD.md
-        └── ERD.md
+Windows: %LOCALAPPDATA%/RockFoundry/
+macOS:   ~/Library/Application Support/RockFoundry/
+Linux:   ~/.local/share/rockfoundry/
+
+rockfoundry.db
+config/
+projects/<project-id>/
+    ├── BRD.md
+    ├── PRD.md
+    └── ERD.md
 ```
 
 On Windows, resolve the application data directory through the platform's supported local-app-data location instead of hardcoding `/home` or `/root`.

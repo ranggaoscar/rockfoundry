@@ -41,7 +41,6 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
-pnpm test:integration
 pnpm test:e2e
 pnpm build
 ```

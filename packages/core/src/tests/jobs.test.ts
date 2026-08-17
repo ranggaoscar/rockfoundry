@@ -8,7 +8,7 @@ describe("job queue primitives", () => {
     await queue.enqueue(
       {
         id: "job-1",
-        type: "zip_generation",
+        type: "document_generation",
         payload: {},
         idempotencyKey: "export:project:1",
       },

@@ -30,7 +30,7 @@ When older documents disagree with the reset, the reset documents win. Do not re
 - OS-aware local application data directory for `rockfoundry.db`, config, and project folders.
 - BYOK provider adapters for OpenAI-compatible endpoints, Anthropic, and Gemini.
 - Deterministic state, requirements, contradiction, readiness, tool-permission, and artifact-validation handlers.
-- Docker is optional. Do not require Docker to use SQLite.
+- Docker support is intentionally outside the active V1 tree. Do not require Docker to use SQLite.
 
 ## Never reintroduce
 

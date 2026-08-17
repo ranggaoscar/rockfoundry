@@ -109,7 +109,7 @@ Tools are registered with name, description, input schema, output schema, and ex
 
 SQLite + Prisma is the default. Local records cover projects, conversation messages, decisions, assumptions, contradictions, requirements, references, tool runs, agent runs, artifacts, provider profile metadata, and versioned state snapshots.
 
-Previous Alpha PostgreSQL data is not automatically migrated into Agentic V1. Docker is optional and not a prerequisite.
+Previous Alpha PostgreSQL data is not automatically migrated into Agentic V1. Docker support is intentionally outside the active V1 tree and is not a prerequisite.
 
 ## Background execution
 

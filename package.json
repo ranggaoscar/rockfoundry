@@ -1,30 +1,28 @@
 {
   "name": "rockfoundry",
-  "version": "0.2.0-alpha",
+  "version": "1.0.0-agentic.1",
   "private": true,
-  "description": "Turn rough product ideas into structured build packages that coding agents can execute.",
+  "description": "Open-source agentic product discovery for AI builders. Find hidden decisions and turn rough ideas into build-ready BRDs, PRDs, and ERDs.",
   "scripts": {
     "dev": "pnpm --filter web dev",
     "build": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter web build",
     "start": "pnpm --filter web start",
     "lint": "pnpm --filter web lint",
-    "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/playwright/*.ts\" \"packages/core/src/**/*.{ts,tsx}\" \"packages/ai/src/**/*.{ts,tsx}\" \"packages/db/index.ts\" \"packages/db/prisma.config.ts\" \"package.json\" \"pnpm-workspace.yaml\" \"packages/*/package.json\" \"docs/**/*.md\" \"product/**/*.md\" \"design/*.md\" \"technical/*.md\" \"delivery/*.md\" \"decisions/*.md\" \"README*.md\" \"PRD.md\" \"PROJECT_MANIFEST.json\" \"SECURITY.md\" \"CHANGELOG.md\"",
-    "format": "prettier --write \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/playwright/*.ts\" \"packages/core/src/**/*.{ts,tsx}\" \"packages/ai/src/**/*.{ts,tsx}\" \"packages/db/index.ts\" \"packages/db/prisma.config.ts\" \"package.json\" \"pnpm-workspace.yaml\" \"packages/*/package.json\" \"docs/**/*.md\" \"product/**/*.md\" \"design/*.md\" \"technical/*.md\" \"delivery/*.md\" \"decisions/*.md\" \"README*.md\" \"PRD.md\" \"PROJECT_MANIFEST.json\" \"SECURITY.md\" \"CHANGELOG.md\"",
+    "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/playwright/*.ts\" \"packages/core/src/**/*.{ts,tsx}\" \"packages/ai/src/**/*.{ts,tsx}\" \"packages/db/index.ts\" \"packages/db/paths.ts\" \"packages/db/tsconfig.json\" \"packages/db/prisma.config.ts\" \"package.json\" \"pnpm-workspace.yaml\" \"packages/*/package.json\" \"docs/**/*.md\" \"product/**/*.md\" \"design/*.md\" \"technical/*.md\" \"delivery/*.md\" \"decisions/*.md\" \"README*.md\" \"PRD.md\" \"PROJECT_MANIFEST.json\" \"SECURITY.md\" \"CHANGELOG.md\" \"CONTRIBUTING.md\"",
+    "format": "prettier --write \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/playwright/*.ts\" \"packages/core/src/**/*.{ts,tsx}\" \"packages/ai/src/**/*.{ts,tsx}\" \"packages/db/index.ts\" \"packages/db/paths.ts\" \"packages/db/tsconfig.json\" \"packages/db/prisma.config.ts\" \"package.json\" \"pnpm-workspace.yaml\" \"packages/*/package.json\" \"docs/**/*.md\" \"product/**/*.md\" \"design/*.md\" \"technical/*.md\" \"delivery/*.md\" \"decisions/*.md\" \"README*.md\" \"PRD.md\" \"PROJECT_MANIFEST.json\" \"SECURITY.md\" \"CHANGELOG.md\" \"CONTRIBUTING.md\"",
     "typecheck": "pnpm -r exec tsc --noEmit",
     "test": "pnpm -r test",
     "test:core": "pnpm --filter @rockfoundry/core test",
     "test:ai": "pnpm --filter @rockfoundry/ai test",
-    "test:integration": "echo \"Integration tests: TBD\"",
     "test:e2e": "pnpm exec playwright test --config apps/web/playwright.config.ts",
     "ai:smoke": "pnpm --filter @rockfoundry/ai exec tsx src/smoke.ts",
     "db:migrate": "pnpm --filter @rockfoundry/db exec prisma migrate deploy",
     "db:generate": "pnpm --filter @rockfoundry/db exec prisma generate",
-    "db:push": "pnpm --filter @rockfoundry/db exec prisma db push",
     "db:studio": "pnpm --filter @rockfoundry/db exec prisma studio",
     "clean": "pnpm -r exec rm -rf dist .next"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "devDependencies": {
     "prettier": "^3.4.0",

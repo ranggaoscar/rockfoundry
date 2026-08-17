@@ -16,8 +16,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
-    "playwright": "^1.61.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

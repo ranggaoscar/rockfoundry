@@ -103,7 +103,7 @@ A changed decision creates a revision and marks affected requirements/artifacts 
 
 SQLite + Prisma is the default. Projects, messages, decisions, assumptions, contradictions, requirements, references, tool runs, agent runs, artifacts, and provider profile metadata are local records. Secret values should be stored in an OS-aware config path or secure OS credential store when available.
 
-Previous Alpha PostgreSQL data is not automatically migrated into Agentic V1. Docker is optional.
+Previous Alpha PostgreSQL data is not automatically migrated into Agentic V1. Docker support is intentionally outside the active V1 tree.
 
 ## Background execution
 
