@@ -1,125 +1,148 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
+import {
+  QuestionEngine,
+  RequirementsEngine,
+  detectContradictions,
+  evaluateReadinessDirectly,
+  type ProjectState,
+} from "@rockfoundry/core";
+import {
+  jsonError,
+  getLocalProject,
+  parseProjectState,
+  saveProjectState,
+} from "@/lib/local-project";
 import { prisma } from "@rockfoundry/db";
-import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
-import { QuestionEngine, RequirementsEngine, evaluateReadinessDirectly, detectContradictions } from "@rockfoundry/core";
+import { z } from "zod";
 
-// GET /api/projects/[id]/questions — get next question round
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+const AnswerSchema = z
+  .object({
+    questionId: z.string().min(1),
+    answer: z.union([z.string(), z.array(z.string())]).optional(),
+    value: z.union([z.string(), z.array(z.string())]).optional(),
+  })
+  .refine(
+    (body) => body.answer !== undefined || body.value !== undefined,
+    "answer or value is required",
+  );
+
+function nodesFor(state: ProjectState) {
+  return [
+    {
+      id: "req-auth-type",
+      category: "USERS" as const,
+      title: "Access and identity",
+      description: `How ${state.targetUsers.slice(0, 2).join(" and ") || "the people using this product"} should identify themselves`,
+      appliesWhen: (current: ProjectState) => current.targetUsers.length > 0,
+      priority: 10,
+      riskWeight: 8,
+      status: "UNRESOLVED" as const,
+      source: "SYSTEM" as const,
+      dependencies: [],
+      confidence: 0,
+    },
+    {
+      id: "req-data-relationships",
+      category: "DATA" as const,
+      title: "Data relationships",
+      description: `How ${state.entities.slice(0, 3).join(", ") || "the records"} should stay connected`,
+      appliesWhen: (current: ProjectState) => current.entities.length > 0,
+      priority: 9,
+      riskWeight: 9,
+      status: "UNRESOLVED" as const,
+      source: "SYSTEM" as const,
+      dependencies: [],
+      confidence: 0,
+    },
+    {
+      id: "req-permissions",
+      category: "PERMISSIONS" as const,
+      title: "Role permissions",
+      description: `What each role can see and change in ${state.name}`,
+      appliesWhen: (current: ProjectState) =>
+        current.targetUsers.length > 1 || current.roles.length > 1,
+      priority: 10,
+      riskWeight: 10,
+      status: "UNRESOLVED" as const,
+      source: "SYSTEM" as const,
+      dependencies: [],
+      confidence: 0,
+    },
+  ];
+}
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
-    const session = await requireAuth(req);
     const { id } = await params;
-
-    const member = await prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId: session.user.id, projectId: id } },
+    const project = await getLocalProject(id);
+    if (!project) return jsonError("Project not found", 404);
+    const state = parseProjectState(project);
+    const graph = new RequirementsEngine(nodesFor(state)).evaluate(state);
+    const questions = new QuestionEngine().generateQuestions(
+      state,
+      graph.topUnresolved,
+      3,
+    );
+    return Response.json({
+      questions,
+      readiness: {
+        level: state.readiness,
+        score: state.readinessScore,
+        breakdown: state.readinessBreakdown,
+      },
+      blockers: evaluateReadinessDirectly(state).blocking,
     });
-    if (!member) return jsonError("Project not found", 404);
-
-    const project = await prisma.project.findUnique({ where: { id } });
-    if (!project || project.deletedAt) return jsonError("Project not found", 404);
-
-    const state = project.canonicalState as any;
-    // Use a minimal set of requirement nodes for question generation
-    const nodes = [
-      { id: "req-auth-type", category: "USERS" as const, title: "Authentication", description: "How users identify themselves", appliesWhen: (s: any) => s.targetUsers?.length > 0, priority: 10, riskWeight: 8, status: "UNRESOLVED" as const, source: "SYSTEM" as const, dependencies: [], confidence: 0 },
-      { id: "req-db-type", category: "DATA" as const, title: "Data relationships", description: "How data is connected", appliesWhen: (s: any) => s.entities?.length > 0, priority: 9, riskWeight: 9, status: "UNRESOLVED" as const, source: "SYSTEM" as const, dependencies: [], confidence: 0 },
-    ];
-
-    const engine = new RequirementsEngine(nodes);
-    const graph = engine.evaluate(state);
-    const qEngine = new QuestionEngine();
-    const questions = qEngine.generateQuestions(state, graph.applicableNodes, 5);
-
-    return Response.json({ questions, readiness: state.readiness });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    return jsonError("Internal error", 500);
+  } catch {
+    return jsonError("RockFoundry couldn't prepare the next question.");
   }
 }
 
-const AnswerSchema = {
-  validate(body: any) {
-    if (!body || !body.questionId) return { ok: false, error: "questionId required" };
-    if (body.answer === undefined && body.value === undefined) return { ok: false, error: "answer or value required" };
-    return { ok: true };
-  },
-};
-
-// POST /api/projects/[id]/questions — submit an answer
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
-    const session = await requireAuth(req);
     const { id } = await params;
-
-    const member = await prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId: session.user.id, projectId: id } },
-    });
-    if (!member) return jsonError("Project not found", 404);
-
-    const project = await prisma.project.findUnique({ where: { id } });
-    if (!project || project.deletedAt) return jsonError("Project not found", 404);
-
-    const body = await req.json();
-    const validation = AnswerSchema.validate(body);
-    if (!validation.ok) return jsonError(validation.error!, 400);
-
-    const state = { ...(project.canonicalState as any) };
-    const answer = body.answer || body.value;
-    const questionId = body.questionId;
-
-    // Apply answer to state based on question pattern
-    if (questionId.startsWith("q-req-")) {
-      // Requirement node answer — store as decision
-      const decisionId = `dec-${questionId}-${Date.now()}`;
-      state.decisions = [
-        ...(state.decisions || []),
-        {
-          id: decisionId,
-          title: questionId.replace("q-req-", "").replace(/-/g, " "),
-          description: `Answer to contextual question: ${questionId}`,
-          rationale: typeof answer === "string" ? answer : JSON.stringify(answer),
-          status: "ACCEPTED" as const,
-        },
-      ];
-    } else if (body.category === "targetUsers") {
-      if (!state.targetUsers.includes(answer)) {
-        state.targetUsers = [...(state.targetUsers || []), answer];
-      }
-    } else if (body.category === "entities") {
-      if (!state.entities.includes(answer)) {
-        state.entities = [...(state.entities || []), answer];
-      }
-    } else if (body.category === "features") {
-      if (!state.features.includes(answer)) {
-        state.features = [...(state.features || []), answer];
-      }
-    }
-
-    // Remove the answered question from open questions
-    state.openQuestions = (state.openQuestions || []).filter(
-      (q: string) => !q.includes(questionId)
+    const project = await getLocalProject(id);
+    if (!project) return jsonError("Project not found", 404);
+    const body = AnswerSchema.parse(await req.json());
+    const answer = body.answer ?? body.value!;
+    const current = parseProjectState(project);
+    const processed = new QuestionEngine().processAnswer(
+      current,
+      body.questionId,
+      answer,
     );
-
-    // Recalculate contradictions and readiness
-    state.contradictions = detectContradictions(state);
-    const readinessResult = evaluateReadinessDirectly(state);
-    state.readiness = readinessResult.level as any;
-
-    // Save
-    const newVersion = project.version + 1;
-    await prisma.project.update({
-      where: { id },
-      data: { canonicalState: state, version: newVersion },
+    processed.updatedState.contradictions = detectContradictions(
+      processed.updatedState,
+    );
+    const saved = await saveProjectState(
+      id,
+      processed.updatedState,
+      project.version,
+    );
+    await prisma.conversationMessage.create({
+      data: {
+        projectId: id,
+        role: "user",
+        content: Array.isArray(answer) ? answer.join(", ") : answer,
+        metadata: JSON.stringify({
+          questionId: body.questionId,
+          source: "USER",
+        }),
+      },
     });
-
-    await prisma.projectStateRevision.create({
-      data: { projectId: id, version: newVersion, state },
-    });
-
-    return Response.json({ state, version: newVersion });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    console.error("Answer submission error:", e);
-    return jsonError("Internal error", 500);
+    return Response.json({ state: saved.state, version: saved.version });
+  } catch (error) {
+    if (error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT")
+      return jsonError(
+        "Project changed while you were answering. Refresh and retry.",
+        409,
+      );
+    return jsonError("RockFoundry couldn't record that decision.", 422);
   }
 }

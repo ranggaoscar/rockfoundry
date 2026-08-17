@@ -1,19 +1,212 @@
 {
-  "schemaVersion": "0.1",
-  "product": {"name": "RockFoundry", "stage": "mvp", "workingTagline": "Turn rough ideas into build-ready specs."},
-  "positioning": {"audience": "non-coders and vibe coders", "job": "turn an idea into an agent-ready, internally consistent build package", "not": ["code generator", "generic PRD form"]},
-  "plans": {
-    "community": {"priceIdr": 0, "deployment": "self_hosted", "ai": "byok", "projects": "unlimited"},
-    "cloud_starter": {"priceIdr": 49000, "termDays": 30, "ai": "managed_standard_with_byok_fallback", "limits": {"activeProjects": 5, "completeExportsPerTerm": 3, "referenceUrlsPerProject": 3, "publicReposPerProject": 1, "historyDays": 30}}
+  "schemaVersion": "1.0",
+  "product": {
+    "name": "RockFoundry",
+    "stage": "agentic-v1",
+    "workingTagline": "Tell it what you want to build. It figures out what needs clarifying.",
+    "licensePolicy": "Keep the existing repository open-source license"
   },
-  "coreEntities": ["User", "Workspace", "Project", "ProjectState", "InterviewRound", "Question", "Answer", "Decision", "Assumption", "Contradiction", "Reference", "ReferenceAnalysis", "Export", "Subscription", "PaymentInvoice", "PaymentEvent"],
-  "readinessLevels": ["prototype_ready", "mvp_ready", "production_ready"],
-  "decisions": [
-    {"id": "D-001", "decision": "Use structured project state as canonical source; Markdown is rendered output.", "status": "accepted"},
-    {"id": "D-002", "decision": "Offer self-hosted BYOK and Cloud Starter Rp49,000 / 30 days.", "status": "accepted"},
-    {"id": "D-003", "decision": "Use 9Router only behind the server-side AI gateway.", "status": "accepted"},
-    {"id": "D-004", "decision": "Start QRIS billing as manual renewal; no auto-debit claim.", "status": "accepted"}
+  "positioning": {
+    "audience": "vibe coders, indie builders, and independent product consultants",
+    "job": "turn an incomplete product idea into an agent-ready, internally consistent BRD, PRD, and ERD",
+    "not": [
+      "code generator",
+      "generic PRD form",
+      "hosted SaaS",
+      "billing product",
+      "project-management dashboard"
+    ]
+  },
+  "productPrinciples": [
+    "free",
+    "open_source",
+    "byok",
+    "local_first",
+    "agentic",
+    "deterministic_guardrails",
+    "chat_first"
   ],
-  "openQuestions": ["Choose app stack and database host.", "Verify SumoPod webhook signature and QRIS expiry fields from current docs.", "Choose managed-model suppliers and privacy policy before public launch."],
-  "export": {"format": "zip", "contents": ["manifest", "markdown_docs", "agent_instructions"]}
+  "architecture": {
+    "framework": "Next.js App Router",
+    "language": "TypeScript",
+    "database": "SQLite",
+    "orm": "Prisma",
+    "styling": "Tailwind CSS",
+    "ui": "shadcn/ui where useful",
+    "testing": ["Vitest", "Playwright"],
+    "storage": "local filesystem",
+    "deployment": "local process; Docker optional"
+  },
+  "localStorage": {
+    "appDirectory": "OS-aware local application data directory/.rockfoundry",
+    "database": "rockfoundry.db",
+    "projectsDirectory": "projects/<project-id>",
+    "primaryArtifacts": ["BRD.md", "PRD.md", "ERD.md"],
+    "previousAlphaDataMigration": false
+  },
+  "canonicalEntities": [
+    "Project",
+    "ConversationMessage",
+    "Decision",
+    "Assumption",
+    "OpenQuestion",
+    "Contradiction",
+    "Requirement",
+    "Reference",
+    "ToolRun",
+    "AgentRun",
+    "Artifact"
+  ],
+  "canonicalState": {
+    "requiredSections": [
+      "identity",
+      "rawIdea",
+      "normalizedSummary",
+      "business",
+      "users",
+      "problems",
+      "objectives",
+      "workflows",
+      "features",
+      "entities",
+      "roles",
+      "permissions",
+      "integrations",
+      "design",
+      "platforms",
+      "scale",
+      "security",
+      "deployment",
+      "businessRules",
+      "assumptions",
+      "decisions",
+      "contradictions",
+      "openQuestions",
+      "references",
+      "readiness",
+      "provenance"
+    ],
+    "confidenceLevels": [
+      "EXPLICIT",
+      "STRONGLY_INFERRED",
+      "WEAKLY_INFERRED",
+      "UNKNOWN"
+    ],
+    "provenanceTypes": [
+      "USER",
+      "AGENT_INFERENCE",
+      "REFERENCE_WEBSITE",
+      "REFERENCE_GITHUB",
+      "TOOL",
+      "SYSTEM"
+    ]
+  },
+  "readinessStatuses": ["NOT_READY", "DRAFT_READY", "BUILD_READY"],
+  "readinessDimensions": ["business", "product", "data", "technical"],
+  "providers": {
+    "activeProfileV1": true,
+    "supportedAdapters": ["openai_compatible", "anthropic", "gemini"],
+    "openaiCompatibleTargets": [
+      "openai",
+      "openrouter",
+      "9router",
+      "ollama",
+      "custom"
+    ],
+    "mockMode": "explicit_only"
+  },
+  "tools": [
+    "project_state_read",
+    "project_state_patch",
+    "decision_record",
+    "requirements_check",
+    "contradiction_check",
+    "web_reference_inspect",
+    "github_reference_inspect",
+    "artifact_generate"
+  ],
+  "artifacts": {
+    "primary": ["BRD", "PRD", "ERD"],
+    "defaultExport": ["BRD.md", "PRD.md", "ERD.md"],
+    "sourceOfTruth": "canonical project state",
+    "crossDocumentValidation": true
+  },
+  "ui": {
+    "primarySurface": "conversation",
+    "layout": "compact left sidebar plus wide conversation",
+    "emptyState": "single centered idea composer",
+    "progressiveDisclosure": [
+      "decisions",
+      "assumptions",
+      "contradictions",
+      "readiness",
+      "references",
+      "documents",
+      "tool_activity"
+    ],
+    "noPermanentRightDashboard": true,
+    "responsive": [
+      "desktop sidebar",
+      "tablet collapsible sidebar",
+      "mobile conversation with drawers"
+    ]
+  },
+  "decisions": [
+    {
+      "id": "RESET-001",
+      "decision": "V1 is free, open-source, local-first, and has no RockFoundry account or hosted backend.",
+      "status": "accepted"
+    },
+    {
+      "id": "RESET-002",
+      "decision": "SQLite with Prisma is the default persistence layer; the previous Alpha PostgreSQL data is not migrated automatically.",
+      "status": "accepted"
+    },
+    {
+      "id": "RESET-003",
+      "decision": "The chat is the primary UI. Context and documents use progressive disclosure instead of a permanent dashboard panel.",
+      "status": "accepted"
+    },
+    {
+      "id": "RESET-004",
+      "decision": "The model proposes structured actions, but deterministic runtime handlers own canonical state mutation and artifact validation.",
+      "status": "accepted"
+    },
+    {
+      "id": "RESET-005",
+      "decision": "The only primary generated documents are BRD.md, PRD.md, and ERD.md.",
+      "status": "accepted"
+    }
+  ],
+  "supersededLegacyScope": [
+    "billing",
+    "payments",
+    "subscriptions",
+    "entitlements",
+    "plans",
+    "SumoPod",
+    "Better Auth",
+    "account ownership",
+    "PostgreSQL requirement",
+    "MinIO requirement",
+    "hosted storage",
+    "managed AI billing",
+    "cloud queues"
+  ],
+  "openQuestions": [
+    "Which OS-aware secret storage implementation is appropriate for the first Windows and macOS release?",
+    "Which SQLite Prisma driver strategy should be standardized after a real install and migration smoke test?",
+    "Which provider capability fallbacks are needed when structured output or tool calling is unavailable?",
+    "Which exact project-state fields need relational indexing beyond the JSON canonical state?"
+  ],
+  "export": {
+    "format": "directory or zip",
+    "defaultContents": ["BRD.md", "PRD.md", "ERD.md"],
+    "advancedContentsOptional": [
+      ".rockfoundry/state.json",
+      ".rockfoundry/decisions.json",
+      ".rockfoundry/requirements.json",
+      ".rockfoundry/references.json"
+    ]
+  }
 }

@@ -11,13 +11,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@prisma/adapter-pg": "^7.9.0",
+    "@libsql/client": "^0.17.4",
+    "@prisma/adapter-libsql": "^7.9.1",
     "@prisma/client": "^7.9.0",
-    "pg": "^8.22.0"
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
-    "@types/pg": "^8.20.0",
     "prisma": "^7.9.0",
     "typescript": "^5.0.0"
   }

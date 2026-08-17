@@ -1,92 +1,83 @@
 export const dynamic = "force-dynamic";
+import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
-import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
-import { ProjectStateSchema } from "@rockfoundry/core";
-import { getSubscriptionInfo } from "@/lib/entitlements";
+import { createInitialProjectState } from "@rockfoundry/core";
+import { jsonError, publicProject } from "@/lib/local-project";
 import { z } from "zod";
 
 const CreateProjectSchema = z.object({
-  name: z.string().min(1).max(200),
+  name: z.string().trim().min(1).max(200),
   description: z.string().max(5000).optional(),
 });
 
-// GET /api/projects — list user's projects
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const session = await requireAuth(req);
-
     const projects = await prisma.project.findMany({
-      where: {
-        members: { some: { userId: session.user.id } },
-        deletedAt: null,
-      },
+      where: { deletedAt: null },
       select: {
         id: true,
         name: true,
         description: true,
+        canonicalState: true,
         version: true,
         createdAt: true,
         updatedAt: true,
       },
       orderBy: { updatedAt: "desc" },
     });
-
-    return Response.json({ projects });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    return jsonError("Internal error", 500);
+    return Response.json({ projects: projects.map(publicProject) });
+  } catch {
+    return jsonError("RockFoundry couldn't load local projects.");
   }
 }
 
-// POST /api/projects — create a new project
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireAuth(req);
-    const body = await req.json();
-
-    const { info, service } = await getSubscriptionInfo(session.user.id);
-    const entitlement = service.checkProjectLimit(info);
-    if (!entitlement.allowed) return jsonError(entitlement.reason || "Project limit reached", 429);
-
-    const parsed = CreateProjectSchema.safeParse(body);
-    if (!parsed.success) {
-      return jsonError("Invalid input: " + parsed.error.issues.map(i => i.message).join(", "), 400);
-    }
-
-    // Create project with initial canonical state
-    const initialState = ProjectStateSchema.parse({
-      id: "", // Will be set to project.id after creation
+    const parsed = CreateProjectSchema.safeParse(await req.json());
+    if (!parsed.success)
+      return jsonError("Project name and idea are required.", 400);
+    const id = randomUUID();
+    const state = createInitialProjectState({
+      id,
       name: parsed.data.name,
       rawIdea: parsed.data.description || "",
     });
-
     const project = await prisma.project.create({
       data: {
+        id,
         name: parsed.data.name,
         description: parsed.data.description || null,
-        canonicalState: initialState as any,
-        members: {
-          create: { userId: session.user.id, role: "owner" },
-        },
+        canonicalState: JSON.stringify(state),
         revisions: {
-          create: { version: 1, state: initialState as any },
+          create: {
+            version: 1,
+            state: JSON.stringify(state),
+            reason: "project created",
+          },
         },
+        messages: parsed.data.description
+          ? {
+              create: {
+                role: "user",
+                content: parsed.data.description,
+                metadata: JSON.stringify({ source: "USER" }),
+              },
+            }
+          : undefined,
       },
-      select: { id: true, name: true, version: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        canonicalState: true,
+        version: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
-
-    // Update the state id to match the project id
-    initialState.id = project.id;
-    await prisma.project.update({
-      where: { id: project.id },
-      data: { canonicalState: initialState as any },
-    });
-
-    return Response.json({ project }, { status: 201 });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    console.error("Create project error:", e);
-    return jsonError("Internal error", 500);
+    return Response.json({ project: publicProject(project) }, { status: 201 });
+  } catch {
+    return jsonError("RockFoundry couldn't create the local project.", 500);
   }
 }

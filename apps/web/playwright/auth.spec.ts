@@ -1,37 +1,27 @@
 import { test, expect } from "@playwright/test";
-import { prisma } from "@rockfoundry/db";
 
-test.describe("Auth flows", () => {
-  test.beforeAll(async () => {
-    // Cleanup test user if exists
-    await prisma.user.deleteMany({ where: { email: "e2e@test.com" } });
-  });
-
-  test("can register, login, and access dashboard", async ({ page, request }) => {
-    // Register directly via API since UI might not be fully built
-    const res = await request.post("http://localhost:3000/api/auth/sign-up", {
+test.describe("Agentic V1 local flow", () => {
+  test("creates and reopens a project without an account", async ({
+    request,
+  }) => {
+    const created = await request.post("http://localhost:3000/api/projects", {
       data: {
-        name: "E2E User",
-        email: "e2e@test.com",
-        password: "Password123!"
-      }
+        name: "E2E local project",
+        description: "Build inventory for three warehouses",
+      },
     });
-    
-    expect(res.status()).toBe(200);
+    expect(created.status()).toBe(201);
+    const payload = await created.json();
+    expect(payload.project.id).toBeTruthy();
 
-    const loginRes = await request.post("http://localhost:3000/api/auth/sign-in", {
-      data: {
-        email: "e2e@test.com",
-        password: "Password123!"
-      }
-    });
-
-    expect(loginRes.status()).toBe(200);
-
-    // Verify session
-    const sessionRes = await request.get("http://localhost:3000/api/auth/get-session");
-    expect(sessionRes.status()).toBe(200);
-    const session = await sessionRes.json();
-    expect(session?.user?.email).toBe("e2e@test.com");
+    const reopened = await request.get(
+      `http://localhost:3000/api/projects/${payload.project.id}`,
+    );
+    expect(reopened.status()).toBe(200);
+    const project = await reopened.json();
+    expect(project.project.name).toBe("E2E local project");
+    expect(project.project.canonicalState.rawIdea).toContain(
+      "three warehouses",
+    );
   });
 });

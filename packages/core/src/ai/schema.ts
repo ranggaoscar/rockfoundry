@@ -1,17 +1,17 @@
 import { z } from "zod";
 
-export const ConfidenceSchema = z.enum([
+const ExtractionConfidenceSchema = z.enum([
   "EXPLICIT",
   "STRONGLY_INFERRED",
   "WEAKLY_INFERRED",
-  "UNKNOWN"
+  "UNKNOWN",
 ]);
 
 export const ExtractedItemSchema = z.object({
-  value: z.any(),
-  confidence: ConfidenceSchema,
+  value: z.unknown(),
+  confidence: ExtractionConfidenceSchema,
   evidenceText: z.string().optional(),
-  extractionReason: z.string()
+  extractionReason: z.string(),
 });
 export type ExtractedItem = z.infer<typeof ExtractedItemSchema>;
 
@@ -35,6 +35,6 @@ export const InitialIdeaExtractionSchema = z.object({
   assumptions: z.array(ExtractedItemSchema).default([]),
   ambiguities: z.array(ExtractedItemSchema).default([]),
   possibleContradictions: z.array(ExtractedItemSchema).default([]),
-  unsupportedClaims: z.array(ExtractedItemSchema).default([])
+  unsupportedClaims: z.array(ExtractedItemSchema).default([]),
 });
 export type InitialIdeaExtraction = z.infer<typeof InitialIdeaExtractionSchema>;

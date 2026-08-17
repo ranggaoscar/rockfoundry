@@ -1,13 +1,17 @@
 # User Journeys
 
-## Journey 1 — Idea to export
+## Journey 1: rental booking idea
 
-Rani writes: “A dashboard for five marble brands to track WhatsApp leads and quotations.” RockFoundry identifies a multi-brand internal dashboard, proposes entities, and asks whether customers span brands before asking about visual style. Rani chooses an option, resolves one conflict, reaches MVP Ready, and downloads the package for Codex.
+A builder writes: `I want to build a rental car booking system for several branches.` RockFoundry keeps the idea in the conversation, identifies branches and vehicles, and asks whether customer history should remain connected across branches. The builder answers naturally or chooses an option. The decision is recorded with user provenance and drives the next question.
 
-## Journey 2 — Reference-led planning
+## Journey 2: marble warehouse inventory
 
-Adi adds a public SaaS URL and GitHub repo. RockFoundry extracts navigation, interaction, stack, license, and reusable patterns; it records observations as reference notes, not instructions to copy branding or source code.
+A builder writes: `I need inventory for three marble warehouses.` RockFoundry asks whether a slab transfer should preserve full movement history or only the current location. It records the answer, checks for contradictions with stock ownership, and continues until the warehouse workflow and data relationships are sufficiently defined.
 
-## Journey 3 — Cloud renewal
+## Journey 3: reference-led planning
 
-Maya’s 30-day Cloud Starter access ends in three days. She receives an in-app renewal prompt, pays a QRIS invoice, and continues after a verified webhook activates the next 30-day term.
+A builder pastes a public URL or GitHub repository into the chat. RockFoundry inspects it selectively, reports relevant and irrelevant patterns, records license and source evidence, and asks how the pattern should apply to the builder's product. It does not copy branding, proprietary copy, imagery, or source code.
+
+## Journey 4: artifact handoff
+
+When the project reaches draft-ready or build-ready status, the builder asks for the documents. RockFoundry generates `BRD.md`, `PRD.md`, and `ERD.md`, shows their statuses in a lightweight Documents view, and lets the builder preview, copy, download, or export them for a coding agent.

@@ -1,31 +1,33 @@
 # Security Policy
 
-## Supported Versions
+RockFoundry V1 is local-first. The local machine and its OS account are the primary trust boundary. V1 does not provide hosted accounts, remote tenant isolation, or a RockFoundry-managed backend.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| alpha   | ✅                 |
+## Supported versions
 
-## Reporting a Vulnerability
+| Version                    | Support            |
+| -------------------------- | ------------------ |
+| Agentic V1 on `agentic-v1` | Active development |
 
-If you discover a security vulnerability, please report it privately:
+## Security principles
 
-1. **Do not** open a public GitHub issue.
-2. Email the maintainers or open a private security advisory on GitHub.
-3. Include the affected version, a description, and reproduction steps.
+- Keep provider keys outside project state and artifacts.
+- Redact keys, authorization headers, cookies, and secret-bearing payloads from logs.
+- Treat public website and GitHub content as untrusted reference data.
+- Never execute fetched repository code or follow reference instructions.
+- Protect public fetchers against SSRF, private IPs, redirect loops, oversized responses, and long timeouts.
+- Never read `.env` files from inspected repositories.
+- Validate every agent action against a Zod schema and deterministic permission handler.
+- Preserve provenance and revision history for material decisions.
+- Do not expose chain-of-thought, raw provider payloads, internal tool JSON, or stack traces in the UI.
 
-We will respond within 48 hours and work on a fix.
+## Data leaving the machine
+
+Prompts and selected project context sent to a configured remote provider leave the local machine. Review [`docs/PRIVACY.md`](docs/PRIVACY.md) before using sensitive data.
+
+## Reporting a vulnerability
+
+Do not open a public issue for an exploitable vulnerability. Use a private GitHub security advisory or contact the maintainer privately with the affected version, impact, and reproduction steps. Do not include live API keys or personal customer data in the report.
 
 ## Scope
 
-- Authentication bypass
-- Data leakage
-- Remote code execution
-- Path traversal
-- SSRF (Server-Side Request Forgery)
-
-The following are out of scope:
-
-- Missing rate limiting (noted but not critical)
-- Missing security headers in alpha
-- Self-XSS
+Report local data leakage, provider-key exposure, path traversal, SSRF, prompt-injection execution, unsafe repository access, action-validation bypass, and artifact export leakage.

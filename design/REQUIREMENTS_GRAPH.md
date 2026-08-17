@@ -4,15 +4,15 @@ The graph is a small, explicit ruleset—not an LLM memory. Nodes hold facts; ed
 
 ## Node types
 
-| Node | Example |
-|---|---|
-| Actor | sales admin |
-| Entity | customer, quotation, brand |
-| Capability | reply to WhatsApp chat |
+| Node       | Example                         |
+| ---------- | ------------------------------- |
+| Actor      | sales admin                     |
+| Entity     | customer, quotation, brand      |
+| Capability | reply to WhatsApp chat          |
 | Constraint | five brands share one workspace |
-| Decision | customer profile is cross-brand |
-| Assumption | no public registration |
-| Risk | WhatsApp session disconnects |
+| Decision   | customer profile is cross-brand |
+| Assumption | no public registration          |
+| Risk       | WhatsApp session disconnects    |
 
 ## Required checks
 

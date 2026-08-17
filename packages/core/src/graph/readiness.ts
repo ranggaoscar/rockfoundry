@@ -1,15 +1,17 @@
 import { ProjectState } from "../schema";
+import { ReadinessResult, evaluateReadinessDirectly } from "../graph/evaluator";
 
-export function evaluateReadiness(state: ProjectState, overallScore: number): string {
-  // Simple deterministic readiness calculation
-  
-  if (state.contradictions.some(c => c.severity === "BLOCKING")) {
-    return "IDEA_READY"; // Cannot progress with blockers
-  }
+export { evaluateReadinessDirectly } from "./evaluator";
+export type { ReadinessResult } from "./evaluator";
 
-  if (overallScore < 30) return "IDEA_READY";
-  if (overallScore < 60) return "PROTOTYPE_READY";
-  if (overallScore < 90) return "MVP_READY";
-  
-  return "PRODUCTION_READY";
+export function evaluateReadiness(
+  state: ProjectState,
+  overallScore?: number,
+): ReadinessResult["level"] {
+  const result = evaluateReadinessDirectly(state);
+  if (result.blocking.length > 0) return "NOT_READY";
+  const score = overallScore ?? result.score;
+  if (score >= 72) return "BUILD_READY";
+  if (score >= 38) return "DRAFT_READY";
+  return "NOT_READY";
 }

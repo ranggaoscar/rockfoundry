@@ -1,13 +1,15 @@
 # Target Users
 
-## Primary: vibe-coding founder
+## Primary: vibe-coding builder
 
-Knows the business problem and can judge an interface, but cannot reliably specify data ownership, permissions, integration failure states, or deployment. Wants a usable MVP quickly and accepts guided recommendations.
+Knows the business problem and can judge a product experience, but needs help specifying workflows, data, permissions, edge cases, and MVP scope before using a coding agent.
 
 ## Secondary: independent developer or product consultant
 
-Needs a repeatable discovery package before giving a project to an agent or client. Uses self-hosted BYOK when privacy or provider control matters.
+Needs a repeatable local discovery workspace before handing a project to Codex, Claude Code, Cursor, or a client team. May choose a local or custom AI provider for privacy and control.
 
 ## Not the initial target
 
-Enterprise product teams needing approval workflows, existing engineering teams with mature specs, and users whose only goal is a landing page.
+- enterprise teams needing approvals, collaboration, or organization management;
+- users who only want a landing-page copy generator;
+- users expecting RockFoundry to write or deploy application code.

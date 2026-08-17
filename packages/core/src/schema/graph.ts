@@ -11,7 +11,7 @@ export const RequirementCategorySchema = z.enum([
   "SCALE",
   "SECURITY",
   "DEPLOYMENT",
-  "LAUNCH"
+  "LAUNCH",
 ]);
 export type RequirementCategory = z.infer<typeof RequirementCategorySchema>;
 
@@ -20,7 +20,7 @@ export const RequirementStatusSchema = z.enum([
   "ASSUMED",
   "INFERRED",
   "ANSWERED",
-  "CONFLICTING"
+  "CONFLICTING",
 ]);
 export type RequirementStatus = z.infer<typeof RequirementStatusSchema>;
 
@@ -29,21 +29,21 @@ export const RequirementNodeSchema = z.object({
   category: RequirementCategorySchema,
   title: z.string(),
   description: z.string(),
-  
+
   // Dependencies & Triggers
-  appliesWhen: z.custom<((state: any) => boolean)>().optional(), // Takes ProjectState -> boolean
+  appliesWhen: z.custom<(state: any) => boolean>().optional(), // Takes ProjectState -> boolean
   dependencies: z.array(z.string()).default([]), // IDs of other requirements
-  
+
   // Weighting
   priority: z.number().min(1).max(10).default(5),
   riskWeight: z.number().min(1).max(10).default(5),
-  
+
   // State
   status: RequirementStatusSchema.default("UNRESOLVED"),
   source: z.enum(["SYSTEM", "USER", "AI", "EXTERNAL"]).default("SYSTEM"),
   evidence: z.string().optional(),
   confidence: z.number().min(0).max(100).default(0), // 0-100
-  resolution: z.string().optional()
+  resolution: z.string().optional(),
 });
 export type RequirementNode = z.infer<typeof RequirementNodeSchema>;
 

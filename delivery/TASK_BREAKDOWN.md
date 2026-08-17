@@ -1,32 +1,44 @@
-# Task Breakdown
+# Agentic V1 Task Breakdown
 
-## P0 — core package
+## P0: product and persistence
 
-- [ ] Create schema types for project profile, decisions, assumptions, conflicts, and readiness.
-- [ ] Persist versioned project state.
-- [ ] Implement requirements-graph rules and contradiction checks.
-- [ ] Build next-question generator contract and question-quality validator.
-- [ ] Build interview UI with three-question limit.
-- [ ] Render all Markdown from state and create ZIP.
-- [ ] Add one end-to-end test: idea → answers → export.
+- [ ] Keep canonical PRD and reset docs aligned.
+- [ ] Replace hosted DB client with SQLite Prisma client.
+- [ ] Define local models for projects, messages, decisions, assumptions, questions, contradictions, requirements, references, tool runs, agent runs, artifacts, provider metadata, and revisions.
+- [ ] Remove account, billing, payment, entitlement, managed-AI, and cloud-storage runtime dependencies.
 
-## P1 — references and cloud persistence
+## P1: deterministic agent runtime
 
-- [ ] Add authenticated user/workspace/project ownership.
-- [ ] Queue URL/repo analysis with SSRF protections and limits.
-- [ ] Show analysis status, license caution, and unavailable states.
-- [ ] Store project history snapshots and restore a snapshot.
+- [ ] Define Zod schemas for all initial agent actions.
+- [ ] Validate action permissions and human approval.
+- [ ] Implement decision graph edges and affected-concept lookup.
+- [ ] Implement confidence/provenance transitions.
+- [ ] Implement question-quality rejection and stop conditions.
+- [ ] Implement readiness categories: Business, Product, Data.
+- [ ] Implement contradiction detection and resolution history.
 
-## P2 — paid Cloud Starter
+## P2: tools and artifacts
 
-- [ ] Create plan entitlement middleware.
-- [ ] Implement PaymentProvider and SumoPod QRIS adapter.
-- [ ] Verify and idempotently process webhook.
-- [ ] Add managed AI budget and BYOK fallback UI.
-- [ ] Implement expiry and renewal reminders.
+- [ ] Add extensible Tool Registry.
+- [ ] Implement safe website and GitHub reference inspection.
+- [ ] Treat references as untrusted and never execute remote code.
+- [ ] Generate BRD.md, PRD.md, and ERD.md with Mermaid.
+- [ ] Add deterministic cross-document consistency validation.
 
-## P3 — release
+## P3: UI and provider experience
 
-- [ ] Complete privacy notice and acceptable-use copy.
-- [ ] Run backup restore and payment failure tests.
-- [ ] Pilot with 10 real idea-to-export sessions.
+- [ ] Chat-first empty state and local project sidebar.
+- [ ] Conversation persistence and agent/tool message states.
+- [ ] Inline contextual question options and natural-language answers.
+- [ ] Context/readiness drawer.
+- [ ] Documents preview and export view.
+- [ ] Provider settings with explicit Mock Provider and BYOK.
+- [ ] Responsive mobile drawer/sheet behavior.
+
+## P4: quality
+
+- [ ] Domain fixtures for warehouse, rental, sales CRM, school, restaurant, marketplace, habit, content, construction, and field sales.
+- [ ] Unit tests for state, graph, provenance, question quality, contradictions, readiness, actions, tools, and artifacts.
+- [ ] Deterministic E2E with Mock Provider.
+- [ ] Real browser visual and interaction verification.
+- [ ] Run format, lint, typecheck, test, integration, E2E, and build.

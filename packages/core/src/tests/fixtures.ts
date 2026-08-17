@@ -13,9 +13,9 @@ export interface ExtractionFixture {
     primaryUsers: string[];
     coreEntities: string[];
     explicitFacts: number; // minimum
-    assumptions: number;   // minimum
-    ambiguities: number;   // minimum
-    userProblems: number;  // minimum
+    assumptions: number; // minimum
+    ambiguities: number; // minimum
+    userProblems: number; // minimum
   };
   description: string;
 }
@@ -125,7 +125,13 @@ export const extractionFixtures: ExtractionFixture[] = [
     expected: {
       productType: "Mobile App",
       primaryUsers: ["Patients", "Doctors"],
-      coreEntities: ["Patient", "Doctor", "Appointment", "Prescription", "Review"],
+      coreEntities: [
+        "Patient",
+        "Doctor",
+        "Appointment",
+        "Prescription",
+        "Review",
+      ],
       explicitFacts: 6,
       assumptions: 2,
       ambiguities: 1,
@@ -180,8 +186,18 @@ export const extractionFixtures: ExtractionFixture[] = [
     rawIdea: `A procurement platform for enterprise companies with multi-tenant support, approval workflows with chain of command, vendor management modules, purchase order generation, contract lifecycle management, budget tracking, compliance auditing, and integrations with SAP and Oracle. Must support SSO/SAML, role-based access control with custom roles, audit logging, and SOC2 compliance.`,
     expected: {
       productType: "Platform",
-      primaryUsers: ["Enterprise Companies", "Procurement Teams", "Finance Teams"],
-      coreEntities: ["Vendor", "PurchaseOrder", "Contract", "Budget", "AuditLog"],
+      primaryUsers: [
+        "Enterprise Companies",
+        "Procurement Teams",
+        "Finance Teams",
+      ],
+      coreEntities: [
+        "Vendor",
+        "PurchaseOrder",
+        "Contract",
+        "Budget",
+        "AuditLog",
+      ],
       explicitFacts: 8,
       assumptions: 2,
       ambiguities: 1,

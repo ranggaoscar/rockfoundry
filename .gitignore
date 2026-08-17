@@ -12,3 +12,9 @@ test-results/
 .env
 .env.*
 !.env.example
+
+# Local-only artifacts and preserved legacy working copies
+backups/
+working/
+archive/legacy-alpha/
+packages/db/*.db

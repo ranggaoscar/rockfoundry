@@ -1,4 +1,5 @@
-import { ProjectState, Question, RequirementNode, ReadinessLevel } from "../schema";
+import { ProjectState, Question, RequirementNode } from "../schema";
+import { validateQuestionQuality } from "./quality";
 
 // Question template interface
 interface QuestionTemplate {
@@ -32,7 +33,8 @@ export class QuestionEngine {
             {
               id: "connected",
               label: "Connected history",
-              description: "Records must link strictly together in a relational way.",
+              description:
+                "Records must link strictly together in a relational way.",
             },
             {
               id: "independent",
@@ -40,8 +42,10 @@ export class QuestionEngine {
               description: "Records are mostly standalone documents or events.",
             },
           ],
-          recommendation: "Connected history is standard for most apps that need reporting and analytics.",
-          tradeoffs: "Connected history enables rich queries but adds database complexity.",
+          recommendation:
+            "Connected history is standard for most apps that need reporting and analytics.",
+          tradeoffs:
+            "Connected history enables rich queries but adds database complexity.",
           priority: 8,
           reasonAsked: `The entities (${state.entities.slice(0, 3).join(", ")}) suggest data relationships that affect database design.`,
         }),
@@ -62,13 +66,29 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-security-level"],
           answerType: "SINGLE_CHOICE",
           options: [
-            { id: "standard", label: "Standard data", description: "Basic user data with standard protection." },
-            { id: "sensitive", label: "Sensitive data", description: "Personal data needing encryption and access controls." },
-            { id: "regulated", label: "Regulated data", description: "Subject to HIPAA, GDPR, SOC2, or similar regulations." },
+            {
+              id: "standard",
+              label: "Standard data",
+              description: "Basic user data with standard protection.",
+            },
+            {
+              id: "sensitive",
+              label: "Sensitive data",
+              description:
+                "Personal data needing encryption and access controls.",
+            },
+            {
+              id: "regulated",
+              label: "Regulated data",
+              description:
+                "Subject to HIPAA, GDPR, SOC2, or similar regulations.",
+            },
           ],
-          recommendation: "Treat data as sensitive by default. Compliance can be added later but retrofitting is expensive.",
+          recommendation:
+            "Treat data as sensitive by default. Compliance can be added later but retrofitting is expensive.",
           priority: 7,
-          reasonAsked: "The product type suggests regulated data handling requirements.",
+          reasonAsked:
+            "The product type suggests regulated data handling requirements.",
         }),
       },
 
@@ -84,16 +104,39 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-auth-type"],
           answerType: "MULTIPLE_CHOICE",
           options: [
-            { id: "email", label: "Email and password", description: "Standard login form." },
-            { id: "oauth", label: "Sign in with Google or Apple", description: "Social sign-in." },
-            { id: "magic", label: "Magic link (passwordless)", description: "Email a one-time sign-in link." },
-            { id: "sso", label: "Enterprise SSO", description: "SAML/SSO for company accounts." },
-            { id: "none", label: "No login needed", description: "Fully anonymous / no accounts." },
+            {
+              id: "email",
+              label: "Email and password",
+              description: "Standard login form.",
+            },
+            {
+              id: "oauth",
+              label: "Sign in with Google or Apple",
+              description: "Social sign-in.",
+            },
+            {
+              id: "magic",
+              label: "Magic link (passwordless)",
+              description: "Email a one-time sign-in link.",
+            },
+            {
+              id: "sso",
+              label: "Enterprise SSO",
+              description: "SAML/SSO for company accounts.",
+            },
+            {
+              id: "none",
+              label: "No login needed",
+              description: "Fully anonymous / no accounts.",
+            },
           ],
-          recommendation: "Email + Google sign-in covers most product types and users expect it.",
-          tradeoffs: "Adding auth adds complexity but is essential for personalization and data ownership.",
+          recommendation:
+            "Email + Google sign-in covers most product types and users expect it.",
+          tradeoffs:
+            "Adding auth adds complexity but is essential for personalization and data ownership.",
           priority: 9,
-          reasonAsked: "Authentication is the foundation of user identity and security.",
+          reasonAsked:
+            "Authentication is the foundation of user identity and security.",
         }),
       },
 
@@ -109,10 +152,19 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-auth-type"],
           answerType: "SINGLE_CHOICE",
           options: [
-            { id: "roles", label: "Yes, role-based access", description: "Each user type has permissions and views." },
-            { id: "same", label: "No, same experience", description: "All users see the same interface." },
+            {
+              id: "roles",
+              label: "Yes, role-based access",
+              description: "Each user type has permissions and views.",
+            },
+            {
+              id: "same",
+              label: "No, same experience",
+              description: "All users see the same interface.",
+            },
           ],
-          recommendation: "Role-based access is safer to build early — merging roles later is easier than splitting.",
+          recommendation:
+            "Role-based access is safer to build early — merging roles later is easier than splitting.",
           priority: 8,
           reasonAsked: "Multiple user types suggest different access needs.",
         }),
@@ -123,8 +175,10 @@ export class QuestionEngine {
         category: "USERS",
         priority: 7,
         condition: (state) =>
-          state.targetUsers.some((u) =>
-            u.toLowerCase().includes("internal") || u.toLowerCase().includes("employee")
+          state.targetUsers.some(
+            (u) =>
+              u.toLowerCase().includes("internal") ||
+              u.toLowerCase().includes("employee"),
           ),
         generate: (state) => ({
           id: `q-registration-${Date.now()}`,
@@ -133,10 +187,19 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-auth-type"],
           answerType: "SINGLE_CHOICE",
           options: [
-            { id: "invite", label: "Invite-only", description: "Admin sends invites to new users." },
-            { id: "open", label: "Open registration with approval", description: "Anyone can request, admin approves." },
+            {
+              id: "invite",
+              label: "Invite-only",
+              description: "Admin sends invites to new users.",
+            },
+            {
+              id: "open",
+              label: "Open registration with approval",
+              description: "Anyone can request, admin approves.",
+            },
           ],
-          recommendation: "Internal tools work best with invite-only to control access.",
+          recommendation:
+            "Internal tools work best with invite-only to control access.",
           priority: 7,
           reasonAsked: "Internal users need controlled access.",
         }),
@@ -158,10 +221,13 @@ export class QuestionEngine {
             label: f.length > 40 ? f.substring(0, 40) + "..." : f,
             description: `Prioritize ${f} in the MVP.`,
           })),
-          recommendation: "Focus on the feature that delivers the core value proposition.",
-          tradeoffs: "Building more features slows down the MVP — launch with the minimum valuable set.",
+          recommendation:
+            "Focus on the feature that delivers the core value proposition.",
+          tradeoffs:
+            "Building more features slows down the MVP — launch with the minimum valuable set.",
           priority: 8,
-          reasonAsked: "Knowing the MVP feature helps prioritize the implementation plan.",
+          reasonAsked:
+            "Knowing the MVP feature helps prioritize the implementation plan.",
         }),
       },
 
@@ -177,15 +243,30 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-scale"],
           answerType: "SINGLE_CHOICE",
           options: [
-            { id: "tens", label: "Tens of users", description: "Small team or pilot." },
-            { id: "hundreds", label: "Hundreds of users", description: "Growing product." },
-            { id: "thousands", label: "Thousands of users", description: "Scaling product." },
+            {
+              id: "tens",
+              label: "Tens of users",
+              description: "Small team or pilot.",
+            },
+            {
+              id: "hundreds",
+              label: "Hundreds of users",
+              description: "Growing product.",
+            },
+            {
+              id: "thousands",
+              label: "Thousands of users",
+              description: "Scaling product.",
+            },
             { id: "unknown", label: "No idea yet", description: "Uncertain." },
           ],
-          recommendation: "Start simple with what you know. Most products overestimate early scale needs.",
-          tradeoffs: "Over-engineering for scale slows development; under-engineering needs rework.",
+          recommendation:
+            "Start simple with what you know. Most products overestimate early scale needs.",
+          tradeoffs:
+            "Over-engineering for scale slows development; under-engineering needs rework.",
           priority: 6,
-          reasonAsked: "Scale expectations shape hosting, database, and caching decisions.",
+          reasonAsked:
+            "Scale expectations shape hosting, database, and caching decisions.",
         }),
       },
 
@@ -201,14 +282,29 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-platform"],
           answerType: "MULTIPLE_CHOICE",
           options: [
-            { id: "web", label: "Web (responsive)", description: "Works in any browser." },
-            { id: "mobile", label: "Mobile app", description: "iOS and/or Android native." },
-            { id: "both", label: "Both web and mobile", description: "Web-first then mobile app." },
+            {
+              id: "web",
+              label: "Web (responsive)",
+              description: "Works in any browser.",
+            },
+            {
+              id: "mobile",
+              label: "Mobile app",
+              description: "iOS and/or Android native.",
+            },
+            {
+              id: "both",
+              label: "Both web and mobile",
+              description: "Web-first then mobile app.",
+            },
           ],
-          recommendation: "Start web-first unless offline or native device features are essential from day one.",
-          tradeoffs: "Web is faster to build and iterate; mobile provides better native experience.",
+          recommendation:
+            "Start web-first unless offline or native device features are essential from day one.",
+          tradeoffs:
+            "Web is faster to build and iterate; mobile provides better native experience.",
           priority: 5,
-          reasonAsked: "Platform choice determines the technology stack and development approach.",
+          reasonAsked:
+            "Platform choice determines the technology stack and development approach.",
         }),
       },
 
@@ -216,16 +312,19 @@ export class QuestionEngine {
       {
         category: "INTEGRATIONS",
         priority: 6,
-        condition: (state) => state.integrations.length === 0 && state.features.length > 0,
+        condition: (state) =>
+          state.integrations.length === 0 && state.features.length > 0,
         generate: (state) => ({
           id: `q-integrations-${Date.now()}`,
           text: `${state.name || "The product"} will likely need to connect to other services. Do you have any existing tools or services ${state.name || "the product"} should integrate with? For example: payment processors (Stripe), email services (SendGrid), or analytics platforms?`,
           contextReferences: ["features"],
           relatedRequirementIds: ["req-integrations"],
           answerType: "FREE_TEXT",
-          recommendation: "Start with the bare minimum integrations. Add more as user feedback confirms the need.",
+          recommendation:
+            "Start with the bare minimum integrations. Add more as user feedback confirms the need.",
           priority: 6,
-          reasonAsked: "Integrations affect the API design and data flow architecture.",
+          reasonAsked:
+            "Integrations affect the API design and data flow architecture.",
         }),
       },
 
@@ -238,7 +337,7 @@ export class QuestionEngine {
             (f) =>
               f.toLowerCase().includes("payment") ||
               f.toLowerCase().includes("profile") ||
-              f.toLowerCase().includes("personal")
+              f.toLowerCase().includes("personal"),
           ),
         generate: (state) => ({
           id: `q-privacy-${Date.now()}`,
@@ -247,15 +346,30 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-security-level"],
           answerType: "MULTIPLE_CHOICE",
           options: [
-            { id: "none", label: "None at this stage", description: "Start with basic security best practices." },
-            { id: "gdpr", label: "GDPR", description: "European data protection." },
+            {
+              id: "none",
+              label: "None at this stage",
+              description: "Start with basic security best practices.",
+            },
+            {
+              id: "gdpr",
+              label: "GDPR",
+              description: "European data protection.",
+            },
             { id: "ccpa", label: "CCPA", description: "California privacy." },
-            { id: "soc2", label: "SOC2", description: "Enterprise security compliance." },
+            {
+              id: "soc2",
+              label: "SOC2",
+              description: "Enterprise security compliance.",
+            },
           ],
-          recommendation: "Apply GDPR-level data protection as a baseline — it's the most comprehensive standard.",
-          tradeoffs: "Compliance adds development cost but removes barriers for enterprise customers.",
+          recommendation:
+            "Apply GDPR-level data protection as a baseline — it's the most comprehensive standard.",
+          tradeoffs:
+            "Compliance adds development cost but removes barriers for enterprise customers.",
           priority: 7,
-          reasonAsked: "Privacy requirements affect data storage, user consent flows, and legal compliance.",
+          reasonAsked:
+            "Privacy requirements affect data storage, user consent flows, and legal compliance.",
         }),
       },
 
@@ -271,15 +385,34 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-hosting"],
           answerType: "SINGLE_CHOICE",
           options: [
-            { id: "cloud", label: "Cloud hosting (Vercel/Railway)", description: "Fast setup, managed infrastructure." },
-            { id: "vps", label: "VPS (DigitalOcean/Linode)", description: "More control, higher maintenance." },
-            { id: "self", label: "Self-hosted", description: "Full control, highest maintenance." },
-            { id: "unknown", label: "Not sure yet", description: "Need to research options." },
+            {
+              id: "cloud",
+              label: "Cloud hosting (Vercel/Railway)",
+              description: "Fast setup, managed infrastructure.",
+            },
+            {
+              id: "vps",
+              label: "VPS (DigitalOcean/Linode)",
+              description: "More control, higher maintenance.",
+            },
+            {
+              id: "self",
+              label: "Self-hosted",
+              description: "Full control, highest maintenance.",
+            },
+            {
+              id: "unknown",
+              label: "Not sure yet",
+              description: "Need to research options.",
+            },
           ],
-          recommendation: "Start with a managed cloud provider like Vercel or Railway to minimize DevOps overhead.",
-          tradeoffs: "Managed cloud is simpler but more expensive at scale; VPS is cheaper but needs maintenance.",
+          recommendation:
+            "Start with a managed cloud provider like Vercel or Railway to minimize DevOps overhead.",
+          tradeoffs:
+            "Managed cloud is simpler but more expensive at scale; VPS is cheaper but needs maintenance.",
           priority: 5,
-          reasonAsked: "Hosting choice affects deployment strategy, CI/CD setup, and infrastructure costs.",
+          reasonAsked:
+            "Hosting choice affects deployment strategy, CI/CD setup, and infrastructure costs.",
         }),
       },
 
@@ -287,7 +420,9 @@ export class QuestionEngine {
       {
         category: "LAUNCH",
         priority: 6,
-        condition: (state) => !state.productType || (state.productType.toLowerCase().includes("internal") === false),
+        condition: (state) =>
+          !state.productType ||
+          state.productType.toLowerCase().includes("internal") === false,
         generate: (state) => ({
           id: `q-monetization-${Date.now()}`,
           text: `How does ${state.name || "the product"} plan to make money? This feeds into the business model and payment integration requirements.`,
@@ -295,17 +430,40 @@ export class QuestionEngine {
           relatedRequirementIds: ["req-monetization"],
           answerType: "SINGLE_CHOICE",
           options: [
-            { id: "subscription", label: "Monthly/Yearly subscription", description: "Recurring billing." },
-            { id: "free", label: "Free to use", description: "No monetization yet." },
-            { id: "ads", label: "Ad-supported", description: "Revenue from ads." },
-            { id: "marketplace", label: "Transaction fees", description: "Commission on transactions." },
-            { id: "enterprise", label: "Enterprise licensing", description: "Custom pricing for businesses." },
+            {
+              id: "subscription",
+              label: "Monthly/Yearly subscription",
+              description: "Recurring billing.",
+            },
+            {
+              id: "free",
+              label: "Free to use",
+              description: "No monetization yet.",
+            },
+            {
+              id: "ads",
+              label: "Ad-supported",
+              description: "Revenue from ads.",
+            },
+            {
+              id: "marketplace",
+              label: "Transaction fees",
+              description: "Commission on transactions.",
+            },
+            {
+              id: "enterprise",
+              label: "Enterprise licensing",
+              description: "Custom pricing for businesses.",
+            },
             { id: "unknown", label: "Not sure yet", description: "Undecided." },
           ],
-          recommendation: "Subscription works best for SaaS products with recurring value delivery.",
-          tradeoffs: "Free is easiest for adoption but zero revenue; subscriptions need payment infrastructure.",
+          recommendation:
+            "Subscription works best for SaaS products with recurring value delivery.",
+          tradeoffs:
+            "Free is easiest for adoption but zero revenue; subscriptions need payment infrastructure.",
           priority: 6,
-          reasonAsked: "Monetization model affects user account design, payment integration, and feature gating.",
+          reasonAsked:
+            "Monetization model affects user account design, payment integration, and feature gating.",
         }),
       },
     ];
@@ -314,7 +472,7 @@ export class QuestionEngine {
   generateQuestions(
     state: ProjectState,
     topUnresolved: RequirementNode[],
-    maxCount: number = 5
+    maxCount: number = 5,
   ): Question[] {
     const questions: Question[] = [];
     const usedCategories = new Set<string>();
@@ -328,14 +486,15 @@ export class QuestionEngine {
       if (questions.length >= maxCount) break;
 
       // Avoid asking the same category twice in a row
-      if (usedCategories.has(template.category) && questions.length < 3) continue;
+      if (usedCategories.has(template.category) && questions.length < 3)
+        continue;
 
       const question = template.generate(state);
       // Avoid duplicate questions by checking if similar text already exists
-      const isDuplicate = questions.some((q) =>
-        q.text.substring(0, 50) === question.text.substring(0, 50)
+      const isDuplicate = questions.some(
+        (q) => q.text.substring(0, 50) === question.text.substring(0, 50),
       );
-      if (!isDuplicate) {
+      if (!isDuplicate && validateQuestionQuality(question, state).accepted) {
         questions.push(question);
         usedCategories.add(template.category);
       }
@@ -378,7 +537,8 @@ export class QuestionEngine {
         relatedRequirementIds: [],
         answerType: "FREE_TEXT",
         priority: 10,
-        reasonAsked: "Every product needs a clear understanding of the problem it solves.",
+        reasonAsked:
+          "Every product needs a clear understanding of the problem it solves.",
       });
     }
 
@@ -391,12 +551,14 @@ export class QuestionEngine {
   processAnswer(
     state: ProjectState,
     questionId: string,
-    answer: string | string[]
+    answer: string | string[],
   ): {
     updatedState: ProjectState;
     revision: { version: number; createdAt: string };
   } {
-    const nextState = JSON.parse(JSON.stringify(state)) as ProjectState & { _version?: number };
+    const nextState = JSON.parse(JSON.stringify(state)) as ProjectState & {
+      _version?: number;
+    };
 
     // Track version for revision history (stored in metadata)
     const currentVersion = (nextState as any)._version || 1;
@@ -404,11 +566,14 @@ export class QuestionEngine {
     // Record the decision
     const answerText = Array.isArray(answer) ? answer.join(", ") : answer;
     nextState.decisions.push({
-      id: `dec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: `Answered: ${questionId}`,
-      description: answerText,
-      rationale: "User answered during adaptive interview",
+      id: `dec-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      topic: questionId,
+      decision: answerText,
+      reason: "User answered during adaptive discovery",
+      source: "USER",
+      confidence: "EXPLICIT",
       status: "ACCEPTED",
+      affects: [],
     });
 
     // Record provenance

@@ -57,7 +57,8 @@ function isPrivateIP(ip: string): boolean {
   const normalized = ip.replace(/^::ffff:/, "");
 
   // Check IPv4 private ranges
-  if (PRIVATE_IP_RANGES.some((prefix) => normalized.startsWith(prefix))) return true;
+  if (PRIVATE_IP_RANGES.some((prefix) => normalized.startsWith(prefix)))
+    return true;
 
   // Check IPv6 private/reserved ranges
   if (normalized === "::1") return true; // IPv6 loopback
@@ -94,11 +95,17 @@ export async function safeExtractFromUrl(url: string): Promise<SafeUrlResult> {
     // Block private and reserved IP ranges
     for (const addr of addresses) {
       if (isPrivateIP(addr)) {
-        return { success: false, error: `URL resolves to a private IP range: ${addr}` };
+        return {
+          success: false,
+          error: `URL resolves to a private IP range: ${addr}`,
+        };
       }
     }
   } catch (err) {
-    return { success: false, error: `DNS resolution error: ${(err as Error).message}` };
+    return {
+      success: false,
+      error: `DNS resolution error: ${(err as Error).message}`,
+    };
   }
 
   // Perform the request with redirect revalidation
@@ -120,9 +127,15 @@ async function dnsResolve(hostname: string): Promise<string[]> {
   }
 }
 
-async function fetchUrlWithRedirects(url: URL, redirectCount: number): Promise<SafeUrlResult> {
+async function fetchUrlWithRedirects(
+  url: URL,
+  redirectCount: number,
+): Promise<SafeUrlResult> {
   if (redirectCount > MAX_REDIRECTS) {
-    return { success: false, error: `Too many redirects (max ${MAX_REDIRECTS})` };
+    return {
+      success: false,
+      error: `Too many redirects (max ${MAX_REDIRECTS})`,
+    };
   }
 
   const controller = new AbortController();
@@ -152,25 +165,37 @@ async function fetchUrlWithRedirects(url: URL, redirectCount: number): Promise<S
         const addresses = await dnsResolve(redirectUrl.hostname);
         for (const addr of addresses) {
           if (isPrivateIP(addr)) {
-            return { success: false, error: `Redirect target resolves to private IP: ${addr}` };
+            return {
+              success: false,
+              error: `Redirect target resolves to private IP: ${addr}`,
+            };
           }
         }
       } catch {
-        return { success: false, error: "Redirect target DNS resolution failed" };
+        return {
+          success: false,
+          error: "Redirect target DNS resolution failed",
+        };
       }
 
       return fetchUrlWithRedirects(redirectUrl, redirectCount + 1);
     }
 
     if (!response.ok) {
-      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
+      return {
+        success: false,
+        error: `HTTP ${response.status}: ${response.statusText}`,
+      };
     }
 
     // MIME type validation
     const contentType = response.headers.get("content-type") || "";
     const primaryMime = contentType.split(";")[0].trim().toLowerCase();
     if (!ALLOWED_MIME_TYPES.includes(primaryMime)) {
-      return { success: false, error: `Unsupported content type: ${contentType}` };
+      return {
+        success: false,
+        error: `Unsupported content type: ${contentType}`,
+      };
     }
 
     // Content-Length check
@@ -200,14 +225,19 @@ async function fetchUrlWithRedirects(url: URL, redirectCount: number): Promise<S
     }
 
     const decoder = new TextDecoder();
-    const text = chunks.map((c) => decoder.decode(c, { stream: true })).join("") + decoder.decode();
+    const text =
+      chunks.map((c) => decoder.decode(c, { stream: true })).join("") +
+      decoder.decode();
 
     return extractVisibleText(text);
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === "AbortError") {
       return { success: false, error: "Request timed out" };
     }
-    return { success: false, error: `Request failed: ${(err as Error).message}` };
+    return {
+      success: false,
+      error: `Request failed: ${(err as Error).message}`,
+    };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -218,7 +248,9 @@ function extractVisibleText(html: string): SafeUrlResult {
     const $ = cheerio.load(html);
 
     // Remove unwanted elements
-    $("script, style, noscript, iframe, svg, img, video, audio, link, meta").remove();
+    $(
+      "script, style, noscript, iframe, svg, img, video, audio, link, meta",
+    ).remove();
 
     const title = $("title").first().text().trim();
     const description = $('meta[name="description"]').attr("content") || "";
@@ -246,7 +278,10 @@ function extractVisibleText(html: string): SafeUrlResult {
       metadata,
     };
   } catch (err) {
-    return { success: false, error: `Text extraction failed: ${(err as Error).message}` };
+    return {
+      success: false,
+      error: `Text extraction failed: ${(err as Error).message}`,
+    };
   }
 }
 
@@ -286,23 +321,59 @@ export interface GitHubAnalysisResult {
 const MAX_FILES = 100;
 const MAX_TEXT_DOWNLOAD = 500000; // 500KB total
 const TEXT_FILE_EXTENSIONS = [
-  ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".yaml", ".yml",
-  ".toml", ".css", ".scss", ".html", ".py", ".rs", ".go", ".java",
-  ".rb", ".php", ".sh", ".env.example", ".gitignore", ".dockerignore",
-  ".config.*", ".prisma", ".sql", ".graphql", ".proto",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".css",
+  ".scss",
+  ".html",
+  ".py",
+  ".rs",
+  ".go",
+  ".java",
+  ".rb",
+  ".php",
+  ".sh",
+  ".env.example",
+  ".gitignore",
+  ".dockerignore",
+  ".config.*",
+  ".prisma",
+  ".sql",
+  ".graphql",
+  ".proto",
 ];
 
 const EXCLUDED_PATHS = [
-  "node_modules", ".git", "dist", "build", ".next", "out",
-  "__pycache__", ".venv", "venv", "target", "vendor",
-  ".env", ".env.local", ".env.production",
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  "out",
+  "__pycache__",
+  ".venv",
+  "venv",
+  "target",
+  "vendor",
+  ".env",
+  ".env.local",
+  ".env.production",
 ];
 
 /**
  * Validate a GitHub repository URL.
  */
 export function parseGitHubUrl(url: string): GitHubRepoInfo | null {
-  const match = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\/|$|\.git)/);
+  const match = url.match(
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\/|$|\.git)/,
+  );
   if (!match) return null;
   return { owner: match[1], repo: match[2].replace(/\.git$/, "") };
 }
@@ -311,7 +382,7 @@ export function parseGitHubUrl(url: string): GitHubRepoInfo | null {
  * Analyze a public GitHub repository using GitHub's public APIs.
  */
 export async function analyzeGitHubRepo(
-  repo: GitHubRepoInfo
+  repo: GitHubRepoInfo,
 ): Promise<GitHubAnalysisResult> {
   const { owner, repo: repoName } = repo;
 
@@ -324,7 +395,7 @@ export async function analyzeGitHubRepo(
           Accept: "application/vnd.github.v3+json",
           "User-Agent": "RockFoundry/1.0",
         },
-      }
+      },
     );
 
     if (!repoRes.ok) {
@@ -332,7 +403,10 @@ export async function analyzeGitHubRepo(
         return { success: false, error: "Repository not found or is private" };
       }
       if (repoRes.status === 403) {
-        return { success: false, error: "GitHub API rate limit exceeded. Try again later." };
+        return {
+          success: false,
+          error: "GitHub API rate limit exceeded. Try again later.",
+        };
       }
       return { success: false, error: `GitHub API error: ${repoRes.status}` };
     }
@@ -341,16 +415,24 @@ export async function analyzeGitHubRepo(
 
     // Fetch languages
     const langRes = await fetch(repoData.languages_url, {
-      headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "RockFoundry/1.0" },
+      headers: {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "RockFoundry/1.0",
+      },
     });
-    const languages: Record<string, number> = langRes.ok ? await langRes.json() : {};
+    const languages: Record<string, number> = langRes.ok
+      ? await langRes.json()
+      : {};
 
     // Fetch file tree via Git Trees API
     const treeRes = await fetch(
       `https://api.github.com/repos/${owner}/${repoName}/git/trees/${repoData.default_branch}?recursive=1`,
       {
-        headers: { Accept: "application/vnd.github.v3+json", "User-Agent": "RockFoundry/1.0" },
-      }
+        headers: {
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "RockFoundry/1.0",
+        },
+      },
     );
 
     const tree: { path: string; type: string }[] = [];
@@ -360,8 +442,12 @@ export async function analyzeGitHubRepo(
       const treeData = await treeRes.json();
       for (const node of treeData.tree || []) {
         if (node.type === "blob") {
-          const isExcluded = EXCLUDED_PATHS.some((p) => node.path.startsWith(p));
-          const isTextFile = TEXT_FILE_EXTENSIONS.some((ext) => node.path.endsWith(ext.replace("*", "")));
+          const isExcluded = EXCLUDED_PATHS.some((p) =>
+            node.path.startsWith(p),
+          );
+          const isTextFile = TEXT_FILE_EXTENSIONS.some((ext) =>
+            node.path.endsWith(ext.replace("*", "")),
+          );
           if (!isExcluded && isTextFile && fileCount < MAX_FILES) {
             tree.push(node);
             fileCount++;
@@ -373,10 +459,22 @@ export async function analyzeGitHubRepo(
     // Fetch key files
     const keyFiles: Record<string, string> = {};
     const priorityFiles = [
-      "package.json", "tsconfig.json", ".env.example", "Dockerfile",
-      "docker-compose.yml", "README.md", "next.config.js", "next.config.ts",
-      "vite.config.ts", "requirements.txt", "Cargo.toml", "go.mod",
-      "pom.xml", "build.gradle", "Gemfile", "Podfile",
+      "package.json",
+      "tsconfig.json",
+      ".env.example",
+      "Dockerfile",
+      "docker-compose.yml",
+      "README.md",
+      "next.config.js",
+      "next.config.ts",
+      "vite.config.ts",
+      "requirements.txt",
+      "Cargo.toml",
+      "go.mod",
+      "pom.xml",
+      "build.gradle",
+      "Gemfile",
+      "Podfile",
     ];
 
     let totalTextSize = 0;
@@ -384,14 +482,16 @@ export async function analyzeGitHubRepo(
     for (const file of tree) {
       if (totalTextSize > MAX_TEXT_DOWNLOAD) break;
 
-      const isPriority = priorityFiles.some((pf) => file.path === pf || file.path.endsWith("/" + pf));
+      const isPriority = priorityFiles.some(
+        (pf) => file.path === pf || file.path.endsWith("/" + pf),
+      );
 
       if (isPriority || file.path.split("/").length <= 2) {
         const contentRes = await fetch(
           `https://raw.githubusercontent.com/${owner}/${repoName}/${repoData.default_branch}/${file.path}`,
           {
             headers: { "User-Agent": "RockFoundry/1.0" },
-          }
+          },
         );
 
         if (contentRes.ok) {
@@ -414,8 +514,10 @@ export async function analyzeGitHubRepo(
     if (hasPackageJson) {
       try {
         const pkg = JSON.parse(keyFiles["package.json"]);
-        if (pkg.dependencies?.next || pkg.devDependencies?.next) appType = "Next.js";
-        else if (pkg.dependencies?.react || pkg.devDependencies?.react) appType = "React";
+        if (pkg.dependencies?.next || pkg.devDependencies?.next)
+          appType = "Next.js";
+        else if (pkg.dependencies?.react || pkg.devDependencies?.react)
+          appType = "React";
         else if (pkg.dependencies?.express) appType = "Express";
         else appType = "Node.js";
       } catch {
@@ -451,6 +553,9 @@ export async function analyzeGitHubRepo(
       },
     };
   } catch (err) {
-    return { success: false, error: `Analysis failed: ${(err as Error).message}` };
+    return {
+      success: false,
+      error: `Analysis failed: ${(err as Error).message}`,
+    };
   }
 }

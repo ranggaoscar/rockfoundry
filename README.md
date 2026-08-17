@@ -1,131 +1,209 @@
-# RockFoundry 🪨🔥
+# RockFoundry
 
-**Turn rough product ideas into structured build packages that coding agents can execute.**
+**Open-source agentic product discovery for AI builders.**
 
-RockFoundry transforms your raw product idea — a few sentences, a paragraph, a stream of consciousness — into a comprehensive Build Package: PRD, technical specs, data model, task breakdown, and agent instructions. Ready for any coding agent (Codex, Claude Code, Cursor) to execute.
+Before a coding agent writes your code, RockFoundry helps find the product decisions you have not made yet.
 
-> ⚠ **Alpha Software** — RockFoundry is in active development. Expect bugs, incomplete features, and breaking changes.
+You describe a rough idea. RockFoundry investigates the context, discovers hidden decisions, asks domain-specific questions, uses safe tools when useful, records evidence and assumptions, checks contradictions, measures build readiness, and produces three handoff documents:
 
----
+```text
+BRD.md · PRD.md · ERD.md
+```
 
-## What it does
+RockFoundry does not generate or deploy application source code. It owns the work before implementation.
 
-1. **You describe your idea** — Write whatever's in your head. No structure needed.
-2. **RockFoundry extracts structure** — AI identifies users, entities, workflows, and constraints.
-3. **Adaptive interview** — Smart questions fill in what's missing, tailored to your specific product.
-4. **Reference analysis** — Optionally analyze competitor websites or public GitHub repos.
-5. **Build Package generation** — Download a complete ZIP with PRD, technical docs, and agent instructions.
+> **Decision Debt** is the accumulation of important product decisions left undefined until a coding agent is forced to invent them. RockFoundry exists to reduce that debt before it becomes bad code.
 
-## What it does NOT do
+## Why RockFoundry
 
-- Write your code
-- Deploy your app
-- Make product decisions for you
-- Replace your product manager
+A request such as `build a CRM for five marble brands` sounds clear. It still leaves expensive decisions open:
 
-## Who it's for
+- Is one customer shared across brands?
+- Who can see another salesperson's quotation?
+- Does a quotation belong to a brand, a customer, or an opportunity?
+- What happens when a customer record is deleted?
+- Can the owner search customer activity across every brand?
 
-- **Indie makers** who want to move faster than writing full specs
-- **Vibe coders** who want structure without the paperwork
-- **Small teams** that need a shared understanding before building
-- **AI agent users** who want better inputs for their coding assistants
+A normal document generator writes around these gaps. RockFoundry surfaces them, explains why they matter, and keeps the user in control of the decision.
 
----
+## How it works
 
-## Getting Started
+```text
+ROUGH IDEA
+    ↓
+UNDERSTAND CONTEXT
+    ↓
+DISCOVER UNKNOWN DECISIONS
+    ↓
+INVESTIGATE REFERENCES WHEN NECESSARY
+    ↓
+ASK DOMAIN-SPECIFIC QUESTIONS
+    ↓
+RECORD DECISIONS AND ASSUMPTIONS
+    ↓
+RESOLVE CONTRADICTIONS
+    ↓
+CHECK BUILD READINESS
+    ↓
+GENERATE BRD + PRD + ERD
+```
 
-### Community (Self-hosted, Free)
+The chat is the product. The underlying canonical project state is the source of truth for the artifacts.
+
+## Agentic discovery
+
+RockFoundry is not a generic chatbot or a static questionnaire. Its deterministic runtime controls:
+
+- typed canonical state;
+- decision relationships and affected requirements;
+- confidence and provenance (`USER`, `AGENT_INFERENCE`, `REFERENCE_WEBSITE`, `REFERENCE_GITHUB`, `TOOL`, `SYSTEM`);
+- contextual question quality;
+- assumptions and contradictions;
+- readiness and artifact consistency;
+- validated tool permissions and structured actions.
+
+The model proposes an action. Schema and permission validation run before a deterministic handler changes local state.
+
+## Tools
+
+Initial tools are designed as read-only or state-safe operations:
+
+- `project_state_read`
+- `project_state_patch`
+- `decision_record`
+- `requirements_check`
+- `contradiction_check`
+- `web_reference_inspect`
+- `github_reference_inspect`
+- `artifact_generate`
+
+Public websites and repositories are treated as untrusted evidence. RockFoundry never executes downloaded code, reads `.env` files, follows instructions embedded in references, or copies a reference into the product without user confirmation.
+
+## BYOK providers
+
+RockFoundry is free because the user brings the AI provider key. The architecture supports:
+
+- OpenAI;
+- Anthropic;
+- Gemini;
+- OpenRouter;
+- Ollama;
+- 9Router;
+- custom OpenAI-compatible endpoints.
+
+Provider credentials are stored separately from project state using an OS-aware local configuration path. They never enter chat history, BRD/PRD/ERD, logs, exports, or Git. Prompts sent to a configured provider leave the local machine, and the selected provider's data policy applies.
+
+The explicit Mock Provider remains available for offline demos, tests, and E2E. A real provider failure never silently falls back to mock mode.
+
+## Local-first architecture
+
+RockFoundry requires no RockFoundry account, login, hosted backend, payment, subscription, or cloud database.
+
+Default stack:
+
+- Next.js App Router;
+- TypeScript;
+- SQLite;
+- Prisma;
+- local filesystem for generated artifacts and configuration;
+- provider adapters;
+- deterministic local agent runtime;
+- Markdown artifact renderers.
+
+Expected application data lives under an OS-aware app-data directory such as:
+
+```text
+Windows: %APPDATA%/RockFoundry/
+macOS:   ~/Library/Application Support/RockFoundry/
+Linux:   ~/.local/share/rockfoundry/
+```
+
+The exact resolved path is printed by the local app. Previous Alpha PostgreSQL databases are not automatically migrated into Agentic V1. Docker is optional and is not a prerequisite for SQLite.
+
+## Install
+
+Prerequisites: Node.js 20+, pnpm.
 
 ```bash
-# Prerequisites: Node.js 20+, pnpm, Docker
-
-# Clone the repository
 git clone https://github.com/ranggaoscar/rockfoundry.git
 cd rockfoundry
-
-# Install dependencies
 pnpm install
-
-# Copy environment variables
-cp .env.example .env
-# Edit .env with your settings (or use defaults for local dev)
-
-# Start PostgreSQL
-docker compose -f docker/docker-compose.yml up -d postgres
-
-# Run database migrations
+pnpm db:generate
 pnpm db:migrate
-
-# Start development server
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) — you're running RockFoundry locally with mock AI mode.
+Open `http://localhost:3000`. Start by describing an idea. Configure an AI provider only when the agent needs one.
 
-### Cloud Starter (Hosted)
+For a deterministic offline run, choose the explicit Mock Provider in Settings.
 
-Coming soon. The Cloud plan offers managed AI, cloud storage, and reference analysis.
+## Example
 
-### Bring Your Own Key (BYOK)
-
-Set `AI_PROVIDER_MODE=9router` and configure `NINE_ROUTER_*` environment variables to use your own AI provider. See [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md).
-
----
-
-## Screenshots
-
-*Coming soon — adding screenshots before Beta.*
-
----
-
-## Repository Structure
-
+```text
+I want to build a CRM for several marble brands.
 ```
+
+RockFoundry should not jump to `customers`, `quotations`, and `role permissions` as if they were settled facts. It should ask a question such as:
+
+> You mentioned several brands. Can one customer have quotations from multiple brands, or should each brand maintain a separate customer record?
+
+The answer becomes a provenance-backed decision. Its effects on permissions, duplicate detection, search, quotation ownership, and the ERD remain traceable.
+
+## UI
+
+The default experience is a chat-first workspace inspired by modern AI assistants:
+
+- compact project sidebar;
+- wide readable conversation;
+- sticky multiline composer;
+- inline contextual answer options;
+- compact collapsed tool activity;
+- compact readiness status;
+- drawers or sheets for decisions, assumptions, contradictions, references, documents, and provider settings;
+- responsive mobile conversation with secondary views opened as drawers.
+
+There is no permanent analytics panel, dashboard KPI grid, billing portal, or technical onboarding wall.
+
+Mobbin research notes and limitations are in [`docs/UI_RESEARCH.md`](docs/UI_RESEARCH.md).
+
+## Artifacts
+
+The default export stays intentionally small:
+
+```text
+my-project/
+├── BRD.md
+├── PRD.md
+└── ERD.md
+```
+
+Artifacts can be drafted before build readiness is complete. Unresolved decisions and warnings remain visible. A deterministic consistency validator reports `PASS`, `WARNING`, or `BLOCKING` when the documents disagree with canonical state.
+
+## Repository structure
+
+```text
 rockfoundry/
-├── apps/
-│   └── web/                    # Next.js web application
-│       ├── src/
-│       │   ├── app/            # Pages and layouts
-│       │   ├── components/     # UI components
-│       │   └── lib/            # Auth, AI provider, utilities
-│       └── playwright/         # E2E tests
-├── packages/
-│   ├── core/                   # Domain logic: schemas, graph, export
-│   ├── ai/                     # AI gateway, prompt registry, routes
-│   └── db/                     # Prisma schema and database client
-├── docker/                     # Docker Compose and Dockerfile
-├── docs/                       # Documentation
-└── .github/workflows/          # CI configuration
+├── apps/web/              # Chat-first Next.js application
+├── packages/core/         # State, graph, questions, tools, readiness, artifacts
+├── packages/ai/           # Provider-neutral adapters and structured prompts
+├── packages/db/           # SQLite Prisma schema and local client
+├── docs/                  # Product, architecture, provider, privacy, and UI notes
+├── design/                # UI direction and flows
+├── product/               # Scope, vision, journeys, and metrics
+├── technical/             # Contracts and trust boundaries
+└── agent/                 # Coding-agent handoff rules
 ```
 
----
+## Security and privacy
 
-## Current Alpha Limitations
+Read [`SECURITY.md`](SECURITY.md) and [`docs/PRIVACY.md`](docs/PRIVACY.md). In V1, access to the local machine is the trust boundary. Anyone who can access the local RockFoundry instance can access its projects. Provider prompts leave the machine only when the user has configured and invoked that provider. Public references are untrusted content and are inspected with SSRF, size, timeout, and prompt-injection safeguards.
 
-- **Mock AI by default** — Real 9Router integration is implemented but requires configuration
-- **Basic UI** — Functional but not polished. Loading states and error handling exist but are minimal
-- **No real payments** — SumoPod integration is pending verified documentation
-- **No team collaboration** — Single-user only
-- **No real-time updates** — Page refresh required for state changes
-- **Limited reference analysis** — Website text extraction; full visual/JS analysis not supported
-- **No background job system** — AI runs are synchronous in current alpha
+## Contributing
 
----
-
-## Roadmap
-
-| Milestone | Focus |
-|-----------|-------|
-| Alpha v0.1 | Foundation: auth, AI extraction, basic export |
-| **Alpha v0.2** | **Real AI integration, interview system, references, self-hosted** |
-| Beta v0.3 | Team collaboration, real payments, background jobs |
-| Beta v0.4 | UI polish, real-time updates, performance |
-| v1.0 | Production ready, documentation complete, migration tools |
-
----
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md), [`AGENTS.md`](AGENTS.md), and [`agent/AGENTS.md`](agent/AGENTS.md) before changing code. Work on `agentic-v1` for this reset. Do not merge into `main`, publish a release, or reintroduce the cancelled hosted SaaS direction.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [`LICENSE`](LICENSE).
 
-Built for indie makers and vibe coders who want to ship faster.
+**Find the missing decisions before they become bad code.**

@@ -10,7 +10,12 @@
 
 import { NineRouterGateway } from "./gateway";
 import { InitialIdeaExtractionSchema } from "@rockfoundry/core";
-import { SYSTEM_PROMPTS, TASK_MODEL_TIER, TASK_TEMPERATURE, TASK_TIMEOUT } from "./prompts";
+import {
+  SYSTEM_PROMPTS,
+  TASK_MODEL_TIER,
+  TASK_TEMPERATURE,
+  TASK_TIMEOUT,
+} from "./prompts";
 
 async function main() {
   const apiKey = process.env.NINE_ROUTER_API_KEY;
@@ -18,7 +23,9 @@ async function main() {
 
   if (!apiKey) {
     console.error("✗ NINE_ROUTER_API_KEY is not configured.");
-    console.error("  Set AI_PROVIDER_MODE=9router and NINE_ROUTER_API_KEY in .env");
+    console.error(
+      "  Set AI_PROVIDER_MODE=9router and NINE_ROUTER_API_KEY in .env",
+    );
     process.exit(1);
   }
 
@@ -57,7 +64,10 @@ async function main() {
       modelTier: TASK_MODEL_TIER[taskType],
       messages: [
         { role: "system", content: prompt },
-        { role: "user", content: `Extract structured information from this product idea:\n\n---\n${testIdea}\n---` },
+        {
+          role: "user",
+          content: `Extract structured information from this product idea:\n\n---\n${testIdea}\n---`,
+        },
       ],
       temperature: TASK_TEMPERATURE[taskType],
       responseSchema: InitialIdeaExtractionSchema as any,
@@ -70,7 +80,7 @@ async function main() {
     console.log(`Model: ${result.metadata?.model || "unknown"}`);
     console.log(`Latency: ${result.metadata?.latency || elapsed}ms`);
     console.log(
-      `Tokens: ${result.usage?.totalTokens || "?"} (prompt: ${result.usage?.promptTokens || "?"}, completion: ${result.usage?.completionTokens || "?"})`
+      `Tokens: ${result.usage?.totalTokens || "?"} (prompt: ${result.usage?.promptTokens || "?"}, completion: ${result.usage?.completionTokens || "?"})`,
     );
     console.log();
 
@@ -88,7 +98,9 @@ async function main() {
       }
       console.log(`Users found: ${parsed.primaryUsers?.length || 0}`);
       console.log(`Entities found: ${parsed.coreEntities?.length || 0}`);
-      console.log(`Capabilities found: ${parsed.proposedCapabilities?.length || 0}`);
+      console.log(
+        `Capabilities found: ${parsed.proposedCapabilities?.length || 0}`,
+      );
       console.log(`Ambiguities found: ${parsed.ambiguities?.length || 0}`);
 
       console.log();

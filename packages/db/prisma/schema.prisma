@@ -3,255 +3,212 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
-
-// ------------------------------------------------------
-// Auth (Better Auth) - Core Identity
-// ------------------------------------------------------
-
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  role          String?   // For future workspace logic or admin
-
-  sessions      Session[]
-  accounts      Account[]
-  
-  projects      ProjectMember[]
-  subscriptions Subscription[]
-}
-
-model Session {
-  id        String   @id @default(cuid())
-  expiresAt DateTime
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ipAddress String?
-  userAgent String?
-  
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Account {
-  id                    String    @id @default(cuid())
-  accountId             String
-  providerId            String
-  userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?
-  refreshToken          String?
-  idToken               String?
-  accessTokenExpiresAt  DateTime?
-  refreshTokenExpiresAt DateTime?
-  scope                 String?
-  password              String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-}
-
-model Verification {
-  id         String    @id @default(cuid())
-  identifier String
-  value      String
-  expiresAt  DateTime
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-}
-
-// ------------------------------------------------------
-// Application Domain - Projects & Content
-// ------------------------------------------------------
 
 model Project {
   id             String   @id @default(cuid())
   name           String
-  description    String?  // The rough idea
-  
-  // JSONB source of truth
-  canonicalState Json     @default("{}")
+  description    String?
+  canonicalState String   @default("{}")
   version        Int      @default(1)
-
+  deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  deletedAt      DateTime?
 
-  members        ProjectMember[]
-  documents      GeneratedDocument[]
+  messages       ConversationMessage[]
+  decisions      Decision[]
+  assumptions    Assumption[]
+  questions      OpenQuestion[]
+  contradictions Contradiction[]
+  requirements   Requirement[]
   references     Reference[]
+  toolRuns       ToolRun[]
+  agentRuns      AgentRun[]
+  artifacts      Artifact[]
   revisions      ProjectStateRevision[]
-  aiRuns         AiRun[]
+
+  @@index([updatedAt])
+}
+
+model ConversationMessage {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Decision {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  topic       String
+  decision    String
+  reason      String?
+  source      String
+  status      String   @default("ACCEPTED")
+  affects     String   @default("[]")
+  provenance  String   @default("USER")
+  supersedes  String?
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, topic])
+}
+
+model Assumption {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  statement      String
+  confidence     String
+  impact         String
+  source         String
+  validationPlan String?
+  resolvedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([projectId, confidence])
+}
+
+model OpenQuestion {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  text           String
+  category       String
+  priority       Int      @default(5)
+  requirementIds String   @default("[]")
+  status         String   @default("OPEN")
+  createdAt      DateTime @default(now())
+  answeredAt     DateTime?
+
+  @@index([projectId, status, priority])
+}
+
+model Contradiction {
+  id                 String   @id @default(cuid())
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  severity           String
+  explanation        String
+  conflictingFields  String   @default("[]")
+  recommendedFix     String
+  status             String   @default("OPEN")
+  createdAt          DateTime @default(now())
+  resolvedAt         DateTime?
+
+  @@index([projectId, status, severity])
+}
+
+model Requirement {
+  id          String   @id
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category    String
+  title       String
+  description String
+  status      String
+  priority    Int      @default(5)
+  riskWeight  Int      @default(5)
+  confidence  Int      @default(0)
+  source      String   @default("SYSTEM")
+  evidence    String?
+  resolution  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId, category, status])
+}
+
+model Reference {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        String
+  url         String
+  status      String   @default("PENDING")
+  metadata    String?
+  untrusted   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId, createdAt])
+}
+
+model ToolRun {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  toolName     String
+  status       String   @default("QUEUED")
+  inputSummary String?
+  outputSummary String?
+  failureReason String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model AgentRun {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  goal          String
+  status        String   @default("QUEUED")
+  actionType    String?
+  failureReason String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  retryCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Artifact {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type        String
+  status      String   @default("DRAFT")
+  content     String
+  version     Int      @default(1)
+  generatedAt DateTime @default(now())
+
+  @@unique([projectId, type, version])
+  @@index([projectId, type, generatedAt])
 }
 
 model ProjectStateRevision {
   id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   version   Int
-  state     Json
-  
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
+  state     String
+  reason    String?
   createdAt DateTime @default(now())
+
+  @@unique([projectId, version])
+  @@index([projectId, createdAt])
 }
 
-model AiRun {
-  id            String   @id @default(cuid())
-  taskType      String   // initial_idea_extraction
-  provider      String   // e.g., openai, anthropic
-  model         String   
-  promptVersion String
-  inputHash     String?
-  status        String   @default("queued") // queued, running, completed, failed
-  
-  startedAt     DateTime?
-  completedAt   DateTime?
-  
-  tokenUsage    Int      @default(0)
-  latencyMs     Int?
-  failureReason String?
-  retryCount    Int      @default(0)
-
-  projectId     String
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  events        AiRunEvent[]
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model AiRunEvent {
-  id        String   @id @default(cuid())
-  runId     String
-  run       AiRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
-  
-  type      String   // request_started, response_received, error
-  payload   Json?
-  
-  createdAt DateTime @default(now())
-}
-
-model ProjectMember {
-  id        String   @id @default(cuid())
-  role      String   @default("owner") // owner, editor, viewer
-
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, projectId])
-}
-
-model Reference {
-  id        String   @id @default(cuid())
-  type      String   // URL, GITHUB_REPO
-  url       String
-  status    String   @default("pending") // pending, analyzed, failed
-  
-  // JSONB result from background extraction
-  metadata  Json?
-  
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model GeneratedDocument {
-  id        String   @id @default(cuid())
-  type      String   // ZIP_EXPORT, AGENT_INSTRUCTIONS, PRD
-  status    String   @default("pending") // pending, complete, failed
-  
-  storageKey String? // S3/MinIO key for download
-  expiresAt  DateTime?
-  
-  // Point-in-time state of the project when exported
-  snapshot  Json?
-
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-}
-
-// ------------------------------------------------------
-// Billing & Operations
-// ------------------------------------------------------
-
-model Subscription {
-  id        String   @id @default(cuid())
-  plan      String   // cloud_starter, community
-  status    String   @default("active") // active, expired, canceled
-  
-  startsAt  DateTime @default(now())
-  expiresAt DateTime?
-
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  payments  Payment[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Payment {
-  id             String       @id @default(cuid())
-  provider       String       // sumopod
-  providerRef    String?      // external invoice ID
-  amount         Int          // usually 49000
-  currency       String       @default("IDR")
-  status         String       @default("pending") // pending, paid, failed, expired
-  
-  // Webhook payloads and provider-specific details
-  metadata       Json?
-
-  subscriptionId String
-  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-}
-
-model UsageEvent {
+model ProviderProfile {
   id          String   @id @default(cuid())
-  userId      String   // Kept flat for easy aggregation
-  type        String   // ai_generation, ai_analysis
-  costTokens  Int      @default(0)
-  
-  // Router metadata (latency, provider, model)
-  metadata    Json?
-
+  name        String
+  provider    String
+  baseUrl     String?
+  model       String?
+  credentialRef String?
+  isActive    Boolean  @default(false)
   createdAt   DateTime @default(now())
-}
+  updatedAt   DateTime @updatedAt
 
-model BackgroundJob {
-  id             String   @id @default(cuid())
-  type           String   // initial_idea_extraction, website_reference_analysis, zip_generation
-  status         String   @default("queued") // queued, running, completed, failed
-  payload        Json?
-  result         Json?
-  failureReason  String?
-  progress       Int      @default(0)
-  retryCount     Int      @default(0)
-  idempotencyKey String   @unique
-  startedAt      DateTime?
-  completedAt    DateTime?
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  @@index([status, updatedAt])
+  @@index([isActive, updatedAt])
 }

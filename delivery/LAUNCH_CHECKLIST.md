@@ -1,13 +1,41 @@
-# Launch Checklist
+# Agentic V1 Review Checklist
 
-- [ ] End-to-end idea-to-ZIP flow tested with three different project types.
-- [ ] Generated questions pass the project-specific quality rule in sampled review.
-- [ ] Private-network fetch, code execution, and raw secret logging are blocked.
-- [ ] User can delete a project and receives the stated deletion result.
-- [ ] Export download expires and does not expose another workspace.
-- [ ] Payment webhook signature, amount, status, and duplicate event tests pass.
-- [ ] Cloud Starter page says “30-day access,” not auto-renew or unlimited AI.
-- [ ] SumoPod live KYC, settlement, QRIS eligibility, and current webhook docs are verified.
-- [ ] Privacy, terms, support contact, and incident path are published.
-- [ ] Backup restore rehearsal succeeds.
-- [ ] Pilot feedback from 10 builders has no P0 data-loss or payment-access issue.
+## Product
+
+- [ ] Decision Debt is explained consistently in README, PRD, positioning, and UI copy.
+- [ ] The chat asks contextual questions instead of rendering a generic questionnaire.
+- [ ] Confirmed decisions, assumptions, contradictions, provenance, and readiness remain visible.
+- [ ] The app stops at BRD, PRD, and ERD generation and does not generate application source code.
+
+## Local setup
+
+- [ ] Fresh install works without an account, payment, external database, object storage, or Docker.
+- [ ] SQLite migration and project persistence pass on Windows.
+- [ ] Previous Alpha database is documented as not automatically migrated.
+- [ ] Provider credentials are not stored in canonical project state or exports.
+
+## Agent safety
+
+- [ ] Structured actions validate before state mutation.
+- [ ] User decisions cannot be silently overwritten.
+- [ ] Website and GitHub content is untrusted evidence.
+- [ ] Private-network fetches, remote code execution, and secret logging are blocked.
+
+## UI
+
+- [ ] First launch is a centered idea composer.
+- [ ] Sidebar, conversation, composer, tool activity, drawers, documents, provider settings, and mobile states work.
+- [ ] Error messages are human-readable and do not leak stack traces or provider payloads.
+
+## Quality
+
+- [ ] Core unit tests pass.
+- [ ] Integration tests pass.
+- [ ] Deterministic mock-provider E2E passes.
+- [ ] Format, lint, typecheck, and build pass.
+- [ ] Real-provider smoke test is run only when credentials are intentionally configured, otherwise reported as skipped.
+
+## GitHub
+
+- [ ] Repository description and topics match Agentic V1, or the exact proposed values are reported when authentication is unavailable.
+- [ ] No release is created and `main` is not merged.

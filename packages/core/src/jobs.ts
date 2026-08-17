@@ -19,12 +19,18 @@ export interface QueueJob<TPayload = unknown> {
 }
 
 export interface QueueProvider {
-  enqueue<TPayload>(job: QueueJob<TPayload>, execute: () => Promise<void>): Promise<void>;
+  enqueue<TPayload>(
+    job: QueueJob<TPayload>,
+    execute: () => Promise<void>,
+  ): Promise<void>;
 }
 
 /** Runs jobs in-process for local development and test environments. */
 export class InlineQueueProvider implements QueueProvider {
-  async enqueue<TPayload>(_job: QueueJob<TPayload>, execute: () => Promise<void>) {
+  async enqueue<TPayload>(
+    _job: QueueJob<TPayload>,
+    execute: () => Promise<void>,
+  ) {
     await execute();
   }
 }
@@ -34,11 +40,18 @@ export class InlineQueueProvider implements QueueProvider {
  * intentionally uses InlineQueueProvider and needs no hosted queue credentials.
  */
 export class HostedQueueProvider implements QueueProvider {
-  async enqueue<TPayload>(_job: QueueJob<TPayload>, _execute: () => Promise<void>) {
+  async enqueue<TPayload>(
+    _job: QueueJob<TPayload>,
+    _execute: () => Promise<void>,
+  ) {
     throw new Error("A hosted queue provider has not been configured");
   }
 }
 
-export function isStaleRunningJob(updatedAt: Date, now = new Date(), staleAfterMs = 10 * 60 * 1000) {
+export function isStaleRunningJob(
+  updatedAt: Date,
+  now = new Date(),
+  staleAfterMs = 10 * 60 * 1000,
+) {
   return now.getTime() - updatedAt.getTime() >= staleAfterMs;
 }

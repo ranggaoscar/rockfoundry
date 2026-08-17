@@ -1,12 +1,15 @@
-# Open Questions
+# Open Product Questions
 
-These questions should be resolved before the corresponding implementation phase. None changes the MVP product boundary.
+These questions describe V1 implementation choices, not a SaaS roadmap.
 
-| ID | Question | Needed by | Owner |
-|---|---|---|---|
-| OQ-001 | Which web stack, database host, and background queue best fit the team’s existing skills? | Phase 1 | Founder |
-| OQ-002 | Which managed model providers meet price, reliability, and project-data privacy needs? | Phase 3 | Founder |
-| OQ-003 | What exact SumoPod signature, expiry, refund, and webhook fields apply to live QRIS? | Phase 3 | Founder |
-| OQ-004 | What free-to-paid transition happens after the Cloud term expires: read-only, BYOK-only, or grace period? | Phase 3 | Founder |
-| OQ-005 | Which OSS license balances adoption and hosted-service protection? | Public repo | Founder |
-| OQ-006 | What support channel and response expectation are sustainable at Rp49,000? | Launch | Founder |
+| ID     | Question                                                                    | Default                                                                   |
+| ------ | --------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| OQ-100 | Which OS credential store should be the first secure provider-key backend?  | Start with OS-aware config boundary and document limitations              |
+| OQ-101 | Should streaming begin with Server-Sent Events or a request/response loop?  | Stabilize structured action contract first                                |
+| OQ-102 | Should project export be a folder, ZIP, or both in the first local release? | Folder plus optional ZIP convenience                                      |
+| OQ-103 | Which artifact preview renderer should be used for Markdown and Mermaid?    | Use a dependency-light local preview                                      |
+| OQ-104 | Which additional domain fixtures best expose generic-question failures?     | Keep marble warehouse, rental booking, sales CRM, and operations fixtures |
+
+## Not V1 questions
+
+Payment providers, subscription pricing, account ownership, hosted database selection, managed AI budgets, Cloud Starter limits, and SumoPod webhooks are cancelled product scope, not open questions.

@@ -1,10 +1,22 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { authClient } from "@/lib/auth-client";
+import {
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Menu,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings2,
+  Square,
+  X,
+} from "lucide-react";
 
 type ProjectData = {
   id: string;
@@ -14,24 +26,14 @@ type ProjectData = {
   version: number;
 };
 
-type ExtractionResult = {
-  extraction: any;
-  merge: any;
-  state: any;
-  runId: string;
-  version: number;
-};
-
+type QuestionOption = { id: string; label: string; description?: string };
 type Question = {
   id: string;
   text: string;
-  answerType: string;
-  options?: { id: string; label: string; description?: string }[];
+  options?: QuestionOption[];
   recommendation?: string;
-  priority: number;
   reasonAsked: string;
 };
-
 type Reference = {
   id: string;
   type: string;
@@ -39,673 +41,930 @@ type Reference = {
   status: string;
   metadata: any;
 };
+type Message = {
+  id: string;
+  role: "user" | "assistant" | "tool" | "system";
+  text: string;
+  detail?: string;
+  options?: QuestionOption[];
+  recommendation?: string;
+  questionId?: string;
+  collapsed?: boolean;
+};
+type Drawer = "context" | "documents" | "settings" | null;
 
-type Revision = { id: string; version: number; createdAt: string };
+function initialMessages(project: ProjectData): Message[] {
+  const idea = project.description?.trim();
+  if (!idea)
+    return [
+      {
+        id: "welcome",
+        role: "assistant",
+        text: "What do you want to build? Tell me the idea in your own words. I will help clarify the product before a coding agent starts.",
+      },
+    ];
+  return [
+    { id: "idea", role: "user", text: idea },
+    {
+      id: "welcome",
+      role: "assistant",
+      text: "I have the starting idea. I will first identify the most important unknown, then ask one focused question at a time. You can answer naturally or choose an option.",
+    },
+  ];
+}
 
-// Tabs
-type Tab = "overview" | "understanding" | "questions" | "references" | "readiness" | "documents" | "history";
+function projectStatus(state: any) {
+  const readiness = String(state?.readiness || "NOT_READY").toUpperCase();
+  if (readiness.includes("BUILD") || readiness.includes("MVP"))
+    return "Build ready";
+  if (readiness.includes("DRAFT") || readiness.includes("PROTOTYPE"))
+    return "Draft ready";
+  return "Discovery";
+}
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "understanding", label: "Understanding" },
-  { id: "questions", label: "Questions" },
-  { id: "references", label: "References" },
-  { id: "readiness", label: "Readiness" },
-  { id: "documents", label: "Documents" },
-  { id: "history", label: "History" },
-];
+function readinessScore(state: any) {
+  const score = state?.generationMetadata?.lastReadinessScore;
+  if (typeof score === "number")
+    return Math.max(0, Math.min(100, Math.round(score)));
+  const decisions = state?.decisions?.length || 0;
+  const questions = state?.openQuestions?.length || 0;
+  return Math.max(12, Math.min(92, 34 + decisions * 8 - questions * 3));
+}
 
-export default function ProjectWorkspace({ params }: { params: Promise<{ id: string }> }) {
+export default function ProjectWorkspace({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const router = useRouter();
-  const [projectId, setProjectId] = useState<string>("");
+  const [projectId, setProjectId] = useState("");
   const [project, setProject] = useState<ProjectData | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
-  const [loading, setLoading] = useState(true);
-  const [pageError, setPageError] = useState("");
-
-  // Idea state
-  const [rawIdea, setRawIdea] = useState("");
-  const [extracting, setExtracting] = useState(false);
-  const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
-
-  // Questions state
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [loadingQuestions, setLoadingQuestions] = useState(false);
-  const [answerLoading, setAnswerLoading] = useState<string | null>(null);
-
-  // References state
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [composer, setComposer] = useState("");
+  const [question, setQuestion] = useState<Question | null>(null);
   const [references, setReferences] = useState<Reference[]>([]);
-  const [newRefUrl, setNewRefUrl] = useState("");
-  const [newRefType, setNewRefType] = useState<"URL" | "GITHUB_REPO">("URL");
-  const [addingRef, setAddingRef] = useState(false);
-
-  // Export state
-  const [exportReady, setExportReady] = useState(false);
+  const [drawer, setDrawer] = useState<Drawer>(null);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [pageError, setPageError] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [revisions, setRevisions] = useState<Revision[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [exportReady, setExportReady] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
 
-  // Initialize project
+  const fetchProject = useCallback(async (id: string) => {
+    const response = await fetch(`/api/projects/${id}`);
+    if (!response.ok)
+      throw new Error(
+        response.status === 404
+          ? "Project not found."
+          : "RockFoundry couldn't load this project.",
+      );
+    const data = await response.json();
+    setProject(data.project);
+    setMessages(initialMessages(data.project));
+    return data.project as ProjectData;
+  }, []);
+
   useEffect(() => {
     params.then(({ id }) => {
       setProjectId(id);
-      fetchProject(id);
+      fetchProject(id)
+        .catch((cause) =>
+          setPageError(
+            cause instanceof Error
+              ? cause.message
+              : "RockFoundry couldn't load this project.",
+          ),
+        )
+        .finally(() => setLoading(false));
     });
-  }, [params]);
+  }, [fetchProject, params]);
 
-  const fetchProject = async (id: string) => {
-    try {
-      setPageError("");
-      const res = await fetch(`/api/projects/${id}`);
-      if (res.status === 401) { router.push("/login"); return; }
-      if (!res.ok) {
-        setPageError(res.status === 404 ? "Project not found or you do not have access." : "Unable to load this project.");
-        return;
-      }
-      const data = await res.json();
-      setProject(data.project);
-      setRawIdea(data.project.description || "");
-    } catch {
-      setPageError("Unable to load this project. Check your connection and try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Extraction
-  const handleExtract = async () => {
-    if (!rawIdea.trim() || !projectId) return;
-    setExtracting(true);
-    try {
-      const res = await fetch(`/api/projects/${projectId}/extract`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawIdea }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setPageError(data.error || "Extraction failed.");
-        return;
-      }
-      setExtractionResult(data);
-      setProject((prev) => prev ? { ...prev, canonicalState: data.state, version: data.version } : prev);
-    } catch {
-      setPageError("Extraction failed. Check your connection and try again.");
-    } finally {
-      setExtracting(false);
-    }
-  };
-
-  // Questions
-  const fetchQuestions = useCallback(async () => {
+  const fetchQuestion = useCallback(async () => {
     if (!projectId) return;
-    setLoadingQuestions(true);
-    try {
-      const res = await fetch(`/api/projects/${projectId}/questions`);
-      const data = await res.json();
-      setQuestions(data.questions || []);
-    } finally {
-      setLoadingQuestions(false);
-    }
+    const response = await fetch(`/api/projects/${projectId}/questions`);
+    if (!response.ok) return;
+    const data = await response.json();
+    setQuestion(data.questions?.[0] || null);
   }, [projectId]);
 
   useEffect(() => {
-    if (tab === "questions" && projectId) fetchQuestions();
-  }, [tab, projectId, fetchQuestions]);
+    const timer = window.setTimeout(() => {
+      void fetchQuestion();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchQuestion]);
 
-  const handleAnswer = async (questionId: string, answer: string) => {
-    setAnswerLoading(questionId);
-    try {
-      const res = await fetch(`/api/projects/${projectId}/questions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId, answer }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setPageError(data.error || "Unable to save your answer.");
-        return;
-      }
-      if (data.state) {
-        setProject((prev) => prev ? { ...prev, canonicalState: data.state, version: data.version } : prev);
-      }
-      // Refresh questions
-      fetchQuestions();
-    } catch {
-      setPageError("Unable to save your answer.");
-    } finally {
-      setAnswerLoading(null);
-    }
-  };
-
-  // References
   const fetchReferences = useCallback(async () => {
     if (!projectId) return;
-    const res = await fetch(`/api/projects/${projectId}/references`);
-    const data = await res.json();
+    const response = await fetch(`/api/projects/${projectId}/references`);
+    if (!response.ok) return;
+    const data = await response.json();
     setReferences(data.references || []);
   }, [projectId]);
 
   useEffect(() => {
-    if (tab === "references" && projectId) fetchReferences();
-  }, [tab, projectId, fetchReferences]);
+    const timer = window.setTimeout(() => {
+      void fetchReferences();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchReferences]);
 
-  const handleAddRef = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddingRef(true);
+  const state = project?.canonicalState || {};
+  const score = readinessScore(state);
+  const status = projectStatus(state);
+  const openQuestionCount = state.openQuestions?.length || (question ? 1 : 0);
+
+  const visibleMessages = useMemo(() => {
+    if (
+      !question ||
+      messages.some((message) => message.questionId === question.id)
+    )
+      return messages;
+    return [
+      ...messages,
+      {
+        id: `question-${question.id}`,
+        role: "assistant" as const,
+        text: question.text,
+        detail: question.reasonAsked,
+        options: question.options,
+        recommendation: question.recommendation,
+        questionId: question.id,
+      },
+    ];
+  }, [messages, question]);
+
+  async function runExtraction(rawIdea: string) {
+    if (!projectId || !rawIdea.trim()) return;
+    setWorking(true);
+    setPageError("");
+    setMessages((current) => [
+      ...current,
+      { id: `user-${Date.now()}`, role: "user", text: rawIdea.trim() },
+      {
+        id: `tool-${Date.now()}`,
+        role: "tool",
+        text: "Analyzing project requirements...",
+        detail:
+          "The agent is extracting context and checking the next requirement gap.",
+      },
+    ]);
     try {
-      const res = await fetch(`/api/projects/${projectId}/references`, {
+      const response = await fetch(`/api/projects/${projectId}/extract`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: newRefType, url: newRefUrl }),
+        body: JSON.stringify({ rawIdea: rawIdea.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setPageError(data.error || "Unable to add reference.");
-        return;
-      }
-      setNewRefUrl("");
-      void fetchReferences();
-    } catch {
-      setPageError("Unable to add reference.");
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          data.error || "RockFoundry couldn't analyze that idea.",
+        );
+      setProject((current) =>
+        current
+          ? {
+              ...current,
+              canonicalState: data.state,
+              version: data.version,
+              description: rawIdea.trim(),
+            }
+          : current,
+      );
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: "I have updated the project understanding. I am checking the next decision that could change the product shape.",
+        },
+      ]);
+      await fetchQuestion();
+    } catch (cause) {
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't analyze that idea.",
+      );
+      setMessages((current) => [
+        ...current,
+        {
+          id: `error-${Date.now()}`,
+          role: "system",
+          text: "I couldn't update the project yet. You can retry without losing the conversation.",
+        },
+      ]);
     } finally {
-      setAddingRef(false);
+      setWorking(false);
     }
-  };
+  }
 
-  const fetchRevisions = useCallback(async () => {
-    if (!projectId) return;
-    setLoadingHistory(true);
+  async function sendMessage(event?: FormEvent) {
+    event?.preventDefault();
+    const text = composer.trim();
+    if (!text || working) return;
+    setComposer("");
+    if (!project?.description || messages.length <= 2) {
+      await runExtraction(text);
+      return;
+    }
+    setMessages((current) => [
+      ...current,
+      { id: `user-${Date.now()}`, role: "user", text },
+      {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        text: "I have noted that. I will use it as project context and keep the next question focused.",
+      },
+    ]);
+  }
+
+  async function answerQuestion(option: QuestionOption | string) {
+    if (!projectId || !question || working) return;
+    const answer = typeof option === "string" ? option : option.id;
+    setWorking(true);
+    setMessages((current) => [
+      ...current,
+      {
+        id: `answer-${Date.now()}`,
+        role: "user",
+        text: typeof option === "string" ? option : option.label,
+      },
+    ]);
     try {
-      const res = await fetch(`/api/projects/${projectId}/revisions`);
-      if (!res.ok) throw new Error("Unable to load history");
-      const data = await res.json();
-      setRevisions(data.revisions || []);
-    } catch {
-      setPageError("Unable to load project history.");
+      const response = await fetch(`/api/projects/${projectId}/questions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId: question.id, answer }),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          data.error || "RockFoundry couldn't save that decision.",
+        );
+      setProject((current) =>
+        current
+          ? { ...current, canonicalState: data.state, version: data.version }
+          : current,
+      );
+      setQuestion(null);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `decision-${Date.now()}`,
+          role: "assistant",
+          text: "Decision recorded. I will recalculate readiness and look for the next unresolved requirement.",
+        },
+      ]);
+      await fetchQuestion();
+    } catch (cause) {
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't save that decision.",
+      );
     } finally {
-      setLoadingHistory(false);
+      setWorking(false);
     }
-  }, [projectId]);
+  }
 
-  useEffect(() => {
-    if (tab === "history" && projectId) fetchRevisions();
-  }, [tab, projectId, fetchRevisions]);
+  async function addReferenceFromMessage(text: string) {
+    const url = text.match(/https?:\/\/[^\s)]+/)?.[0];
+    if (!url || !projectId || working) return false;
+    setWorking(true);
+    setMessages((current) => [
+      ...current,
+      { id: `user-${Date.now()}`, role: "user", text },
+      {
+        id: `tool-${Date.now()}`,
+        role: "tool",
+        text: `Inspecting ${new URL(url).hostname}...`,
+        detail: "Public reference content is treated as untrusted evidence.",
+      },
+    ]);
+    try {
+      const type = url.includes("github.com/") ? "GITHUB_REPO" : "URL";
+      const response = await fetch(`/api/projects/${projectId}/references`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, url }),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          data.error || "RockFoundry couldn't inspect that reference.",
+        );
+      setReferences((current) => [data.reference, ...current]);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: "Reference added. I will use it as evidence for the project conversation, not as instructions to copy.",
+        },
+      ]);
+      return true;
+    } catch (cause) {
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't inspect that reference.",
+      );
+      return false;
+    } finally {
+      setWorking(false);
+    }
+  }
 
-  // Export
-  const handleExport = async () => {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = composer.trim();
+    if (text && /https?:\/\//.test(text)) {
+      const handled = await addReferenceFromMessage(text);
+      if (handled) setComposer("");
+      return;
+    }
+    await sendMessage();
+  }
+
+  async function exportProject() {
+    if (!projectId || exporting) return;
     setExporting(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/export`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Export failed");
+      const response = await fetch(`/api/projects/${projectId}/export`, {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          data.error || "RockFoundry couldn't generate the documents.",
+        );
       setExportReady(Boolean(data.downloadUrl));
-    } catch (error) {
-      setPageError(error instanceof Error ? error.message : "Export failed.");
+      setMessages((current) => [
+        ...current,
+        {
+          id: `artifact-${Date.now()}`,
+          role: "tool",
+          text: "BRD, PRD, and ERD generated",
+          detail: "The documents are ready to preview or download.",
+        },
+      ]);
+    } catch (cause) {
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't generate the documents.",
+      );
     } finally {
       setExporting(false);
     }
-  };
-
-  const downloadZip = () => {
-    window.location.assign(`/api/projects/${projectId}/export`);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background dark text-foreground flex items-center justify-center" role="status" aria-live="polite">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-          <p className="text-sm text-muted-foreground animate-pulse">Loading project...</p>
-        </div>
-      </div>
-    );
   }
 
-  if (!project) {
+  if (loading)
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
-        <div className="max-w-md text-center space-y-4" role="alert">
-          <h1 className="text-lg font-semibold">Project unavailable</h1>
-          <p className="text-sm text-gray-600">{pageError || "This project could not be loaded."}</p>
-          <Button onClick={() => router.push("/dashboard")}>Back to projects</Button>
-        </div>
+      <div className="rf-loading" role="status">
+        Loading project...
       </div>
     );
-  }
-
-  const state = project.canonicalState || {};
+  if (!project)
+    return (
+      <div className="rf-loading" role="alert">
+        {pageError || "Project unavailable."}
+      </div>
+    );
 
   return (
-    <div className="min-h-screen bg-background dark text-foreground selection:bg-primary/30 relative">
-      {/* Abstract Background */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[100px]" />
-      </div>
-
-      {/* Top bar */}
-      <nav className="glass sticky top-0 z-50 border-b border-white/5">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground">Projects</Link>
-            <span className="text-border">/</span>
-            <span className="font-medium text-sm text-foreground">{project.name}</span>
-            <span className="text-xs text-gray-400">v{project.version}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400">
-              Readiness: <span className="font-medium text-gray-700">{state.readiness?.replace("_", " ") || "IDEA READY"}</span>
-            </span>
-          </div>
+    <main className="rf-app flex min-h-[100dvh] bg-background text-foreground">
+      <aside className="rf-sidebar hidden w-[264px] shrink-0 flex-col border-r border-border/70 bg-sidebar px-3 py-4 lg:flex">
+        <div className="flex items-center justify-between px-2 pb-5">
+          <button
+            className="flex items-center gap-2 text-sm font-semibold tracking-tight"
+            type="button"
+            onClick={() => router.push("/")}
+          >
+            <span className="rf-mark" aria-hidden="true">
+              R
+            </span>{" "}
+            ROCKFOUNDRY
+          </button>
+          <button
+            className="rf-icon-button"
+            type="button"
+            aria-label="Search projects"
+          >
+            <Search className="size-4" />
+          </button>
         </div>
-      </nav>
+        <button
+          className="rf-new-project"
+          type="button"
+          onClick={() => router.push("/")}
+        >
+          <Plus className="size-4" /> New project
+        </button>
+        <div className="mt-7 px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+          Recent
+        </div>
+        <button
+          className="rf-project-item mt-2"
+          type="button"
+          aria-current="page"
+        >
+          {project.name}
+        </button>
+        <div className="mt-auto border-t border-border/70 pt-3">
+          <button
+            className="rf-sidebar-link"
+            type="button"
+            onClick={() => setDrawer("settings")}
+          >
+            <Settings2 className="size-4" /> Settings
+          </button>
+        </div>
+      </aside>
 
-      <div className="max-w-6xl mx-auto px-6 py-6">
-        {/* Tab navigation */}
-        <div className="flex gap-1 overflow-x-auto border-b mb-6" role="tablist" aria-label="Workspace sections">
-          {TABS.map((t) => (
+      <section className="flex min-w-0 flex-1 flex-col">
+        <header className="rf-topbar flex h-14 items-center gap-3 border-b border-border/70 px-4 lg:px-7">
+          <button
+            className="rf-icon-button lg:hidden"
+            type="button"
+            aria-label="Open projects"
+          >
+            <Menu className="size-4" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{project.name}</div>
             <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              role="tab"
-              aria-selected={tab === t.id}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                tab === t.id
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
+              type="button"
+              className="rf-status-line"
+              onClick={() => setDrawer("context")}
             >
-              {t.label}
+              Discovery: {score}% · {openQuestionCount} important decision
+              {openQuestionCount === 1 ? "" : "s"} remaining
             </button>
-          ))}
-        </div>
+          </div>
+          <button
+            className="rf-header-action hidden sm:inline-flex"
+            type="button"
+            onClick={() => setDrawer("documents")}
+          >
+            <FileText className="size-3.5" /> Documents
+          </button>
+          <button
+            className="rf-icon-button"
+            type="button"
+            aria-label="Open project menu"
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
+        </header>
 
-        {pageError && (
-          <div className="mb-6 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md" role="alert">
-            {pageError}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="rf-conversation mx-auto w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-8">
+            {visibleMessages.map((message) => (
+              <MessageRow
+                key={message.id}
+                message={message}
+                activityOpen={activityOpen}
+                onToggleActivity={() => setActivityOpen((current) => !current)}
+                onAnswer={answerQuestion}
+              />
+            ))}
+            {working && (
+              <div className="rf-typing" role="status">
+                <span className="rf-pulse-dot" /> RockFoundry is thinking
+                through the next useful step...
+              </div>
+            )}
+            {pageError && (
+              <div className="rf-error" role="alert">
+                <span>{pageError}</span>
+                <button type="button" onClick={() => setPageError("")}>
+                  <X className="size-4" />
+                </button>
+              </div>
+            )}
+            {!question && !working && messages.length > 2 && (
+              <div className="mx-auto mt-10 max-w-md text-center text-xs text-muted-foreground">
+                Keep describing the product, paste a reference URL, or open
+                Documents when you want a draft.
+              </div>
+            )}
+          </div>
+
+          <div className="rf-composer-dock">
+            <form
+              onSubmit={handleSubmit}
+              className="mx-auto w-full max-w-[820px] px-4 sm:px-8"
+            >
+              <div className="relative">
+                <label className="sr-only" htmlFor="project-composer">
+                  Message RockFoundry
+                </label>
+                <textarea
+                  id="project-composer"
+                  value={composer}
+                  onChange={(event) => setComposer(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleSubmit(
+                        event as unknown as FormEvent<HTMLFormElement>,
+                      );
+                    }
+                  }}
+                  placeholder="Message RockFoundry..."
+                  rows={1}
+                  className="rf-composer min-h-[54px] w-full resize-none pr-14"
+                  disabled={working}
+                />
+                <button
+                  className="rf-send-button absolute bottom-2.5 right-3"
+                  type={working ? "button" : "submit"}
+                  disabled={working ? false : !composer.trim()}
+                  onClick={working ? () => setWorking(false) : undefined}
+                  aria-label={working ? "Stop generation" : "Send message"}
+                >
+                  {working ? (
+                    <Square className="size-3.5 fill-current" />
+                  ) : (
+                    <ArrowUp className="size-4" />
+                  )}
+                </button>
+              </div>
+              <div className="flex items-center justify-between px-1 py-2 text-[11px] text-muted-foreground">
+                <span>Enter to send · Shift+Enter for a new line</span>
+                <span>{status}</span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      {drawer && (
+        <DrawerPanel
+          drawer={drawer}
+          project={project}
+          state={state}
+          references={references}
+          exportReady={exportReady}
+          exporting={exporting}
+          onClose={() => setDrawer(null)}
+          onExport={exportProject}
+          onDownload={() =>
+            window.location.assign(`/api/projects/${projectId}/export`)
+          }
+        />
+      )}
+    </main>
+  );
+}
+
+function MessageRow({
+  message,
+  activityOpen,
+  onToggleActivity,
+  onAnswer,
+}: {
+  message: Message;
+  activityOpen: boolean;
+  onToggleActivity: () => void;
+  onAnswer: (option: QuestionOption | string) => void;
+}) {
+  if (message.role === "tool") {
+    return (
+      <div className="rf-tool-row">
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 text-left"
+          onClick={onToggleActivity}
+        >
+          <span className="rf-tool-check">✓</span>
+          <span className="flex-1 text-sm">{message.text}</span>
+          {activityOpen ? (
+            <ChevronDown className="size-4" />
+          ) : (
+            <ChevronRight className="size-4" />
+          )}
+        </button>
+        {activityOpen && (
+          <div className="mt-2 pl-7 text-xs leading-5 text-muted-foreground">
+            {message.detail ||
+              "Tool activity is shown at a useful level. Raw payloads remain hidden."}
           </div>
         )}
+      </div>
+    );
+  }
+  if (message.role === "system")
+    return (
+      <div className="rf-system-row" role="status">
+        {message.text}
+      </div>
+    );
+  const isUser = message.role === "user";
+  return (
+    <div
+      className={`rf-message-row ${isUser ? "rf-message-user" : "rf-message-agent"}`}
+    >
+      <div
+        className={`rf-avatar ${isUser ? "rf-avatar-user" : "rf-avatar-agent"}`}
+      >
+        {isUser ? "You" : "R"}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 text-xs font-medium text-muted-foreground">
+          {isUser ? "You" : "RockFoundry"}
+        </div>
+        <div className="rf-message-text">{message.text}</div>
+        {message.detail && (
+          <div className="mt-2 text-xs leading-5 text-muted-foreground">
+            {message.detail}
+          </div>
+        )}
+        {message.options && (
+          <div className="mt-4 space-y-2">
+            {message.options.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className="rf-option"
+                onClick={() => onAnswer(option)}
+              >
+                <span>
+                  <span className="font-medium">{option.label}</span>
+                  {option.description && (
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {option.description}
+                    </span>
+                  )}
+                </span>
+                <ChevronRight className="size-4 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
+        )}
+        {message.recommendation && (
+          <p className="mt-3 text-xs italic text-muted-foreground">
+            Recommendation: {message.recommendation}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
-        {/* Tab content */}
-        {tab === "overview" && (
-          <OverviewTab
+function DrawerPanel({
+  drawer,
+  project,
+  state,
+  references,
+  exportReady,
+  exporting,
+  onClose,
+  onExport,
+  onDownload,
+}: {
+  drawer: Exclude<Drawer, null>;
+  project: ProjectData;
+  state: any;
+  references: Reference[];
+  exportReady: boolean;
+  exporting: boolean;
+  onClose: () => void;
+  onExport: () => void;
+  onDownload: () => void;
+}) {
+  const title =
+    drawer === "context"
+      ? "Project context"
+      : drawer === "documents"
+        ? "Documents"
+        : "AI Provider";
+  return (
+    <div className="rf-drawer-backdrop" role="presentation" onClick={onClose}>
+      <aside
+        className="rf-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between border-b border-border/70 px-5 py-4">
+          <div>
+            <h2 className="text-sm font-semibold">{title}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{project.name}</p>
+          </div>
+          <button
+            className="rf-icon-button"
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        {drawer === "context" && (
+          <ContextContent state={state} references={references} />
+        )}
+        {drawer === "documents" && (
+          <DocumentsContent
             state={state}
-            rawIdea={rawIdea}
-            setRawIdea={setRawIdea}
-            extracting={extracting}
-            onExtract={handleExtract}
-            extractionResult={extractionResult}
-          />
-        )}
-
-        {tab === "understanding" && (
-          <UnderstandingTab state={state} extractionResult={extractionResult} />
-        )}
-
-        {tab === "questions" && (
-          <QuestionsTab
-            questions={questions}
-            loading={loadingQuestions}
-            answerLoading={answerLoading}
-            onAnswer={handleAnswer}
-            onRefresh={fetchQuestions}
-          />
-        )}
-
-        {tab === "references" && (
-          <ReferencesTab
-            references={references}
-            newRefUrl={newRefUrl}
-            setNewRefUrl={setNewRefUrl}
-            newRefType={newRefType}
-            setNewRefType={setNewRefType}
-            addingRef={addingRef}
-            onAdd={handleAddRef}
-          />
-        )}
-
-        {tab === "readiness" && (
-          <ReadinessTab state={state} />
-        )}
-
-        {tab === "documents" && (
-          <DocumentsTab
             exportReady={exportReady}
             exporting={exporting}
-            onExport={handleExport}
-            onDownload={downloadZip}
+            onExport={onExport}
+            onDownload={onDownload}
           />
         )}
-
-        {tab === "history" && (
-          <HistoryTab revisions={revisions} loading={loadingHistory} />
-        )}
-      </div>
+        {drawer === "settings" && <ProviderContent />}
+      </aside>
     </div>
   );
 }
 
-// ========== OVERVIEW TAB ==========
-function OverviewTab({ state, rawIdea, setRawIdea, extracting, onExtract, extractionResult }: any) {
+function ContextContent({
+  state,
+  references,
+}: {
+  state: any;
+  references: Reference[];
+}) {
+  const decisions = state.decisions || [];
+  const assumptions = state.assumptions || [];
+  const contradictions = state.contradictions || [];
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-7 overflow-y-auto px-5 py-5">
       <div>
-        <h2 className="text-lg font-semibold mb-2">Your product idea</h2>
-        <textarea
-          value={rawIdea}
-          onChange={(e: any) => setRawIdea(e.target.value)}
-          placeholder="Describe your product idea here. The more detail, the better the extraction..."
-          className="w-full h-40 p-4 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gray-900"
-        />
-        <div className="mt-3 flex items-center gap-3">
-          <Button onClick={onExtract} disabled={extracting || !rawIdea.trim()}>
-            {extracting ? "Analyzing..." : state.normalizedSummary ? "Re-analyze idea" : "Analyze idea"}
-          </Button>
-          {state.normalizedSummary && (
-            <span className="text-xs text-green-600">✓ Extracted and merged into project state</span>
-          )}
+        <div className="mb-2 flex items-center justify-between text-xs">
+          <span>Business</span>
+          <span>{state.readiness?.business ?? "-"}</span>
+        </div>
+        <div className="rf-meter">
+          <span style={{ width: `${state.readiness?.business ?? 40}%` }} />
         </div>
       </div>
-
-      {state.normalizedSummary && (
-        <div className="p-4 bg-white border rounded-lg">
-          <h3 className="text-sm font-medium text-gray-500 mb-1">Normalized summary</h3>
-          <p className="text-sm">{state.normalizedSummary}</p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-4">
-        {state.targetUsers?.length > 0 && (
-          <div className="p-4 bg-white border rounded-lg">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Target users</h3>
-            <ul className="text-sm space-y-1">
-              {state.targetUsers.map((u: string, i: number) => <li key={i}>• {u}</li>)}
-            </ul>
-          </div>
-        )}
-        {state.entities?.length > 0 && (
-          <div className="p-4 bg-white border rounded-lg">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Core entities</h3>
-            <ul className="text-sm space-y-1">
-              {state.entities.map((e: string, i: number) => <li key={i}>• {e}</li>)}
-            </ul>
-          </div>
-        )}
-        {state.features?.length > 0 && (
-          <div className="p-4 bg-white border rounded-lg">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Features</h3>
-            <ul className="text-sm space-y-1">
-              {state.features.map((f: string, i: number) => <li key={i}>• {f}</li>)}
-            </ul>
-          </div>
-        )}
-        {state.assumptions?.length > 0 && (
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-            <h3 className="text-sm font-medium text-amber-700 mb-2">Assumptions ({state.assumptions.length})</h3>
-            <ul className="text-sm space-y-1 text-amber-800">
-              {state.assumptions.slice(0, 5).map((a: any, i: number) => (
-                <li key={i}>• {a.statement}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ========== UNDERSTANDING TAB ==========
-function UnderstandingTab({ state, extractionResult }: any) {
-  return (
-    <div className="max-w-2xl space-y-6">
-      <h2 className="text-lg font-semibold">What the AI understood</h2>
-
-      {extractionResult?.merge && (
-        <div className="p-4 bg-gray-50 border rounded-lg text-sm space-y-1">
-          <p className="font-medium">Merge results:</p>
-          {extractionResult.merge.appliedChanges?.map((c: string, i: number) => (
-            <p key={i} className="text-green-700">✓ {c}</p>
-          ))}
-          {extractionResult.merge.skippedChanges?.map((c: string, i: number) => (
-            <p key={i} className="text-gray-500">⊘ {c}</p>
-          ))}
-          {extractionResult.merge.assumptionsCreated > 0 && (
-            <p className="text-amber-600">⚠ {extractionResult.merge.assumptionsCreated} assumptions created</p>
-          )}
-          {extractionResult.merge.questionsCreated > 0 && (
-            <p className="text-blue-600">? {extractionResult.merge.questionsCreated} open questions created</p>
-          )}
-          {extractionResult.merge.conflictsDetected > 0 && (
-            <p className="text-red-600">⚠ {extractionResult.merge.conflictsDetected} potential contradictions detected</p>
-          )}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4">
-        <Section title="Objectives" items={state.objectives} />
-        <Section title="Constraints" items={state.constraints} />
-        <Section title="Integrations" items={state.integrations} />
-        <Section title="Open questions" items={state.openQuestions} />
-        <Section title="Risks" items={state.risks} />
-      </div>
-
-      {state.contradictions?.length > 0 && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <h3 className="text-sm font-medium text-red-700 mb-2">Contradictions detected</h3>
-          {state.contradictions.map((c: any, i: number) => (
-            <div key={i} className="text-sm text-red-800 space-y-1">
-              <p><span className="font-medium">[{c.severity}]</span> {c.explanation}</p>
-              <p className="text-red-600 text-xs">→ {c.recommendedResolution}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Section({ title, items }: { title: string; items: string[] }) {
-  if (!items?.length) return null;
-  return (
-    <div className="p-4 bg-white border rounded-lg">
-      <h3 className="text-sm font-medium text-gray-500 mb-2">{title}</h3>
-      <ul className="text-sm space-y-1">
-        {items.map((item: string, i: number) => <li key={i}>• {item}</li>)}
-      </ul>
-    </div>
-  );
-}
-
-// ========== QUESTIONS TAB ==========
-function QuestionsTab({ questions, loading, answerLoading, onAnswer, onRefresh }: any) {
-  return (
-    <div className="max-w-2xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Adaptive questions</h2>
-        <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading}>
-          {loading ? "Loading..." : "Refresh"}
-        </Button>
-      </div>
-
-      {questions.length === 0 && !loading && (
-        <div className="text-center py-12 text-gray-500">
-          <p>No more questions right now.</p>
-          <p className="text-sm mt-1">Add more details to your idea or check the readiness tab.</p>
-        </div>
-      )}
-
-      {questions.map((q: Question) => (
-        <div key={q.id} className="p-5 bg-white border rounded-lg">
-          <p className="text-sm font-medium mb-1">{q.text}</p>
-          <p className="text-xs text-gray-400 mb-3">{q.reasonAsked}</p>
-
-          {q.options && q.options.length > 0 && (
-            <div className="space-y-2">
-              {q.options.map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => onAnswer(q.id, opt.id)}
-                  disabled={answerLoading !== null}
-                  className="w-full text-left p-3 border rounded-md text-sm hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50"
-                >
-                  <span className="font-medium">{opt.label}</span>
-                  {opt.description && <span className="text-gray-500 ml-2">— {opt.description}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {q.recommendation && (
-            <p className="mt-2 text-xs text-gray-500 italic">Recommendation: {q.recommendation}</p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ========== REFERENCES TAB ==========
-function ReferencesTab({ references, newRefUrl, setNewRefUrl, newRefType, setNewRefType, addingRef, onAdd }: any) {
-  return (
-    <div className="max-w-2xl space-y-6">
-      <h2 className="text-lg font-semibold">References</h2>
-      <p className="text-sm text-gray-600">Add websites or GitHub repos to help RockFoundry understand your product better.</p>
-
-      <form onSubmit={onAdd} className="p-4 bg-white border rounded-lg space-y-3">
-        <div className="flex gap-2">
-          <select
-            value={newRefType}
-            onChange={(e) => setNewRefType(e.target.value)}
-            className="px-3 py-2 border rounded-md text-sm"
-          >
-            <option value="URL">Website URL</option>
-            <option value="GITHUB_REPO">GitHub Repository</option>
-          </select>
-          <input
-            type="url"
-            required
-            value={newRefUrl}
-            onChange={(e) => setNewRefUrl(e.target.value)}
-            placeholder={newRefType === "URL" ? "https://example.com" : "https://github.com/user/repo"}
-            className="flex-1 px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-          />
-          <Button type="submit" size="sm" disabled={addingRef}>
-            {addingRef ? "Adding..." : "Add"}
-          </Button>
-        </div>
-      </form>
-
-      {references.length === 0 ? (
-        <p className="text-sm text-gray-500 text-center py-8">No references added yet.</p>
-      ) : (
-        <div className="space-y-2">
-          {references.map((ref: Reference) => (
-            <div key={ref.id} className="p-4 bg-white border rounded-lg flex items-center justify-between">
-              <div>
-                <span className="text-xs font-medium bg-gray-100 px-2 py-0.5 rounded mr-2">{ref.type}</span>
-                <a href={ref.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
-                  {ref.url}
-                </a>
-              </div>
-              <span className={`text-xs ${ref.status === "analyzed" ? "text-green-600" : "text-gray-400"}`}>
-                {ref.status}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ========== READINESS TAB ==========
-function ReadinessTab({ state }: { state: any }) {
-  const score = state.generationMetadata?.lastReadinessScore || 0;
-  const readiness = state.readiness?.replace("_", " ") || "IDEA READY";
-
-  return (
-    <div className="max-w-2xl space-y-6">
-      <h2 className="text-lg font-semibold">Build readiness</h2>
-
-      {/* Score */}
-      <div className="p-6 bg-white border rounded-lg text-center">
-        <div className="text-4xl font-bold">{readiness}</div>
-        <p className="text-sm text-gray-500 mt-2">Current readiness level</p>
-      </div>
-
-      {/* Data summary */}
-      <div className="grid grid-cols-2 gap-4">
-        <StatCard label="Target users" count={state.targetUsers?.length || 0} />
-        <StatCard label="Entities" count={state.entities?.length || 0} />
-        <StatCard label="Features" count={state.features?.length || 0} />
-        <StatCard label="Objectives" count={state.objectives?.length || 0} />
-        <StatCard label="Decisions" count={state.decisions?.length || 0} />
-        <StatCard label="Open questions" count={state.openQuestions?.length || 0} />
-        <StatCard label="Assumptions" count={state.assumptions?.length || 0} />
-        <StatCard label="Contradictions" count={state.contradictions?.length || 0} alert={state.contradictions?.length > 0} />
-      </div>
-
-      {/* Contradictions */}
-      {state.contradictions?.length > 0 && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <h3 className="text-sm font-medium text-red-700 mb-2">Blocking contradictions</h3>
-          {state.contradictions.map((c: any, i: number) => (
-            <div key={i} className="text-sm text-red-800">
-              <p><span className="font-medium">[{c.severity}]</span> {c.explanation}</p>
-              <p className="text-xs text-red-600 ml-4">→ {c.recommendedResolution}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatCard({ label, count, alert }: { label: string; count: number; alert?: boolean }) {
-  return (
-    <div className={`p-4 border rounded-lg ${alert ? "bg-red-50 border-red-200" : "bg-white"}`}>
-      <div className="text-2xl font-bold">{count}</div>
-      <div className="text-sm text-gray-500">{label}</div>
-    </div>
-  );
-}
-
-// ========== DOCUMENTS TAB ==========
-function HistoryTab({ revisions, loading }: { revisions: Revision[]; loading: boolean }) {
-  return (
-    <div className="max-w-2xl space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Project history</h2>
-        <p className="mt-1 text-sm text-gray-600">A read-only timeline of saved project state versions.</p>
+        <div className="mb-2 flex items-center justify-between text-xs">
+          <span>Product</span>
+          <span>{state.readiness?.product ?? "-"}</span>
+        </div>
+        <div className="rf-meter">
+          <span style={{ width: `${state.readiness?.product ?? 28}%` }} />
+        </div>
       </div>
-      {loading ? (
-        <div className="p-6 bg-white border rounded-lg text-sm text-gray-500" role="status">Loading history...</div>
-      ) : revisions.length === 0 ? (
-        <div className="p-6 bg-white border rounded-lg text-sm text-gray-500" role="status">No saved revisions yet. Analyze your idea to create the first revision.</div>
-      ) : (
-        <ol className="space-y-3" aria-label="Project revisions">
-          {revisions.map((revision) => (
-            <li key={revision.id} className="p-4 bg-white border rounded-lg flex items-center justify-between">
-              <span className="font-medium text-sm">Version {revision.version}</span>
-              <time className="text-xs text-gray-500" dateTime={revision.createdAt}>{new Date(revision.createdAt).toLocaleString()}</time>
+      <ContextList
+        title="Decisions"
+        items={decisions.map(
+          (item: any) => item.title || item.description || String(item),
+        )}
+        empty="No confirmed decisions yet."
+      />
+      <ContextList
+        title="Assumptions"
+        items={assumptions.map((item: any) => item.statement || String(item))}
+        empty="No assumptions yet."
+      />
+      <ContextList
+        title="Contradictions"
+        items={contradictions.map(
+          (item: any) => item.explanation || String(item),
+        )}
+        empty="No contradictions found."
+      />
+      <ContextList
+        title="References"
+        items={references.map((item) => item.url)}
+        empty="No references yet."
+      />
+    </div>
+  );
+}
+
+function ContextList({
+  title,
+  items,
+  empty,
+}: {
+  title: string;
+  items: string[];
+  empty: string;
+}) {
+  return (
+    <section>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {title}
+      </h3>
+      {items.length ? (
+        <ul className="space-y-2 text-sm leading-5">
+          {items.slice(0, 6).map((item, index) => (
+            <li
+              key={`${item}-${index}`}
+              className="border-b border-border/50 pb-2 last:border-0"
+            >
+              {item}
             </li>
           ))}
-        </ol>
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">{empty}</p>
+      )}
+    </section>
+  );
+}
+
+function DocumentsContent({
+  state,
+  exportReady,
+  exporting,
+  onExport,
+  onDownload,
+}: {
+  state: any;
+  exportReady: boolean;
+  exporting: boolean;
+  onExport: () => void;
+  onDownload: () => void;
+}) {
+  const status = state.readiness ? projectStatus(state) : "Draft";
+  return (
+    <div className="space-y-5 px-5 py-5">
+      <p className="text-sm leading-6 text-muted-foreground">
+        Generate the three build documents from the current canonical state.
+      </p>
+      <div className="space-y-2">
+        {["BRD", "PRD", "ERD"].map((doc) => (
+          <div
+            key={doc}
+            className="flex items-center gap-3 border-b border-border/60 py-3"
+          >
+            <FileText className="size-4 text-muted-foreground" />
+            <span className="flex-1 text-sm font-medium">{doc}.md</span>
+            <span className="text-xs text-muted-foreground">
+              {exportReady ? "Ready" : status}
+            </span>
+          </div>
+        ))}
+      </div>
+      <button
+        className="rf-primary-button w-full"
+        type="button"
+        onClick={onExport}
+        disabled={exporting}
+      >
+        {exporting ? (
+          <>
+            <RefreshCw className="size-4 animate-spin" /> Generating
+          </>
+        ) : (
+          <>
+            <FileText className="size-4" /> Generate documents
+          </>
+        )}
+      </button>
+      {exportReady && (
+        <button
+          className="rf-secondary-button w-full"
+          type="button"
+          onClick={onDownload}
+        >
+          Download project
+        </button>
       )}
     </div>
   );
 }
 
-function DocumentsTab({ exportReady, exporting, onExport, onDownload }: { exportReady: boolean; exporting: boolean; onExport: () => void; onDownload: () => void }) {
+function ProviderContent() {
   return (
-    <div className="max-w-2xl space-y-6">
-      <h2 className="text-lg font-semibold">Build Package</h2>
-      <p className="text-sm text-gray-600">Generate a documentation package for your coding agent, then download the ZIP.</p>
-      <div className="flex gap-3">
-        <Button onClick={onExport} disabled={exporting}>{exporting ? "Generating..." : "Generate Build Package"}</Button>
-        {exportReady && <Button variant="outline" onClick={onDownload}>Download ZIP</Button>}
-      </div>
-      {exportReady && <p className="rounded-lg border bg-white p-3 text-sm text-green-700">Build package ready for download.</p>}
+    <div className="space-y-5 px-5 py-5">
+      <p className="text-sm leading-6 text-muted-foreground">
+        Configure your own provider when RockFoundry needs AI. Credentials stay
+        local and never enter project documents.
+      </p>
+      <label className="rf-field">
+        Provider
+        <select defaultValue="openai-compatible">
+          <option value="openai-compatible">OpenAI Compatible</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="gemini">Gemini</option>
+          <option value="mock">Mock provider</option>
+        </select>
+      </label>
+      <label className="rf-field">
+        Base URL
+        <input defaultValue="https://api.openai.com/v1" />
+      </label>
+      <label className="rf-field">
+        API key
+        <input type="password" placeholder="Stored locally" />
+      </label>
+      <label className="rf-field">
+        Model
+        <input placeholder="model-name" />
+      </label>
+      <button className="rf-secondary-button w-full" type="button">
+        Test connection
+      </button>
     </div>
   );
 }

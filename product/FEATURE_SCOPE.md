@@ -1,19 +1,29 @@
-# Feature Scope
+# Agentic V1 Feature Scope
 
 ## Build now
 
-| Area | MVP capability |
-|---|---|
-| Projects | Create, rename, resume, delete own project |
-| Discovery | Extract profile, assumptions, adaptive rounds of up to 3 questions |
-| Decisions | Accept, edit, or reject recommendations; append immutable log |
-| Quality | Detect contradictions and readiness blockers |
-| References | Analyze up to 3 URLs and 1 public GitHub repo per project |
-| Output | Render package Markdown and download ZIP |
-| Accounts | Email sign-in, workspace ownership, plan enforcement |
-| Billing | QRIS invoice, verified webhook, 30-day entitlement |
-| AI | BYOK for self-hosted; managed gateway for Cloud Starter |
+| Area            | V1 capability                                                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Workspace       | Chat-first empty state, project sidebar, active conversation, responsive drawers                                            |
+| Projects        | Create, rename, reopen, and delete local projects                                                                           |
+| Conversation    | Persist messages, agent questions, inline options, natural-language answers, retry and stop states                          |
+| Canonical state | Typed project state with facts, requirements, decisions, assumptions, contradictions, references, readiness, and provenance |
+| Agent runtime   | Structured actions routed through deterministic handlers                                                                    |
+| Questions       | Contextual, project-specific, high-value questions with quality validation                                                  |
+| Providers       | Explicit mock provider, OpenAI-compatible, Anthropic, Gemini, local config                                                  |
+| References      | Safe public website and GitHub inspection, license reporting, prompt-injection isolation                                    |
+| Artifacts       | Deterministic BRD, PRD, ERD renderers and cross-document consistency validation                                             |
+| Export          | Simple project folder or ZIP containing BRD.md, PRD.md, and ERD.md                                                          |
+| Settings        | Local provider configuration and connection test                                                                            |
+
+## Do not build
+
+- accounts, authentication, sessions, teams, or hosted ownership;
+- billing, payments, SumoPod, plans, entitlements, or usage credits;
+- managed AI billing or RockFoundry cloud storage;
+- PostgreSQL, Redis, MinIO, cloud queues, or required Docker services;
+- application code generation, deployment, or external writes.
 
 ## Definition of done
 
-The builder can export a package whose manifest reflects every accepted decision and whose agent prompt directs the agent to the correct files.
+A user can install locally, start with an idea in chat, answer contextual questions, inspect a public reference, review readiness and decisions, generate all three artifacts, export them, and reopen the project without a RockFoundry account.

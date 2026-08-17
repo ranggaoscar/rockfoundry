@@ -1,121 +1,171 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
+import {
+  analyzeGitHubRepo,
+  parseGitHubUrl,
+  safeExtractFromUrl,
+  type Reference as CoreReference,
+} from "@rockfoundry/core";
 import { prisma } from "@rockfoundry/db";
-import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
-import { runJob } from "@/lib/jobs";
-import { getSubscriptionInfo } from "@/lib/entitlements";
-import { safeExtractFromUrl, analyzeGitHubRepo, parseGitHubUrl } from "@rockfoundry/core";
+import {
+  getLocalProject,
+  jsonError,
+  parseProjectState,
+  saveProjectState,
+} from "@/lib/local-project";
+import { z } from "zod";
 
-// GET /api/projects/[id]/references — list references
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+const ReferenceInput = z.object({
+  url: z.string().url(),
+  type: z.enum(["URL", "GITHUB_REPO"]).default("URL"),
+});
+
+function publicReference(reference: {
+  id: string;
+  projectId: string;
+  type: string;
+  url: string;
+  status: string;
+  metadata: string | null;
+  untrusted: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    ...reference,
+    metadata: reference.metadata ? JSON.parse(reference.metadata) : undefined,
+  };
+}
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
-    const session = await requireAuth(req);
     const { id } = await params;
-
-    const member = await prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId: session.user.id, projectId: id } },
-    });
-    if (!member) return jsonError("Project not found", 404);
-
+    if (!(await getLocalProject(id)))
+      return jsonError("Project not found", 404);
     const references = await prisma.reference.findMany({
       where: { projectId: id },
       orderBy: { createdAt: "desc" },
     });
-
-    return Response.json({ references });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    return jsonError("Internal error", 500);
+    return Response.json({ references: references.map(publicReference) });
+  } catch {
+    return jsonError("RockFoundry couldn't load references.");
   }
 }
 
-// POST /api/projects/[id]/references — add a new reference
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const project = await getLocalProject(id);
+  if (!project) return jsonError("Project not found", 404);
+  let input: z.infer<typeof ReferenceInput>;
   try {
-    const session = await requireAuth(req);
-    const { id } = await params;
+    input = ReferenceInput.parse(await req.json());
+  } catch {
+    return jsonError("Paste a valid public http(s) URL.", 400);
+  }
+  const parsedUrl = new URL(input.url);
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:")
+    return jsonError("Only public HTTP/HTTPS references are supported.", 400);
+  const repoInfo =
+    input.type === "GITHUB_REPO" ? parseGitHubUrl(input.url) : null;
+  if (
+    input.type === "GITHUB_REPO" &&
+    (parsedUrl.hostname !== "github.com" || !repoInfo)
+  )
+    return jsonError("Use a public GitHub repository URL.", 400);
 
-    const member = await prisma.projectMember.findUnique({
-      where: { userId_projectId: { userId: session.user.id, projectId: id } },
+  const reference = await prisma.reference.create({
+    data: {
+      projectId: id,
+      url: input.url,
+      type: input.type,
+      status: "PENDING",
+      untrusted: true,
+    },
+  });
+  const toolRun = await prisma.toolRun.create({
+    data: {
+      projectId: id,
+      toolName:
+        input.type === "GITHUB_REPO"
+          ? "github_reference_inspect"
+          : "web_reference_inspect",
+      status: "RUNNING",
+      inputSummary: input.url,
+      startedAt: new Date(),
+    },
+  });
+  try {
+    let metadata: Record<string, unknown>;
+    if (input.type === "GITHUB_REPO") {
+      const analysis = await analyzeGitHubRepo(repoInfo!);
+      if (!analysis.success || !analysis.data)
+        throw new Error("reference inspection failed");
+      metadata = analysis.data as unknown as Record<string, unknown>;
+    } else {
+      const analysis = await safeExtractFromUrl(input.url);
+      if (!analysis.success) throw new Error("reference inspection failed");
+      metadata = {
+        title: analysis.title,
+        headers: analysis.headers?.slice(0, 20),
+        textPreview: analysis.text?.slice(0, 5000),
+        summary: analysis.title || analysis.text?.slice(0, 240),
+      };
+    }
+    const updated = await prisma.reference.update({
+      where: { id: reference.id },
+      data: { status: "ANALYZED", metadata: JSON.stringify(metadata) },
     });
-    if (!member) return jsonError("Project not found", 404);
-    const { info, service } = await getSubscriptionInfo(session.user.id);
-    const entitlement = service.checkReferenceLimit(info);
-    if (!entitlement.allowed) return jsonError(entitlement.reason || "Reference limit reached", 429);
-
-    const body = await req.json();
-    const { url, type = "URL" } = body;
-    
-    if (!url) return jsonError("URL is required", 400);
-
-    // Validate URL format
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      return jsonError("Invalid URL format", 400);
-    }
-
-    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-      return jsonError("Only HTTP/HTTPS URLs are supported", 400);
-    }
-
-    // Validate for GitHub repos
-    if (type === "GITHUB_REPO") {
-      if (parsedUrl.hostname !== "github.com") {
-        return jsonError("GitHub references must point to github.com", 400);
-      }
-      const repoInfo = parseGitHubUrl(url);
-      if (!repoInfo) {
-        return jsonError("Invalid GitHub URL format. Use https://github.com/owner/repo", 400);
-      }
-    }
-
-    const ref = await prisma.reference.create({
+    await prisma.toolRun.update({
+      where: { id: toolRun.id },
       data: {
-        projectId: id,
-        url,
-        type,
-        status: "processing",
+        status: "COMPLETED",
+        outputSummary: "Reference analyzed as untrusted evidence.",
+        completedAt: new Date(),
       },
     });
-
-    try {
-      const jobType = type === "GITHUB_REPO" ? "github_reference_analysis" : "website_reference_analysis";
-      await runJob(jobType, `reference:${ref.id}`, { referenceId: ref.id }, async () => {
-        if (type === "GITHUB_REPO") {
-          const analysis = await analyzeGitHubRepo(parseGitHubUrl(url)!);
-          if (!analysis.success) throw new Error(analysis.error || "Reference analysis failed");
-          return prisma.reference.update({ where: { id: ref.id }, data: { status: "analyzed", metadata: analysis.data as never } });
-        }
-
-        const analysis = await safeExtractFromUrl(url);
-        if (!analysis.success) throw new Error(analysis.error || "Reference analysis failed");
-        return prisma.reference.update({
-          where: { id: ref.id },
-          data: {
-            status: "analyzed",
-            metadata: {
-              title: analysis.title,
-              headers: analysis.headers?.slice(0, 20),
-              textPreview: analysis.text?.substring(0, 5000),
-              summary: analysis.title || analysis.text?.substring(0, 200) || "Analyzed",
-            },
-          },
-        });
-      });
-      const updated = await prisma.reference.findUnique({ where: { id: ref.id } });
-      return Response.json({ reference: updated });
-    } catch (error) {
-      await prisma.reference.update({
-        where: { id: ref.id },
-        data: { status: "failed", metadata: { error: error instanceof Error ? error.message : "Reference analysis failed" } },
-      });
-      return jsonError(error instanceof Error ? `Reference analysis failed: ${error.message}` : "Reference analysis failed", 422);
-    }
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    console.error(e);
-    return jsonError("Internal error", 500);
+    const state = parseProjectState(project);
+    const stateReference: CoreReference = {
+      id: updated.id,
+      type: updated.type as "URL" | "GITHUB_REPO",
+      url: updated.url,
+      status: "ANALYZED",
+      metadata,
+      source:
+        input.type === "GITHUB_REPO" ? "REFERENCE_GITHUB" : "REFERENCE_WEBSITE",
+      untrusted: true,
+    };
+    if (!state.references.some((item) => item.url === stateReference.url))
+      state.references.push(stateReference);
+    await saveProjectState(id, state, project.version);
+    return Response.json(
+      { reference: publicReference(updated) },
+      { status: 201 },
+    );
+  } catch {
+    await prisma.reference.update({
+      where: { id: reference.id },
+      data: {
+        status: "FAILED",
+        metadata: JSON.stringify({ error: "Reference could not be inspected" }),
+      },
+    });
+    await prisma.toolRun.update({
+      where: { id: toolRun.id },
+      data: {
+        status: "FAILED",
+        failureReason: "Reference inspection failed",
+        completedAt: new Date(),
+      },
+    });
+    return jsonError(
+      "I couldn't inspect that reference, but we can continue without it.",
+      422,
+    );
   }
 }

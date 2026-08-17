@@ -1,129 +1,351 @@
-import { InitialIdeaExtraction } from "@rockfoundry/core";
-import { AiGatewayProvider, InferenceRequest, InferenceResponse } from "./schema";
+import {
+  InitialIdeaExtraction,
+  InitialIdeaExtractionSchema,
+} from "@rockfoundry/core";
+import {
+  AiGatewayProvider,
+  InferenceRequest,
+  InferenceResponse,
+} from "./schema";
 
 export * from "./schema";
 export * from "./gateway";
 export * from "./prompts";
 export * from "./env";
 
-import { PROMPT_VERSIONS, SYSTEM_PROMPTS, TASK_MODEL_TIER, TASK_TEMPERATURE } from "./prompts";
+import {
+  PROMPT_VERSIONS,
+  SYSTEM_PROMPTS,
+  TASK_MODEL_TIER,
+  TASK_TEMPERATURE,
+} from "./prompts";
+
+function item(
+  value: string,
+  confidence: "EXPLICIT" | "STRONGLY_INFERRED" | "WEAKLY_INFERRED" | "UNKNOWN",
+  extractionReason: string,
+) {
+  return { value, confidence, evidenceText: value, extractionReason };
+}
 
 export class MockGatewayProvider implements AiGatewayProvider {
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
-    // Simulate realistic latency
-    await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 500));
-
+    await new Promise((resolve) => setTimeout(resolve, 80));
     const taskType = req.taskType || "initial_idea_extraction";
-
-    if (taskType === "initial_idea_extraction") {
-      return this.mockExtraction(req) as any;
-    }
-
-    // Generic mock for other task types
+    if (taskType === "initial_idea_extraction")
+      return this.mockExtraction(req) as InferenceResponse<T>;
     return {
       data: {
         mock: true,
         taskType,
         message: `Mock response for ${taskType}`,
-        analysis: `This is a simulated analysis for ${taskType}. In development mode, the AI provider returns this mock result.`,
-      } as unknown as T,
+      } as T,
       usage: { promptTokens: 100, completionTokens: 150, totalTokens: 250 },
-      metadata: { provider: "mock", model: "mock", latency: 500 },
+      metadata: { provider: "mock", model: "mock", latency: 80 },
     };
   }
 
-  private mockExtraction(req: InferenceRequest<any>): InferenceResponse<any> {
-    const userMsg = req.messages.find((m) => m.role === "user")?.content || "";
-    const rawIdea = userMsg.split("---\n")[1]?.split("\n---")[0]?.trim() || userMsg;
-
-    // Extract meaningful info from raw idea for realistic mock
-    const words = rawIdea.toLowerCase().split(/\s+/);
-    const hasMobile = words.includes("mobile") || words.includes("ios") || words.includes("android");
-    const hasWeb = words.includes("web") || words.includes("website") || words.includes("saas");
-    const hasPayment = words.includes("pay") || words.includes("payment") || words.includes("billing");
-
-    const response: InitialIdeaExtraction = {
-      normalizedSummary: {
-        value: rawIdea.substring(0, 200),
-        confidence: "EXPLICIT",
-        evidenceText: rawIdea.substring(0, 100),
-        extractionReason: "Direct from user input",
-      },
-      productType: hasMobile
-        ? { value: "Mobile App", confidence: "STRONGLY_INFERRED", evidenceText: "mobile mentioned", extractionReason: "Mobile platform referenced" }
-        : hasWeb
-        ? { value: "Web Application", confidence: "STRONGLY_INFERRED", evidenceText: "web platform mentioned", extractionReason: "Web platform referenced" }
-        : { value: "Software Product", confidence: "WEAKLY_INFERRED", evidenceText: "general software", extractionReason: "General software product" },
-      primaryUsers: [
-        { value: "End Users", confidence: "WEAKLY_INFERRED", evidenceText: "no specific users", extractionReason: "No specific users mentioned" },
-      ],
+  private mockExtraction(
+    req: InferenceRequest<unknown>,
+  ): InferenceResponse<InitialIdeaExtraction> {
+    const userMessage =
+      req.messages.find((message) => message.role === "user")?.content || "";
+    const rawIdea =
+      userMessage.match(/---\s*([\s\S]*?)\s*---/)?.[1]?.trim() ||
+      userMessage.trim();
+    const lower = rawIdea.toLowerCase();
+    const extraction: InitialIdeaExtraction = {
+      normalizedSummary: item(
+        rawIdea.slice(0, 240),
+        "EXPLICIT",
+        "Copied from the user idea",
+      ),
+      productType: item(
+        lower.includes("mobile") ? "Mobile application" : "Web application",
+        "STRONGLY_INFERRED",
+        "Platform wording in the idea or default web-first interpretation",
+      ),
+      primaryUsers: [],
       userProblems: [],
       objectives: [
-        { value: `Build a ${hasMobile ? "mobile" : hasWeb ? "web" : "software"} product`, confidence: "EXPLICIT", evidenceText: rawIdea.substring(0, 80), extractionReason: "Primary objective" },
+        item(
+          `Build ${lower.includes("crm") ? "a sales workspace" : lower.includes("inventory") || lower.includes("warehouse") ? "an inventory workflow" : lower.includes("rental") || lower.includes("booking") ? "a booking workflow" : "the described product"}`,
+          "EXPLICIT",
+          "The user asked to build this product",
+        ),
       ],
       proposedCapabilities: [],
-      coreEntities: [
-        { value: "User Account", confidence: "STRONGLY_INFERRED", evidenceText: "product described", extractionReason: "Most products need user accounts" },
-      ],
+      coreEntities: [],
       expectedWorkflows: [],
-      integrationsMentioned: hasPayment
-        ? [{ value: "Payment Processing", confidence: "EXPLICIT", evidenceText: "payment mentioned", extractionReason: "Payment explicitly mentioned" }]
-        : [],
-      platforms: hasMobile
-        ? [{ value: "iOS", confidence: "WEAKLY_INFERRED", evidenceText: "mobile", extractionReason: "Mobile apps typically need iOS" }]
-        : hasWeb
-        ? [{ value: "Web", confidence: "EXPLICIT", evidenceText: "web platform", extractionReason: "Web platform" }]
-        : [],
-      businessModel: { value: "To be determined", confidence: "UNKNOWN", evidenceText: "not specified", extractionReason: "Business model not mentioned" },
+      integrationsMentioned: [],
+      platforms:
+        lower.includes("mobile") ||
+        lower.includes("ios") ||
+        lower.includes("android")
+          ? [item("Mobile", "EXPLICIT", "Mobile platform mentioned")]
+          : [
+              item(
+                "Web",
+                "STRONGLY_INFERRED",
+                "Browser delivery is the safest first assumption",
+              ),
+            ],
+      businessModel: undefined,
       privacySignals: [],
       scaleSignals: [],
       designSignals: [],
       constraints: [],
-      assumptions: [
-        { value: "Users have reliable internet access", confidence: "STRONGLY_INFERRED", evidenceText: "software product", extractionReason: "Most software assumes internet" },
-      ],
-      ambiguities: [
-        { value: "Target user demographics not specified", confidence: "UNKNOWN", evidenceText: "no user details", extractionReason: "No user demographics mentioned" },
-      ],
+      assumptions: [],
+      ambiguities: [],
       possibleContradictions: [],
       unsupportedClaims: [],
     };
 
+    if (
+      /marble|stone|slab|granite/.test(lower) &&
+      !/warehouse|inventory|stock|transfer history|movement/.test(lower)
+    ) {
+      extraction.primaryUsers.push(
+        item(
+          "Sales team",
+          "EXPLICIT",
+          "Sales role is implied by marble sales wording",
+        ),
+      );
+      extraction.primaryUsers.push(
+        item(
+          "Brand owner",
+          "STRONGLY_INFERRED",
+          "Multi-brand sales systems usually need an owner view",
+        ),
+      );
+      extraction.coreEntities.push(
+        item("Customer", "EXPLICIT", "Sales CRM needs customer history"),
+      );
+      extraction.coreEntities.push(
+        item(
+          "Quotation",
+          "EXPLICIT",
+          "Quotation is a central stone-sales workflow",
+        ),
+      );
+      extraction.coreEntities.push(
+        item("Brand", "EXPLICIT", "Several marble brands are part of the idea"),
+      );
+      extraction.proposedCapabilities.push(
+        item(
+          "Track leads and follow-ups",
+          "EXPLICIT",
+          "Sales follow-up is part of the stated use case",
+        ),
+      );
+      extraction.proposedCapabilities.push(
+        item(
+          "Manage quotations",
+          "EXPLICIT",
+          "Quotation is part of the stated use case",
+        ),
+      );
+      extraction.expectedWorkflows.push(
+        item(
+          "A sales person records a customer conversation and follows up",
+          "STRONGLY_INFERRED",
+          "CRM workflow implied by sales wording",
+        ),
+      );
+    } else if (
+      /warehouse|inventory|stock|slab movement|transfer history/.test(lower)
+    ) {
+      extraction.primaryUsers.push(
+        item(
+          "Warehouse staff",
+          "EXPLICIT",
+          "Warehouse staff are named or directly implied",
+        ),
+      );
+      extraction.primaryUsers.push(
+        item(
+          "Owner",
+          "STRONGLY_INFERRED",
+          "The owner usually needs cross-warehouse visibility",
+        ),
+      );
+      extraction.coreEntities.push(
+        item("Warehouse", "EXPLICIT", "Warehouse is named in the idea"),
+      );
+      extraction.coreEntities.push(
+        item("Inventory item", "EXPLICIT", "Inventory is named in the idea"),
+      );
+      extraction.coreEntities.push(
+        item(
+          "Inventory movement",
+          "EXPLICIT",
+          "Transfer or movement history is named in the idea",
+        ),
+      );
+      extraction.proposedCapabilities.push(
+        item(
+          "Track current inventory location",
+          "EXPLICIT",
+          "Current location is central to inventory",
+        ),
+      );
+      if (/transfer|movement|history|move/.test(lower))
+        extraction.proposedCapabilities.push(
+          item(
+            "Preserve transfer history",
+            "EXPLICIT",
+            "Movement history is named in the idea",
+          ),
+        );
+      extraction.expectedWorkflows.push(
+        item(
+          "Staff records an inventory transfer between warehouses",
+          "EXPLICIT",
+          "Transfer workflow is named in the idea",
+        ),
+      );
+      if (/marble|stone|slab|granite/.test(lower))
+        extraction.coreEntities.push(
+          item(
+            "Brand",
+            "EXPLICIT",
+            "Several stone brands are part of the idea",
+          ),
+        );
+    } else if (/rental|car|vehicle|booking/.test(lower)) {
+      extraction.primaryUsers.push(
+        item(
+          "Customer",
+          "EXPLICIT",
+          "Customer booking is implied by rental wording",
+        ),
+      );
+      extraction.primaryUsers.push(
+        item(
+          "Rental staff",
+          "EXPLICIT",
+          "Rental operations require staff managing availability",
+        ),
+      );
+      extraction.coreEntities.push(
+        item("Vehicle", "EXPLICIT", "Vehicle is named or directly implied"),
+      );
+      extraction.coreEntities.push(
+        item("Booking", "EXPLICIT", "Booking is named in the idea"),
+      );
+      extraction.coreEntities.push(
+        item(
+          "Customer",
+          "EXPLICIT",
+          "Customer history is named or directly implied",
+        ),
+      );
+      extraction.proposedCapabilities.push(
+        item(
+          "Check vehicle availability",
+          "EXPLICIT",
+          "Availability is central to rental booking",
+        ),
+      );
+      extraction.proposedCapabilities.push(
+        item(
+          "Create and manage bookings",
+          "EXPLICIT",
+          "Booking is named in the idea",
+        ),
+      );
+      extraction.expectedWorkflows.push(
+        item(
+          "Customer requests a vehicle and staff confirms availability",
+          "EXPLICIT",
+          "Booking workflow is named in the idea",
+        ),
+      );
+    } else if (/crm|sales|lead|follow.?up/.test(lower)) {
+      extraction.primaryUsers.push(
+        item("Sales team", "EXPLICIT", "Sales wording is present in the idea"),
+      );
+      extraction.coreEntities.push(
+        item("Lead", "EXPLICIT", "Lead is named or directly implied"),
+      );
+      extraction.coreEntities.push(
+        item(
+          "Customer",
+          "STRONGLY_INFERRED",
+          "A lead workflow normally becomes customer history",
+        ),
+      );
+      extraction.proposedCapabilities.push(
+        item("Record follow-ups", "EXPLICIT", "Follow-up is named in the idea"),
+      );
+      extraction.expectedWorkflows.push(
+        item(
+          "Sales staff captures a lead and schedules a follow-up",
+          "EXPLICIT",
+          "CRM workflow is named in the idea",
+        ),
+      );
+    } else {
+      extraction.primaryUsers.push(
+        item(
+          "Primary user",
+          "WEAKLY_INFERRED",
+          "The idea does not name a user role yet",
+        ),
+      );
+      extraction.ambiguities.push(
+        item(
+          "The main user role is not explicit",
+          "UNKNOWN",
+          "No domain-specific user role was found",
+        ),
+      );
+    }
+
+    if (/whatsapp/.test(lower))
+      extraction.integrationsMentioned.push(
+        item("WhatsApp", "EXPLICIT", "WhatsApp is named in the idea"),
+      );
+    if (/payment|pay|invoice|checkout/.test(lower))
+      extraction.integrationsMentioned.push(
+        item(
+          "Payment processing",
+          "EXPLICIT",
+          "Payment wording is present in the idea",
+        ),
+      );
     return {
-      data: response,
-      usage: { promptTokens: 200, completionTokens: 350, totalTokens: 550 },
-      metadata: { provider: "mock", model: "mock", latency: 1000 },
+      data: InitialIdeaExtractionSchema.parse(extraction),
+      usage: { promptTokens: 220, completionTokens: 360, totalTokens: 580 },
+      metadata: { provider: "mock", model: "mock", latency: 80 },
     };
   }
 }
 
 export class AiGateway {
-  constructor(private provider: AiGatewayProvider = new MockGatewayProvider()) {}
+  constructor(
+    private provider: AiGatewayProvider = new MockGatewayProvider(),
+  ) {}
 
-  async runInitialExtraction(rawIdea: string): Promise<{
-    extraction: InitialIdeaExtraction;
-    promptVersion: string;
-    model: string;
-    latency: number;
-    tokenUsage: number;
-  }> {
-    const taskType = "initial_idea_extraction";
+  async runInitialExtraction(rawIdea: string) {
+    const taskType = "initial_idea_extraction" as const;
     const promptInfo = PROMPT_VERSIONS[taskType];
-    const systemPrompt = SYSTEM_PROMPTS[taskType];
-    const modelTier = TASK_MODEL_TIER[taskType];
-
-    const result = await this.provider.complete({
+    const result = await this.provider.complete<InitialIdeaExtraction>({
       taskType,
-      modelTier,
+      modelTier: TASK_MODEL_TIER[taskType],
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `Extract structured information from this product idea:\n\n---\n${rawIdea}\n---` },
+        { role: "system", content: SYSTEM_PROMPTS[taskType] },
+        {
+          role: "user",
+          content: `Extract structured information from this product idea:\n\n---\n${rawIdea}\n---`,
+        },
       ],
       temperature: TASK_TEMPERATURE[taskType],
     });
-
+    const extraction = InitialIdeaExtractionSchema.parse(result.data);
     return {
-      extraction: result.data as unknown as InitialIdeaExtraction,
+      extraction,
       promptVersion: promptInfo?.version || "unknown",
       model: result.metadata?.model || "unknown",
       latency: result.metadata?.latency || 0,

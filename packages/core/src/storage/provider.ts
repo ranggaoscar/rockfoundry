@@ -54,7 +54,7 @@ export class LocalStorageProvider implements StorageProvider {
   async store(
     key: string,
     buffer: Buffer,
-    projectId: string
+    projectId: string,
   ): Promise<StoredFile> {
     await this.ensureDirectory();
 
@@ -147,18 +147,15 @@ export class S3StorageProvider implements StorageProvider {
     private readonly region: string,
     private readonly accessKeyId: string,
     private readonly secretAccessKey: string,
-    private readonly endpoint?: string
+    private readonly endpoint?: string,
   ) {}
 
   async store(
     key: string,
     buffer: Buffer,
-    projectId: string
+    projectId: string,
   ): Promise<StoredFile> {
-    const checksum = crypto
-      .createHash("sha256")
-      .update(buffer)
-      .digest("hex");
+    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
 
     // TODO: Implement S3 upload with @aws-sdk/client-s3
     // const command = new PutObjectCommand({
@@ -213,9 +210,11 @@ export function createStorageProvider(): StorageProvider {
       process.env.S3_REGION || "us-east-1",
       process.env.S3_ACCESS_KEY_ID || "",
       process.env.S3_SECRET_ACCESS_KEY || "",
-      process.env.S3_ENDPOINT
+      process.env.S3_ENDPOINT,
     );
   }
 
-  return new LocalStorageProvider(process.env.STORAGE_LOCAL_PATH || "./data/exports");
+  return new LocalStorageProvider(
+    process.env.STORAGE_LOCAL_PATH || "./data/exports",
+  );
 }

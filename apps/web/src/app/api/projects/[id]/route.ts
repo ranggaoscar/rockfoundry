@@ -1,98 +1,81 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
-import { prisma } from "@rockfoundry/db";
-import { requireAuth, AuthError, jsonError } from "@/lib/auth-helpers";
+import { ProjectStateSchema } from "@rockfoundry/core";
+import {
+  jsonError,
+  getLocalProject,
+  parseProjectState,
+  publicProject,
+  saveProjectState,
+} from "@/lib/local-project";
 
-// Helper: verify project ownership
-async function getOwnedProject(userId: string, projectId: string) {
-  const member = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId, projectId } },
-    include: { project: true },
-  });
-  if (!member || member.project.deletedAt) return null;
-  return member.project;
-}
-
-// GET /api/projects/[id]
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
-    const session = await requireAuth(req);
     const { id } = await params;
-    const project = await getOwnedProject(session.user.id, id);
+    const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
-    return Response.json({ project });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    return jsonError("Internal error", 500);
+    return Response.json({ project: publicProject(project) });
+  } catch {
+    return jsonError("RockFoundry couldn't load this project.");
   }
 }
 
-// PATCH /api/projects/[id] — update canonical state or metadata
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
-    const session = await requireAuth(req);
     const { id } = await params;
-    const project = await getOwnedProject(session.user.id, id);
+    const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
-
     const body = await req.json();
-
-    // Optimistic concurrency check
-    if (body.expectedVersion && body.expectedVersion !== project.version) {
-      return jsonError("Project was modified by another operation. Please refresh.", 409);
+    const state = body.canonicalState
+      ? ProjectStateSchema.parse(body.canonicalState)
+      : parseProjectState(project);
+    const saved = body.canonicalState
+      ? await saveProjectState(
+          id,
+          state,
+          body.expectedVersion,
+          body.description,
+        )
+      : null;
+    if (!body.canonicalState && body.description !== undefined) {
+      await saveProjectState(id, state, body.expectedVersion, body.description);
     }
-
-    const updateData: Record<string, any> = {};
-
-    if (body.name) updateData.name = body.name;
-    if (body.description !== undefined) updateData.description = body.description;
-
-    if (body.canonicalState) {
-      updateData.canonicalState = body.canonicalState;
-      updateData.version = { increment: 1 };
-    }
-
-    const updated = await prisma.project.update({
-      where: { id },
-      data: updateData,
-      select: { id: true, name: true, version: true, canonicalState: true, updatedAt: true },
+    const updated = await getLocalProject(id);
+    return Response.json({
+      project: publicProject(updated!),
+      state: saved?.state || parseProjectState(updated!),
     });
-
-    // Create revision if state changed
-    if (body.canonicalState) {
-      await prisma.projectStateRevision.create({
-        data: {
-          projectId: id,
-          version: updated.version,
-          state: body.canonicalState,
-        },
-      });
-    }
-
-    return Response.json({ project: updated });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    console.error("Update project error:", e);
-    return jsonError("Internal error", 500);
+  } catch (error) {
+    if (error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT")
+      return jsonError(
+        "Project changed while you were editing. Refresh and retry.",
+        409,
+      );
+    if (error instanceof Error && error.message === "PROJECT_NOT_FOUND")
+      return jsonError("Project not found", 404);
+    return jsonError("RockFoundry couldn't save this project.", 422);
   }
 }
 
-// DELETE /api/projects/[id] — soft delete
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   try {
-    const session = await requireAuth(req);
     const { id } = await params;
-    const project = await getOwnedProject(session.user.id, id);
+    const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
-
-    await prisma.project.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
-
+    await import("@rockfoundry/db").then(({ prisma }) =>
+      prisma.project.update({ where: { id }, data: { deletedAt: new Date() } }),
+    );
     return Response.json({ ok: true });
-  } catch (e) {
-    if (e instanceof AuthError) return jsonError(e.message, e.status);
-    return jsonError("Internal error", 500);
+  } catch {
+    return jsonError("RockFoundry couldn't archive this project.", 500);
   }
 }

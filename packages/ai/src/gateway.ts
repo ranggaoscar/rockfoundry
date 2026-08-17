@@ -1,12 +1,16 @@
 import { z } from "zod";
-import { AiGatewayProvider, InferenceRequest, InferenceResponse } from "./schema";
+import {
+  AiGatewayProvider,
+  InferenceRequest,
+  InferenceResponse,
+} from "./schema";
 import { TASK_TIMEOUT, TASK_MAX_RETRIES } from "./prompts";
 
 export class NineRouterGateway implements AiGatewayProvider {
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
-    private readonly models: { default: string; cheap: string; strong: string }
+    private readonly models: { default: string; cheap: string; strong: string },
   ) {}
 
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
@@ -28,13 +32,19 @@ export class NineRouterGateway implements AiGatewayProvider {
         }
 
         // Don't retry if it's a 4xx error (client error)
-        if (error instanceof ApiError && error.statusCode >= 400 && error.statusCode < 500) {
+        if (
+          error instanceof ApiError &&
+          error.statusCode >= 400 &&
+          error.statusCode < 500
+        ) {
           throw error;
         }
 
         if (attempt < maxRetries) {
           const backoff = Math.min(1000 * Math.pow(2, attempt), 10000);
-          console.warn(`AI request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${backoff}ms...`);
+          console.warn(
+            `AI request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${backoff}ms...`,
+          );
           await new Promise((resolve) => setTimeout(resolve, backoff));
         }
       }
@@ -43,7 +53,10 @@ export class NineRouterGateway implements AiGatewayProvider {
     throw lastError || new Error("AI request failed after all retries");
   }
 
-  private async attemptRequest<T>(req: InferenceRequest<T>, timeout: number): Promise<InferenceResponse<T>> {
+  private async attemptRequest<T>(
+    req: InferenceRequest<T>,
+    timeout: number,
+  ): Promise<InferenceResponse<T>> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -84,7 +97,7 @@ export class NineRouterGateway implements AiGatewayProvider {
         throw new ApiError(
           `9Router API error: ${response.status} ${response.statusText}`,
           response.status,
-          errorBody
+          errorBody,
         );
       }
 
@@ -132,11 +145,17 @@ export class NineRouterGateway implements AiGatewayProvider {
   }
 }
 
+export class OpenAICompatibleGateway extends NineRouterGateway {
+  constructor(baseUrl: string, apiKey: string, model: string) {
+    super(baseUrl, apiKey, { default: model, cheap: model, strong: model });
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number,
-    public readonly body?: string
+    public readonly body?: string,
   ) {
     super(message);
     this.name = "ApiError";
