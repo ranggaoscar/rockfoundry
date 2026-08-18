@@ -5,7 +5,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "vitest run src/tests"
+    "test": "vitest run src/tests",
+    "eval:invention": "pnpm exec tsx src/eval/smoke.ts"
   },
   "keywords": [],
   "author": "",

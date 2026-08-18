@@ -14,6 +14,7 @@
     "typecheck": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter @rockfoundry/db build && pnpm -r exec tsc --noEmit",
     "test": "pnpm -r test",
     "test:core": "pnpm --filter @rockfoundry/core test",
+    "eval:invention": "pnpm --filter @rockfoundry/core eval:invention",
     "test:ai": "pnpm --filter @rockfoundry/ai test",
     "test:e2e": "pnpm --filter web exec playwright test --config playwright.config.ts",
     "ai:smoke": "pnpm --filter @rockfoundry/ai exec tsx src/smoke.ts",

@@ -1,5 +1,12 @@
 # Changelog
 
+## Agentic V1 week 3 — coding-agent win proof
+
+- Added a deterministic invention-risk harness comparing raw idea vs RockFoundry handoff.
+- Added `pnpm eval:invention` CRM benchmark (exit check: ≥3/5 wins).
+- Tuned `AGENT_HANDOFF.md` with Claude Code, Codex, and Cursor prompts.
+- Derived PRD/ERD permissions, ownership, relationships, and edge cases from accepted decisions.
+
 ## Agentic V1 week 2 — CRM magic moment
 
 - Extracted a stable CRM decision catalog and queue: identity → visibility → ownership → quotation → duplicates.

@@ -71,15 +71,15 @@ Blind review: 8/10 CRM ideas get a non-generic first question. _(Golden fixtures
 
 ### Build
 
-- [ ] `AGENT_HANDOFF.md` tuned for Claude Code / Codex / Cursor
-- [ ] Eval harness: same idea, with vs without RockFoundry package
-- [ ] Score invented decisions (customer identity, permissions, ownership, duplicates)
-- [ ] Improve ERD/PRD sections that are already known (reduce lazy `[UNRESOLVED]`)
-- [ ] Public demo script + README “why not ChatGPT” refresh if needed
+- [x] `AGENT_HANDOFF.md` tuned for Claude Code / Codex / Cursor
+- [x] Eval harness: same idea, with vs without RockFoundry package
+- [x] Score invented decisions (customer identity, permissions, ownership, duplicates)
+- [x] Improve ERD/PRD sections that are already known (reduce lazy `[UNRESOLVED]`)
+- [x] `pnpm eval:invention` benchmark smoke + golden tests
 
 ### Exit check
 
-In ≥3 of 5 trials, handoff reduces invented high-risk decisions.
+In ≥3 of 5 trials, handoff reduces invented high-risk decisions. _(Locked by `runCrmInventionBenchmark()` / `pnpm eval:invention`.)_
 
 ## Week 4 — Sharpen, don’t broaden
 

@@ -3,6 +3,15 @@ import { ProjectState } from "../schema";
 import { evaluateDecisionDebt } from "../graph/decision-debt";
 import { evaluateReadinessDirectly } from "../graph/evaluator";
 import { buildDecisionGraph } from "../decision-graph";
+import {
+  derivedBusinessRuleLines,
+  derivedDataOwnershipLines,
+  derivedEdgeCaseLines,
+  derivedNonGoals,
+  derivedPermissionLines,
+  derivedRelationshipLines,
+  listOrUnresolved,
+} from "./derived";
 
 export interface ArtifactDocuments {
   BRD: string;
@@ -298,6 +307,10 @@ ${
 
 function renderAgentHandoff(state: ProjectState) {
   const debt = debtFor(state);
+  const decided = state.decisions
+    .filter((item) => ["ACCEPTED", "PROPOSED"].includes(item.status))
+    .map((item) => `- ${item.topic}: ${item.decision}`)
+    .join("\n");
   return `# Agent Handoff
 
 Use this package as the source of product truth before writing code.
@@ -312,7 +325,46 @@ Use this package as the source of product truth before writing code.
 - \`INVARIANTS.md\` — must-hold rules while coding
 - \`READINESS.md\` — build readiness and Decision Debt
 
-## Recommended prompt for coding agents
+## Read order (all tools)
+
+1. \`DO_NOT_INVENT.md\`
+2. \`DECISIONS.md\` / \`decisions.json\`
+3. \`INVARIANTS.md\`
+4. \`PRD.md\` + \`ERD.md\`
+5. \`BRD.md\` for business context
+
+## Prompt — Claude Code
+
+\`\`\`text
+You are implementing from a RockFoundry handoff package in this folder.
+
+Mandatory:
+1. Read DO_NOT_INVENT.md first. Obey it as hard constraints.
+2. Implement only decisions in DECISIONS.md / decisions.json.
+3. If identity, permissions, ownership, duplicates, or multi-brand behavior is unresolved, do NOT pick a default. Add a TODO and stop that path.
+4. Cite the decision topic in code comments for multi-brand rules.
+5. Prefer failing closed over SaaS-generic defaults.
+\`\`\`
+
+## Prompt — Codex
+
+\`\`\`text
+Build from this RockFoundry package.
+Source of truth: DO_NOT_INVENT.md, DECISIONS.md, INVARIANTS.md, then PRD/ERD.
+Do not invent customer identity, sales visibility, lead ownership, quotation branding, or duplicate handling if unresolved.
+Leave explicit TODOs instead of guessing multi-tenant behavior.
+\`\`\`
+
+## Prompt — Cursor
+
+\`\`\`text
+Use this folder as the product spec.
+Start with DO_NOT_INVENT.md.
+When generating schema, authz, or CRM workflows, follow DECISIONS.md exactly.
+Never silently invent cross-brand rules.
+\`\`\`
+
+## Generic prompt
 
 \`\`\`text
 Implement from this RockFoundry handoff package.
@@ -324,6 +376,10 @@ Rules:
 4. Prefer the explicit decisions over any generic SaaS defaults.
 5. When identity, permissions, ownership, or multi-unit behavior is involved, cite the decision you are following.
 \`\`\`
+
+## Already decided
+
+${decided || "- None yet."}
 
 ## Current handoff quality
 
@@ -407,7 +463,7 @@ ${list(state.requirements.length ? state.requirements : state.features)}
 
 ## 9. Business Rules
 
-${list(state.businessRules)}
+${listOrUnresolved(derivedBusinessRuleLines(state))}
 
 ## 10. Scope
 
@@ -473,7 +529,7 @@ ${list(state.objectives)}
 
 ## 3. Non-Goals
 
-${UNRESOLVED}
+${listOrUnresolved(derivedNonGoals(state))}
 
 ## 4. User Roles
 
@@ -501,7 +557,7 @@ ${UNRESOLVED}
 
 ## 10. Permissions
 
-${list(state.permissions)}
+${listOrUnresolved(derivedPermissionLines(state))}
 
 ## 11. States and Statuses
 
@@ -525,7 +581,12 @@ ${UNRESOLVED}
 
 ## 16. Edge Cases
 
-${list(debt.topRisks.map((item) => `${item.title} remains unresolved: ${item.reason}`))}
+${listOrUnresolved([
+    ...derivedEdgeCaseLines(state),
+    ...debt.topRisks.map(
+      (item) => `${item.title} remains unresolved: ${item.reason}`,
+    ),
+  ])}
 
 ## 17. Security & Privacy Requirements
 
@@ -583,11 +644,11 @@ ${mermaidEntities}
 
 ## 3. Entities
 
-${entities.map((entity) => `### ${entityName(entity)}\n\n| Field | Type | Required | Description |\n| ----- | ---- | -------- | ----------- |\n| id | string | Yes | Stable identity for the record. |\n\nRelationships:\n\n${UNRESOLVED}\n\nBusiness Rules:\n\n${list(state.businessRules)}\n\nIndexes:\n\n${UNRESOLVED}\n\nLifecycle:\n\n${UNRESOLVED}`).join("\n\n")}
+${entities.map((entity) => `### ${entityName(entity)}\n\n| Field | Type | Required | Description |\n| ----- | ---- | -------- | ----------- |\n| id | string | Yes | Stable identity for the record. |\n\nRelationships:\n\n${listOrUnresolved(derivedRelationshipLines(state))}\n\nBusiness Rules:\n\n${listOrUnresolved(derivedBusinessRuleLines(state))}\n\nIndexes:\n\n${UNRESOLVED}\n\nLifecycle:\n\n${UNRESOLVED}`).join("\n\n")}
 
 ## 4. Relationships
 
-${state.entities.length > 1 ? "Relationships between these entities are not confirmed yet:\n\n" + UNRESOLVED : UNRESOLVED}
+${listOrUnresolved(derivedRelationshipLines(state))}
 
 ## 5. Constraints
 
@@ -595,7 +656,7 @@ ${list(state.constraints)}
 
 ## 6. Data Ownership
 
-${list(state.permissions)}
+${listOrUnresolved(derivedDataOwnershipLines(state))}
 
 ## 7. Data Retention
 

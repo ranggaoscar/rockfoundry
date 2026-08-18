@@ -132,7 +132,14 @@ Agentic V1 is active on the `agentic-v1` branch.
 - deeper decision impact
 - richer reference evidence
 - native Anthropic / Gemini adapters
-- coding-agent eval harness
+
+### Prove the handoff locally
+
+```bash
+pnpm eval:invention
+```
+
+This runs a deterministic CRM benchmark: same ideas with vs without RockFoundry decisions, scoring how much a coding agent would still need to invent.
 
 ## Docs
 

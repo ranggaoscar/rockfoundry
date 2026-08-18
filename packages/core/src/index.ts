@@ -14,3 +14,5 @@ export * from "./jobs";
 export * from "./decision-graph";
 export * from "./agent/actions";
 export * from "./tools/registry";
+export * from "./eval/invention-harness";
+export * from "./export/derived";
