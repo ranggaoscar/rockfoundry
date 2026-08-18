@@ -4,7 +4,7 @@ test.describe("Agentic V1 local flow", () => {
   test("creates and reopens a project without an account", async ({
     request,
   }) => {
-    const created = await request.post("http://localhost:3000/api/projects", {
+    const created = await request.post("/api/projects", {
       data: {
         name: "E2E local project",
         description: "Build inventory for three warehouses",
@@ -14,9 +14,7 @@ test.describe("Agentic V1 local flow", () => {
     const payload = await created.json();
     expect(payload.project.id).toBeTruthy();
 
-    const reopened = await request.get(
-      `http://localhost:3000/api/projects/${payload.project.id}`,
-    );
+    const reopened = await request.get(`/api/projects/${payload.project.id}`);
     expect(reopened.status()).toBe(200);
     const project = await reopened.json();
     expect(project.project.name).toBe("E2E local project");

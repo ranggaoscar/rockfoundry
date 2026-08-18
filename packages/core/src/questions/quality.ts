@@ -4,44 +4,64 @@ import type { Question } from "../schema/question";
 export type QuestionQualityResult = { accepted: boolean; reasons: string[] };
 
 const genericPatterns = [
-  /^who are (your|the) target users\??$/i,
+  /^who are (your|the) target (users|audience)\??$/i,
+  /^what (features|functionality) do you need\??$/i,
   /^do you need authentication\??$/i,
+  /^what platform will this run on\??$/i,
   /^what database do you prefer\??$/i,
-  /^do you need an api\??$/i,
+  /^do you need an? (api|notification|integration)\??$/i,
   /^what is the tech stack\??$/i,
+  /^what should we build first\??$/i,
 ];
+
+const technicalPattern =
+  /\b(postgres|postgresql|sqlite|mysql|database|orm|rest|graphql|uuid|integer id|server actions|api design|tech stack)\b/i;
+
+function knownContextTerms(state: ProjectState) {
+  return [
+    state.name,
+    ...state.targetUsers,
+    ...state.entities,
+    ...state.features,
+    ...state.workflows,
+    ...state.integrations,
+  ]
+    .filter(Boolean)
+    .flatMap((value) => {
+      const phrase = value.toLowerCase().trim();
+      return [
+        phrase,
+        ...phrase.split(/[^a-z0-9]+/).filter((token) => token.length > 3),
+      ];
+    });
+}
 
 export function validateQuestionQuality(
   question: Question,
   state: ProjectState,
 ): QuestionQualityResult {
   const reasons: string[] = [];
-  if (genericPatterns.some((pattern) => pattern.test(question.text.trim())))
+  const text = question.text.trim();
+  if (genericPatterns.some((pattern) => pattern.test(text)))
     reasons.push(
       "This question can be asked unchanged for unrelated products.",
     );
-  if (
-    question.relatedRequirementIds.length === 0 &&
-    question.contextReferences.length === 0
-  )
+  if (technicalPattern.test(text))
     reasons.push(
-      "The question is not mapped to a known requirement or context field.",
+      "Discovery questions should resolve product behavior, not implementation choices.",
     );
-  const nouns = [
-    state.name,
-    ...state.targetUsers,
-    ...state.entities,
-    ...state.features,
-    ...state.workflows,
-  ]
-    .filter(Boolean)
-    .map((value) => value.toLowerCase());
-  const text = question.text.toLowerCase();
-  if (
-    nouns.length > 0 &&
-    !nouns.some((noun) => noun.length > 2 && text.includes(noun))
-  )
-    reasons.push("The question does not use a known project noun.");
+  if (question.relatedRequirementIds.length === 0)
+    reasons.push("The question is not mapped to an unresolved requirement.");
+  if (question.contextReferences.length === 0)
+    reasons.push("The question does not point to known project context.");
+
+  const terms = knownContextTerms(state);
+  const hasKnownContext = terms.some(
+    (term) => term.length > 3 && text.toLowerCase().includes(term),
+  );
+  if (!hasKnownContext)
+    reasons.push("The question does not use a known project noun or workflow.");
+
   return { accepted: reasons.length === 0, reasons };
 }
 

@@ -9,9 +9,12 @@ export type QuestionOption = z.infer<typeof QuestionOptionSchema>;
 
 export const QuestionSchema = z.object({
   id: z.string(),
+  topic: z.string().optional(),
+  category: z.string().optional(),
   text: z.string(),
   contextReferences: z.array(z.string()), // Parts of project state referenced
   relatedRequirementIds: z.array(z.string()),
+  affects: z.array(z.string()).default([]),
 
   answerType: z.enum([
     "SINGLE_CHOICE",

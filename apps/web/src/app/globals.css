@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
   --font-mono: var(--font-geist-mono);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -123,6 +123,16 @@
     background: var(--muted);
     color: var(--foreground);
   }
+  .rf-icon-button:focus-visible,
+  .rf-status-line:focus-visible,
+  .rf-option:focus-visible,
+  .rf-send-button:focus-visible,
+  .rf-header-action:focus-visible,
+  .rf-primary-button:focus-visible,
+  .rf-secondary-button:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
   .rf-new-project,
   .rf-sidebar-link,
   .rf-project-item {
@@ -172,6 +182,26 @@
   }
   .rf-status-line:hover {
     color: var(--foreground);
+  }
+  .rf-project-title {
+    max-width: 100%;
+  }
+  .rf-project-title:hover {
+    color: var(--muted-foreground);
+  }
+  .rf-title-input {
+    min-height: 1.85rem;
+    border: 1px solid var(--border);
+    border-radius: 0.45rem;
+    background: var(--background);
+    padding: 0.25rem 0.45rem;
+    color: var(--foreground);
+    font-size: 0.875rem;
+    outline: none;
+  }
+  .rf-title-input:focus {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 16%, transparent);
   }
   .rf-header-action,
   .rf-secondary-button,
@@ -312,11 +342,12 @@
   }
   .rf-message-text {
     white-space: pre-wrap;
-    font-size: 0.93rem;
-    line-height: 1.65;
+    font-size: 1rem;
+    line-height: 1.6;
   }
   .rf-option {
     display: flex;
+    min-height: 3rem;
     width: 100%;
     align-items: center;
     justify-content: space-between;
@@ -325,7 +356,7 @@
     border-radius: 0.65rem;
     padding: 0.7rem 0.8rem;
     text-align: left;
-    font-size: 0.84rem;
+    font-size: 1rem;
     transition:
       border-color 0.16s ease,
       background 0.16s ease;
@@ -433,6 +464,13 @@
     background: var(--background);
     color: var(--muted-foreground);
     font-size: 0.82rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .rf-message-text,
+  .rf-option {
+    font-size: 0.93rem;
   }
 }
 

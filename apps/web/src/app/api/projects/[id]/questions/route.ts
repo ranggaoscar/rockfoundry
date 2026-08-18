@@ -1,19 +1,18 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import {
-  QuestionEngine,
-  RequirementsEngine,
   detectContradictions,
   evaluateReadinessDirectly,
-  type ProjectState,
+  QuestionEngine,
 } from "@rockfoundry/core";
+import { prisma } from "@rockfoundry/db";
 import {
-  jsonError,
   getLocalProject,
+  jsonError,
   parseProjectState,
   saveProjectState,
 } from "@/lib/local-project";
-import { prisma } from "@rockfoundry/db";
+import { persistQuestionMessage, persistUserMessage } from "@/lib/discovery";
 import { z } from "zod";
 
 const AnswerSchema = z
@@ -27,49 +26,14 @@ const AnswerSchema = z
     "answer or value is required",
   );
 
-function nodesFor(state: ProjectState) {
-  return [
-    {
-      id: "req-auth-type",
-      category: "USERS" as const,
-      title: "Access and identity",
-      description: `How ${state.targetUsers.slice(0, 2).join(" and ") || "the people using this product"} should identify themselves`,
-      appliesWhen: (current: ProjectState) => current.targetUsers.length > 0,
-      priority: 10,
-      riskWeight: 8,
-      status: "UNRESOLVED" as const,
-      source: "SYSTEM" as const,
-      dependencies: [],
-      confidence: 0,
-    },
-    {
-      id: "req-data-relationships",
-      category: "DATA" as const,
-      title: "Data relationships",
-      description: `How ${state.entities.slice(0, 3).join(", ") || "the records"} should stay connected`,
-      appliesWhen: (current: ProjectState) => current.entities.length > 0,
-      priority: 9,
-      riskWeight: 9,
-      status: "UNRESOLVED" as const,
-      source: "SYSTEM" as const,
-      dependencies: [],
-      confidence: 0,
-    },
-    {
-      id: "req-permissions",
-      category: "PERMISSIONS" as const,
-      title: "Role permissions",
-      description: `What each role can see and change in ${state.name}`,
-      appliesWhen: (current: ProjectState) =>
-        current.targetUsers.length > 1 || current.roles.length > 1,
-      priority: 10,
-      riskWeight: 10,
-      status: "UNRESOLVED" as const,
-      source: "SYSTEM" as const,
-      dependencies: [],
-      confidence: 0,
-    },
-  ];
+function mergeDetectedContradictions(
+  state: ReturnType<typeof parseProjectState>,
+) {
+  const detected = detectContradictions(state);
+  const byId = new Map(
+    [...state.contradictions, ...detected].map((item) => [item.id, item]),
+  );
+  state.contradictions = [...byId.values()];
 }
 
 export async function GET(
@@ -81,20 +45,23 @@ export async function GET(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
-    const graph = new RequirementsEngine(nodesFor(state)).evaluate(state);
-    const questions = new QuestionEngine().generateQuestions(
-      state,
-      graph.topUnresolved,
-      3,
-    );
+    const readiness = evaluateReadinessDirectly(state);
+    const question =
+      new QuestionEngine().generateQuestions(state, [], 1)[0] || null;
     return Response.json({
-      questions,
+      questions: question ? [question] : [],
       readiness: {
-        level: state.readiness,
-        score: state.readinessScore,
-        breakdown: state.readinessBreakdown,
+        level: readiness.level,
+        score: readiness.score,
+        breakdown: readiness.breakdown,
       },
-      blockers: evaluateReadinessDirectly(state).blocking,
+      discovery: {
+        evaluated: readiness.discovery.evaluated,
+        importantDecisionsRemaining:
+          readiness.discovery.importantDecisionsRemaining,
+        unresolvedTopics: readiness.discovery.unresolvedTopics,
+      },
+      blockers: readiness.blocking,
     });
   } catch {
     return jsonError("RockFoundry couldn't prepare the next question.");
@@ -112,31 +79,66 @@ export async function POST(
     const body = AnswerSchema.parse(await req.json());
     const answer = body.answer ?? body.value!;
     const current = parseProjectState(project);
-    const processed = new QuestionEngine().processAnswer(
+    const engine = new QuestionEngine();
+    const currentQuestion = engine
+      .generateQuestions(current, [], 5)
+      .find((item) => item.id === body.questionId);
+    if (!currentQuestion)
+      return jsonError("That discovery question is no longer active.", 409);
+
+    const processed = engine.processAnswer(
       current,
       body.questionId,
       answer,
+      currentQuestion,
     );
-    processed.updatedState.contradictions = detectContradictions(
-      processed.updatedState,
-    );
+    mergeDetectedContradictions(processed.updatedState);
+    const nextQuestion =
+      engine.generateQuestions(processed.updatedState, [], 1)[0] || null;
+    processed.updatedState.discovery.activeQuestionId = nextQuestion?.id;
     const saved = await saveProjectState(
       id,
       processed.updatedState,
       project.version,
     );
-    await prisma.conversationMessage.create({
-      data: {
-        projectId: id,
-        role: "user",
-        content: Array.isArray(answer) ? answer.join(", ") : answer,
-        metadata: JSON.stringify({
-          questionId: body.questionId,
-          source: "USER",
-        }),
-      },
+
+    const answerValues = Array.isArray(answer) ? answer : [answer];
+    const displayAnswer = answerValues
+      .map(
+        (value) =>
+          currentQuestion.options?.find((option) => option.id === value)
+            ?.label || value,
+      )
+      .join(", ");
+    await persistUserMessage(id, displayAnswer, {
+      questionId: currentQuestion.id,
     });
-    return Response.json({ state: saved.state, version: saved.version });
+    if (nextQuestion) {
+      await persistQuestionMessage(id, nextQuestion);
+    } else if (saved.state.discovery.importantDecisionsRemaining === 0) {
+      await prisma.conversationMessage.create({
+        data: {
+          projectId: id,
+          role: "assistant",
+          content:
+            "No critical blockers remain. The current decisions are enough to draft the build documents.",
+          metadata: JSON.stringify({ source: "AGENT", kind: "READINESS" }),
+        },
+      });
+    }
+
+    return Response.json({
+      state: saved.state,
+      version: saved.version,
+      decision: processed.decision,
+      question: nextQuestion,
+      readiness: {
+        level: saved.state.readiness,
+        score: saved.state.readinessScore,
+        breakdown: saved.state.readinessBreakdown,
+      },
+      discovery: saved.state.discovery,
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT")
       return jsonError(

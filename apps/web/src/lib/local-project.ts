@@ -37,13 +37,59 @@ export async function getLocalProject(id: string) {
   return project;
 }
 
+export async function getProjectMessages(projectId: string) {
+  const messages = await prisma.conversationMessage.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "asc" },
+  });
+  return messages.map(publicMessage);
+}
+
+export function publicMessage(message: {
+  id: string;
+  role: string;
+  content: string;
+  metadata: string | null;
+  createdAt: Date;
+}) {
+  let metadata: Record<string, unknown> = {};
+  try {
+    const parsed = message.metadata ? JSON.parse(message.metadata) : {};
+    if (parsed && typeof parsed === "object") metadata = parsed;
+  } catch {
+    metadata = {};
+  }
+  return {
+    id: message.id,
+    role: ["user", "assistant", "tool", "system"].includes(message.role)
+      ? message.role
+      : "system",
+    text: message.content,
+    questionId:
+      typeof metadata.questionId === "string" ? metadata.questionId : undefined,
+    options: Array.isArray(metadata.options) ? metadata.options : undefined,
+    recommendation:
+      typeof metadata.recommendation === "string"
+        ? metadata.recommendation
+        : undefined,
+    detail: typeof metadata.detail === "string" ? metadata.detail : undefined,
+    category:
+      typeof metadata.category === "string" ? metadata.category : undefined,
+    createdAt: message.createdAt,
+  };
+}
+
 export async function saveProjectState(
   projectId: string,
   state: ProjectState,
   expectedVersion?: number,
   description?: string,
+  name?: string,
 ) {
-  const parsed = ProjectStateSchema.parse(state);
+  const parsed = ProjectStateSchema.parse({
+    ...state,
+    name: name?.trim() || state.name,
+  });
   const current = await prisma.project.findUnique({ where: { id: projectId } });
   if (!current || current.deletedAt) throw new Error("PROJECT_NOT_FOUND");
   if (expectedVersion !== undefined && current.version !== expectedVersion)
@@ -55,11 +101,19 @@ export async function saveProjectState(
     readiness: readiness.level,
     readinessScore: readiness.score,
     readinessBreakdown: readiness.breakdown,
+    discovery: {
+      ...parsed.discovery,
+      evaluated: readiness.discovery.evaluated,
+      importantDecisionsRemaining:
+        readiness.discovery.importantDecisionsRemaining,
+      unresolvedTopics: readiness.discovery.unresolvedTopics,
+    },
   });
   await prisma.$transaction([
     prisma.project.update({
       where: { id: projectId },
       data: {
+        name: name?.trim() || nextState.name,
         canonicalState: JSON.stringify(nextState),
         version,
         ...(description === undefined ? {} : { description }),

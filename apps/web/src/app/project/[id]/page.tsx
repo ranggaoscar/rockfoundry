@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
@@ -49,6 +56,8 @@ type Message = {
   options?: QuestionOption[];
   recommendation?: string;
   questionId?: string;
+  category?: string;
+  createdAt?: string;
   collapsed?: boolean;
 };
 type Drawer = "context" | "documents" | "settings" | null;
@@ -60,17 +69,10 @@ function initialMessages(project: ProjectData): Message[] {
       {
         id: "welcome",
         role: "assistant",
-        text: "What do you want to build? Tell me the idea in your own words. I will help clarify the product before a coding agent starts.",
+        text: "What do you want to build? Tell me the idea in your own words, and I’ll surface the decisions that shape it before coding starts.",
       },
     ];
-  return [
-    { id: "idea", role: "user", text: idea },
-    {
-      id: "welcome",
-      role: "assistant",
-      text: "I have the starting idea. I will first identify the most important unknown, then ask one focused question at a time. You can answer naturally or choose an option.",
-    },
-  ];
+  return [{ id: "idea", role: "user", text: idea }];
 }
 
 function projectStatus(state: any) {
@@ -83,12 +85,18 @@ function projectStatus(state: any) {
 }
 
 function readinessScore(state: any) {
-  const score = state?.generationMetadata?.lastReadinessScore;
+  const score = state?.readinessScore;
   if (typeof score === "number")
     return Math.max(0, Math.min(100, Math.round(score)));
-  const decisions = state?.decisions?.length || 0;
-  const questions = state?.openQuestions?.length || 0;
-  return Math.max(12, Math.min(92, 34 + decisions * 8 - questions * 3));
+  return 0;
+}
+
+function discoverySummary(state: any) {
+  const count = state?.discovery?.importantDecisionsRemaining;
+  if (!state?.discovery?.evaluated || typeof count !== "number")
+    return "Still exploring";
+  if (count === 0) return "No critical blockers";
+  return `${count} important decision${count === 1 ? "" : "s"} remaining`;
 }
 
 export default function ProjectWorkspace({
@@ -110,6 +118,9 @@ export default function ProjectWorkspace({
   const [exporting, setExporting] = useState(false);
   const [exportReady, setExportReady] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState("");
+  const conversationRef = useRef<HTMLDivElement>(null);
 
   const fetchProject = useCallback(async (id: string) => {
     const response = await fetch(`/api/projects/${id}`);
@@ -121,7 +132,11 @@ export default function ProjectWorkspace({
       );
     const data = await response.json();
     setProject(data.project);
-    setMessages(initialMessages(data.project));
+    setMessages(
+      data.messages?.length
+        ? (data.messages as Message[])
+        : initialMessages(data.project),
+    );
     return data.project as ProjectData;
   }, []);
 
@@ -146,6 +161,22 @@ export default function ProjectWorkspace({
     if (!response.ok) return;
     const data = await response.json();
     setQuestion(data.questions?.[0] || null);
+    if (data.readiness) {
+      setProject((current) =>
+        current
+          ? {
+              ...current,
+              canonicalState: {
+                ...current.canonicalState,
+                readiness: data.readiness.level,
+                readinessScore: data.readiness.score,
+                readinessBreakdown: data.readiness.breakdown,
+                discovery: data.discovery || current.canonicalState.discovery,
+              },
+            }
+          : current,
+      );
+    }
   }, [projectId]);
 
   useEffect(() => {
@@ -173,7 +204,6 @@ export default function ProjectWorkspace({
   const state = project?.canonicalState || {};
   const score = readinessScore(state);
   const status = projectStatus(state);
-  const openQuestionCount = state.openQuestions?.length || (question ? 1 : 0);
 
   const visibleMessages = useMemo(() => {
     if (
@@ -195,21 +225,28 @@ export default function ProjectWorkspace({
     ];
   }, [messages, question]);
 
+  useEffect(() => {
+    const conversation = conversationRef.current;
+    if (!conversation) return;
+    window.requestAnimationFrame(() => {
+      conversation.scrollTop = conversation.scrollHeight;
+    });
+  }, [visibleMessages.length, working]);
+
   async function runExtraction(rawIdea: string) {
     if (!projectId || !rawIdea.trim()) return;
     setWorking(true);
     setPageError("");
-    setMessages((current) => [
-      ...current,
-      { id: `user-${Date.now()}`, role: "user", text: rawIdea.trim() },
-      {
-        id: `tool-${Date.now()}`,
-        role: "tool",
-        text: "Analyzing project requirements...",
-        detail:
-          "The agent is extracting context and checking the next requirement gap.",
-      },
-    ]);
+    setMessages((current) =>
+      current.some(
+        (message) => message.role === "user" && message.text === rawIdea.trim(),
+      )
+        ? current
+        : [
+            ...current,
+            { id: `user-${Date.now()}`, role: "user", text: rawIdea.trim() },
+          ],
+    );
     try {
       const response = await fetch(`/api/projects/${projectId}/extract`, {
         method: "POST",
@@ -231,15 +268,23 @@ export default function ProjectWorkspace({
             }
           : current,
       );
-      setMessages((current) => [
-        ...current,
-        {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          text: "I have updated the project understanding. I am checking the next decision that could change the product shape.",
-        },
-      ]);
-      await fetchQuestion();
+      const nextQuestion = data.question || null;
+      setQuestion(nextQuestion);
+      if (nextQuestion) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: `question-${nextQuestion.id}`,
+            role: "assistant",
+            text: nextQuestion.text,
+            detail: nextQuestion.reasonAsked,
+            options: nextQuestion.options,
+            recommendation: nextQuestion.recommendation,
+            questionId: nextQuestion.id,
+            category: nextQuestion.category,
+          },
+        ]);
+      }
     } catch (cause) {
       setPageError(
         cause instanceof Error
@@ -264,19 +309,19 @@ export default function ProjectWorkspace({
     const text = composer.trim();
     if (!text || working) return;
     setComposer("");
-    if (!project?.description || messages.length <= 2) {
+    if (question) {
+      await answerQuestion(text);
+      return;
+    }
+    if (!project?.description) {
       await runExtraction(text);
       return;
     }
     setMessages((current) => [
       ...current,
       { id: `user-${Date.now()}`, role: "user", text },
-      {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        text: "I have noted that. I will use it as project context and keep the next question focused.",
-      },
     ]);
+    await fetchQuestion();
   }
 
   async function answerQuestion(option: QuestionOption | string) {
@@ -307,16 +352,32 @@ export default function ProjectWorkspace({
           ? { ...current, canonicalState: data.state, version: data.version }
           : current,
       );
-      setQuestion(null);
-      setMessages((current) => [
-        ...current,
-        {
-          id: `decision-${Date.now()}`,
-          role: "assistant",
-          text: "Decision recorded. I will recalculate readiness and look for the next unresolved requirement.",
-        },
-      ]);
-      await fetchQuestion();
+      const nextQuestion = data.question || null;
+      setQuestion(nextQuestion);
+      if (nextQuestion && nextQuestion.id !== question.id) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: `question-${nextQuestion.id}`,
+            role: "assistant",
+            text: nextQuestion.text,
+            detail: nextQuestion.reasonAsked,
+            options: nextQuestion.options,
+            recommendation: nextQuestion.recommendation,
+            questionId: nextQuestion.id,
+            category: nextQuestion.category,
+          },
+        ]);
+      } else if (!nextQuestion) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: `readiness-${Date.now()}`,
+            role: "assistant",
+            text: "No critical blockers remain. The current decisions are enough to draft the build documents.",
+          },
+        ]);
+      }
     } catch (cause) {
       setPageError(
         cause instanceof Error
@@ -360,7 +421,7 @@ export default function ProjectWorkspace({
         {
           id: `assistant-${Date.now()}`,
           role: "assistant",
-          text: "Reference added. I will use it as evidence for the project conversation, not as instructions to copy.",
+          text: "Reference added as evidence. Its interaction patterns stay separate from the product rules you still need to decide.",
         },
       ]);
       return true;
@@ -420,6 +481,32 @@ export default function ProjectWorkspace({
     }
   }
 
+  async function renameProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = projectNameDraft.trim();
+    if (!name || !projectId || !project) return;
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, expectedVersion: project.version }),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          data.error || "RockFoundry couldn't rename this project.",
+        );
+      setProject(data.project);
+      setRenaming(false);
+    } catch (cause) {
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't rename this project.",
+      );
+    }
+  }
+
   if (loading)
     return (
       <div className="rf-loading" role="status">
@@ -434,7 +521,7 @@ export default function ProjectWorkspace({
     );
 
   return (
-    <main className="rf-app flex min-h-[100dvh] bg-background text-foreground">
+    <main className="rf-app isolate flex h-dvh min-h-dvh overflow-hidden bg-background text-foreground antialiased">
       <aside className="rf-sidebar hidden w-[264px] shrink-0 flex-col border-r border-border/70 bg-sidebar px-3 py-4 lg:flex">
         <div className="flex items-center justify-between px-2 pb-5">
           <button
@@ -483,24 +570,57 @@ export default function ProjectWorkspace({
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="rf-topbar flex h-14 items-center gap-3 border-b border-border/70 px-4 lg:px-7">
           <button
             className="rf-icon-button lg:hidden"
             type="button"
-            aria-label="Open projects"
+            aria-label="Open project context"
+            onClick={() => setDrawer("context")}
           >
             <Menu className="size-4" />
           </button>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold">{project.name}</div>
+            {renaming ? (
+              <form
+                onSubmit={renameProject}
+                className="flex max-w-sm items-center gap-2"
+              >
+                <label className="sr-only" htmlFor="project-name">
+                  Project name
+                </label>
+                <input
+                  id="project-name"
+                  name="projectName"
+                  value={projectNameDraft}
+                  onChange={(event) => setProjectNameDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setRenaming(false);
+                  }}
+                  className="rf-title-input min-w-0 flex-1"
+                  autoFocus
+                />
+              </form>
+            ) : (
+              <button
+                type="button"
+                className="rf-project-title truncate text-left text-sm font-semibold"
+                onClick={() => {
+                  setProjectNameDraft(project.name);
+                  setRenaming(true);
+                }}
+                aria-label="Rename project"
+              >
+                {project.name}
+              </button>
+            )}
             <button
               type="button"
               className="rf-status-line"
               onClick={() => setDrawer("context")}
             >
-              Discovery: {score}% · {openQuestionCount} important decision
-              {openQuestionCount === 1 ? "" : "s"} remaining
+              Discovery: <span className="tabular-nums">{score}%</span> ·{" "}
+              {discoverySummary(state)}
             </button>
           </div>
           <button
@@ -520,7 +640,10 @@ export default function ProjectWorkspace({
         </header>
 
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div className="rf-conversation mx-auto w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-8">
+          <div
+            ref={conversationRef}
+            className="rf-conversation mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-6 sm:px-8 sm:pt-8"
+          >
             {visibleMessages.map((message) => (
               <MessageRow
                 key={message.id}
@@ -563,6 +686,7 @@ export default function ProjectWorkspace({
                 </label>
                 <textarea
                   id="project-composer"
+                  name="message"
                   value={composer}
                   onChange={(event) => setComposer(event.target.value)}
                   onKeyDown={(event) => {
@@ -797,25 +921,46 @@ function ContextContent({
       <div>
         <div className="mb-2 flex items-center justify-between text-xs">
           <span>Business</span>
-          <span>{state.readiness?.business ?? "-"}</span>
+          <span className="tabular-nums">
+            {state.readinessBreakdown?.business ?? "-"}%
+          </span>
         </div>
         <div className="rf-meter">
-          <span style={{ width: `${state.readiness?.business ?? 40}%` }} />
+          <span
+            style={{ width: `${state.readinessBreakdown?.business ?? 0}%` }}
+          />
         </div>
       </div>
       <div>
         <div className="mb-2 flex items-center justify-between text-xs">
           <span>Product</span>
-          <span>{state.readiness?.product ?? "-"}</span>
+          <span className="tabular-nums">
+            {state.readinessBreakdown?.product ?? "-"}%
+          </span>
         </div>
         <div className="rf-meter">
-          <span style={{ width: `${state.readiness?.product ?? 28}%` }} />
+          <span
+            style={{ width: `${state.readinessBreakdown?.product ?? 0}%` }}
+          />
+        </div>
+      </div>
+      <div>
+        <div className="mb-2 flex items-center justify-between text-xs">
+          <span>Data</span>
+          <span className="tabular-nums">
+            {state.readinessBreakdown?.data ?? "-"}%
+          </span>
+        </div>
+        <div className="rf-meter">
+          <span style={{ width: `${state.readinessBreakdown?.data ?? 0}%` }} />
         </div>
       </div>
       <ContextList
         title="Decisions"
-        items={decisions.map(
-          (item: any) => item.title || item.description || String(item),
+        items={decisions.map((item: any) =>
+          item.topic && item.decision
+            ? `${item.topic}: ${item.decision}`
+            : item.title || item.description || String(item),
         )}
         empty="No confirmed decisions yet."
       />

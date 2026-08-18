@@ -26,4 +26,29 @@ describe("mock provider", () => {
       "Inventory movement",
     );
   });
+
+  it("recognizes Indonesian multi-brand CRM context", async () => {
+    const response =
+      await new MockGatewayProvider().complete<InitialIdeaExtraction>({
+        ...request,
+        messages: [
+          request.messages[0],
+          {
+            role: "user",
+            content:
+              "Extract:\n---\nGua mau bikin CRM untuk 5 brand marmer. Customer datang dari WhatsApp, Instagram, dan website. Ada follow-up dan quotation.\n---",
+          },
+        ],
+      });
+    const entities = response.data.coreEntities.map((item) => item.value);
+    const integrations = response.data.integrationsMentioned.map(
+      (item) => item.value,
+    );
+    expect(entities).toEqual(
+      expect.arrayContaining(["Customer", "Quotation", "Brand"]),
+    );
+    expect(integrations).toEqual(
+      expect.arrayContaining(["WhatsApp", "Instagram", "Website"]),
+    );
+  });
 });

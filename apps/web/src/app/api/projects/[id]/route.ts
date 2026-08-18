@@ -7,6 +7,7 @@ import {
   parseProjectState,
   publicProject,
   saveProjectState,
+  getProjectMessages,
 } from "@/lib/local-project";
 
 export async function GET(
@@ -17,7 +18,8 @@ export async function GET(
     const { id } = await params;
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
-    return Response.json({ project: publicProject(project) });
+    const messages = await getProjectMessages(id);
+    return Response.json({ project: publicProject(project), messages });
   } catch {
     return jsonError("RockFoundry couldn't load this project.");
   }
@@ -32,19 +34,36 @@ export async function PATCH(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const body = await req.json();
-    const state = body.canonicalState
+    const baseState = body.canonicalState
       ? ProjectStateSchema.parse(body.canonicalState)
       : parseProjectState(project);
+    const state =
+      typeof body.name === "string" && body.name.trim()
+        ? ProjectStateSchema.parse({
+            ...baseState,
+            name: body.name.trim(),
+          })
+        : baseState;
     const saved = body.canonicalState
       ? await saveProjectState(
           id,
           state,
           body.expectedVersion,
           body.description,
+          body.name,
         )
       : null;
-    if (!body.canonicalState && body.description !== undefined) {
-      await saveProjectState(id, state, body.expectedVersion, body.description);
+    if (
+      !body.canonicalState &&
+      (body.description !== undefined || body.name !== undefined)
+    ) {
+      await saveProjectState(
+        id,
+        state,
+        body.expectedVersion,
+        body.description,
+        body.name,
+      );
     }
     const updated = await getLocalProject(id);
     return Response.json({

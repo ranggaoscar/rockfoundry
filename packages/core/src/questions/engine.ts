@@ -1,593 +1,981 @@
-import { ProjectState, Question, RequirementNode } from "../schema";
+import {
+  ProjectState,
+  ProjectStateSchema,
+  Question,
+  RequirementNode,
+} from "../schema";
+import { recordDecision } from "../decision-graph";
+import { detectDiscoveryDomain, evaluateDiscovery } from "./requirements";
 import { validateQuestionQuality } from "./quality";
 
-// Question template interface
-interface QuestionTemplate {
-  category: string;
-  condition: (state: ProjectState) => boolean;
-  generate: (state: ProjectState) => Question;
-  priority: number;
+function isIndonesian(state: ProjectState) {
+  return /\b(gua|gue|mau|bikin|buat|untuk|setiap|tapi|harus|bisa|pengen|pengin|cabang|gudang|marmer)\b/i.test(
+    state.rawIdea,
+  );
+}
+
+function hasDecision(state: ProjectState, topic: string) {
+  return state.decisions.some(
+    (decision) =>
+      decision.topic === topic &&
+      ["ACCEPTED", "PROPOSED"].includes(decision.status),
+  );
+}
+
+function question(input: Question): Question {
+  return input;
+}
+
+function affectedFor(topic: string) {
+  const affects: Record<string, string[]> = {
+    customer_identity: [
+      "customer model",
+      "cross-unit search",
+      "duplicate detection",
+      "permissions",
+    ],
+    sales_visibility: ["sales permissions", "owner visibility", "search scope"],
+    lead_ownership: [
+      "lead ownership",
+      "follow-up workflow",
+      "sales permissions",
+    ],
+    quotation_branding: [
+      "quotation ownership",
+      "brand reporting",
+      "customer history",
+    ],
+    duplicate_handling: [
+      "duplicate detection",
+      "customer model",
+      "channel intake",
+    ],
+    vehicle_location: [
+      "vehicle availability",
+      "branch inventory",
+      "booking rules",
+    ],
+    cross_branch_booking: [
+      "booking workflow",
+      "pickup and return",
+      "branch permissions",
+    ],
+    vehicle_transfer: ["vehicle location", "availability", "movement history"],
+    pickup_return: ["rental workflow", "vehicle status", "damage handling"],
+    slab_identity: ["slab model", "movement history", "reservation"],
+    warehouse_transfer: [
+      "warehouse permissions",
+      "movement history",
+      "stock availability",
+    ],
+    movement_history: [
+      "audit trail",
+      "inventory corrections",
+      "stock reporting",
+    ],
+    reservation: ["reservation workflow", "quotation", "stock availability"],
+    measurement_semantics: ["quantity model", "stock reporting", "reservation"],
+    primary_workflow: ["primary workflow", "scope", "acceptance criteria"],
+    record_relationships: ["data model", "history", "reporting"],
+    role_boundaries: ["permissions", "navigation", "data visibility"],
+  };
+  return affects[topic] || [topic];
+}
+
+function canonicalDecision(topic: string, answer: string, optionId?: string) {
+  const value = `${optionId || ""} ${answer}`.toLowerCase();
+  if (/not[_ -]?sure|belum yakin|belum tahu|not decided|undecided/.test(value))
+    return "undecided";
+
+  if (topic === "customer_identity") {
+    if (
+      /company[_ -]?wide|one customer|single customer|satu customer|satu pelanggan|lintas|shared|across/.test(
+        value,
+      )
+    )
+      return "company_wide";
+    if (
+      /separate|per[_ -]?brand|terpisah|masing-masing|masing masing|per[_ -]?branch|per cabang/.test(
+        value,
+      )
+    )
+      return "unit_specific";
+  }
+  if (topic === "sales_visibility") {
+    if (
+      /owner[_ -]?all|owner.*all|all brands|semua|lintas|company[_ -]?wide/.test(
+        value,
+      )
+    )
+      return "owner_all_sales_brand_scoped";
+    if (/brand[_ -]?only|own brand|brand sendiri|brand masing/.test(value))
+      return "brand_scoped";
+  }
+  if (topic === "lead_ownership") {
+    if (
+      /first|initial|brand[_ -]?first|brand yang pertama|brand pertama/.test(
+        value,
+      )
+    )
+      return "owning_brand_sales";
+    if (/round|shared|dibagi|bersama|pool/.test(value))
+      return "shared_sales_pool";
+  }
+  if (topic === "quotation_branding") {
+    if (/lead|brand.*lead|brand asal|originating/.test(value))
+      return "quotation_uses_owning_brand";
+  }
+  if (topic === "duplicate_handling") {
+    if (/merge|one|gabung|satu customer|same customer|unify/.test(value))
+      return "merge_with_review";
+    if (/separate|terpisah|keep.*lead|pisah/.test(value))
+      return "keep_separate_until_review";
+  }
+  if (topic === "cross_branch_booking") {
+    if (/yes|boleh|bisa|allow|one[- ]way|different|beda/.test(value))
+      return "cross_branch_allowed";
+    if (/no|tidak|nggak|hanya|same branch/.test(value))
+      return "same_branch_only";
+  }
+  if (topic === "slab_identity") {
+    if (/individual|each slab|per slab|satu per|masing/.test(value))
+      return "individual_slab";
+    if (/aggregate|quantity|total|jumlah/.test(value))
+      return "aggregate_quantity";
+  }
+  if (topic === "reservation") {
+    if (/yes|boleh|bisa|reserve|reservasi|quotation/.test(value))
+      return "reservation_supported";
+    if (/no|tidak|nggak|only after/.test(value)) return "no_pre_reservation";
+  }
+  return answer.trim() || "user_defined";
+}
+
+function applyCanonicalRule(
+  state: ProjectState,
+  topic: string,
+  decision: string,
+) {
+  const rules: Record<string, string> = {
+    company_wide: "Customer is one shared identity across brands or branches.",
+    unit_specific: "Customer identity is separate per brand or branch.",
+    owner_all_sales_brand_scoped:
+      "Sales visibility is limited by brand while the owner can see all brands.",
+    brand_scoped: "Sales visibility is limited to the salesperson's own brand.",
+    owning_brand_sales:
+      "A lead is owned by the sales team of the brand it first reaches.",
+    shared_sales_pool: "Leads are handled by a shared sales pool.",
+    quotation_uses_owning_brand:
+      "A quotation keeps the brand that owns the lead.",
+    merge_with_review: "Potential duplicates are merged with a review step.",
+    keep_separate_until_review:
+      "Potential duplicates stay separate until a review step.",
+    cross_branch_allowed: "Bookings can cross branch boundaries.",
+    same_branch_only: "Bookings stay within the selected branch.",
+    individual_slab: "Each slab has its own identity and movement history.",
+    aggregate_quantity: "Inventory is tracked as aggregate quantity.",
+    reservation_supported:
+      "Inventory can be reserved before it leaves the warehouse.",
+    no_pre_reservation:
+      "Inventory is not reserved before the operational handoff.",
+  };
+  const rule = rules[decision];
+  if (!rule) return;
+  if (!state.businessRules.includes(rule)) state.businessRules.push(rule);
+  if (topic === "sales_visibility" && decision.includes("owner_all")) {
+    const permission =
+      "Salespeople see their brand; the owner sees all brands.";
+    if (!state.permissions.includes(permission))
+      state.permissions.push(permission);
+  }
+  if (topic === "lead_ownership" && decision === "owning_brand_sales") {
+    const workflow =
+      "Lead assignment follows the brand that first receives the lead.";
+    if (!state.workflows.includes(workflow)) state.workflows.push(workflow);
+  }
+}
+
+function topicQuestion(state: ProjectState, topic: string): Question | null {
+  const indo = isIndonesian(state);
+  const name = state.name || "produk ini";
+  const domain = detectDiscoveryDomain(state);
+  const contextReferences = ["rawIdea", "name", "entities", "workflows"];
+
+  if (domain === "CRM" && topic === "customer_identity") {
+    return question({
+      id: "crm-customer-identity",
+      topic,
+      category: "DATA",
+      text: indo
+        ? `Karena ${name} punya sales per brand sementara owner perlu melihat semuanya, kalau customer yang sama masuk lewat dua brand, apakah identitasnya satu customer lintas brand atau terpisah per brand?`
+        : `You described ${name} with sales teams per brand and an owner who sees everything. If the same customer contacts two brands, should the CRM keep one customer identity across brands or separate records per brand?`,
+      contextReferences,
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "company_wide",
+          label: indo
+            ? "Satu customer lintas brand"
+            : "One customer across brands",
+          description: indo
+            ? "Histori customer tetap utuh; brand melekat di lead atau quotation."
+            : "Keep one history; attach the brand to the lead or quotation.",
+        },
+        {
+          id: "unit_specific",
+          label: indo
+            ? "Customer terpisah per brand"
+            : "Separate customer per brand",
+          description: indo
+            ? "Setiap brand punya histori dan identitas customer sendiri."
+            : "Each brand keeps its own customer identity and history.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan keputusan ini tetap terbuka."
+            : "Keep this decision open.",
+        },
+      ],
+      recommendation: indo
+        ? "Gue cenderung menyarankan satu customer lintas brand karena owner perlu melihat histori penuh. Brand tetap bisa melekat di lead atau quotation."
+        : "I lean toward one shared customer because the owner needs the full history. The brand can still live on the lead or quotation.",
+      priority: 10,
+      reasonAsked: indo
+        ? "Identitas customer memengaruhi histori, duplicate detection, search, quotation, dan batas akses sales."
+        : "Customer identity affects history, duplicate detection, search, quotation ownership, and sales access.",
+    });
+  }
+
+  if (domain === "CRM" && topic === "sales_visibility") {
+    return question({
+      id: "crm-sales-visibility",
+      topic,
+      category: "PERMISSIONS",
+      text: indo
+        ? `Sales tiap brand sudah disebut terpisah dan owner harus bisa melihat semua. Di ${name}, apakah sales hanya boleh melihat customer, lead, follow-up, dan quotation brand-nya sendiri sementara owner melihat seluruh brand?`
+        : `You mentioned sales teams per brand and an owner who can see everything. In ${name}, should each salesperson see only their brand's customers, leads, follow-ups, and quotations while the owner sees all brands?`,
+      contextReferences,
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "owner_all_sales_brand_scoped",
+          label: indo
+            ? "Sales per brand, owner lihat semua"
+            : "Brand-scoped sales, owner sees all",
+          description: indo
+            ? "Batas akses mengikuti brand."
+            : "Access follows the brand boundary.",
+        },
+        {
+          id: "all_sales_all_brands",
+          label: indo
+            ? "Semua sales boleh lihat semua"
+            : "All sales see all brands",
+          description: indo
+            ? "Lebih mudah kolaborasi, tapi batas ownership lebih longgar."
+            : "Easier collaboration, looser ownership boundaries.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan akses tetap terbuka."
+            : "Keep the access rule open.",
+        },
+      ],
+      recommendation: indo
+        ? "Batas per brand dengan akses penuh untuk owner biasanya paling aman untuk mencegah data sales tercampur."
+        : "Brand-scoped sales access with full owner visibility is usually safer and prevents sales data from blending.",
+      priority: 10,
+      reasonAsked: indo
+        ? "Aturan ini menentukan permission, ownership, pencarian, dan tampilan kerja setiap role."
+        : "This rule determines permissions, ownership, search scope, and each role's working view.",
+    });
+  }
+
+  if (domain === "CRM" && topic === "lead_ownership") {
+    return question({
+      id: "crm-lead-ownership",
+      topic,
+      category: "WORKFLOW",
+      text: indo
+        ? `Lead bisa datang dari WhatsApp, Instagram, dan website. Saat brand atau sales pertama menerima lead, siapa yang menjadi pemilik follow-up dan boleh memindahkan ownership-nya?`
+        : `Leads can arrive from WhatsApp, Instagram, and the website. When a brand or salesperson receives a lead first, who owns the follow-up and can ownership be reassigned?`,
+      contextReferences: ["rawIdea", "entities", "workflows", "integrations"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "owning_brand_sales",
+          label: indo
+            ? "Sales dari brand yang pertama menerima"
+            : "First receiving brand's sales team",
+          description: indo
+            ? "Ownership dimulai dari brand asal lead."
+            : "Ownership starts with the lead's originating brand.",
+        },
+        {
+          id: "shared_sales_pool",
+          label: indo ? "Dibagi ke pool sales bersama" : "Shared sales pool",
+          description: indo
+            ? "Lead bisa ditangani lintas brand."
+            : "Leads can be handled across brands.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan assignment tetap terbuka."
+            : "Keep assignment open.",
+        },
+      ],
+      recommendation: indo
+        ? "Ownership dari brand yang pertama menerima membuat follow-up jelas, lalu owner tetap bisa melakukan reassignment."
+        : "Starting ownership with the first receiving brand makes follow-up clear while still allowing owner reassignment.",
+      priority: 9,
+      reasonAsked: indo
+        ? "Tanpa aturan ownership, lead dari banyak channel mudah dobel atau tidak punya penanggung jawab."
+        : "Without an ownership rule, multi-channel leads can be duplicated or left without an accountable owner.",
+    });
+  }
+
+  if (domain === "CRM" && topic === "quotation_branding") {
+    return question({
+      id: "crm-quotation-branding",
+      topic,
+      category: "DATA",
+      text: indo
+        ? `Quotation sudah termasuk kebutuhan ${name}. Kalau satu customer pernah berinteraksi dengan beberapa brand, quotation baru harus menggunakan brand yang mana dan tetap terhubung ke histori customer yang sama?`
+        : `Quotations are part of ${name}. If one customer has interacted with multiple brands, which brand should a new quotation use while staying linked to the same customer history?`,
+      contextReferences: ["name", "entities", "workflows"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "owning_brand_sales",
+          label: indo ? "Brand yang memiliki lead" : "The lead-owning brand",
+          description: indo
+            ? "Reporting quotation tetap jelas per brand."
+            : "Quotation reporting stays clear by brand.",
+        },
+        {
+          id: "customer_choice",
+          label: indo ? "Customer memilih brand" : "Customer chooses the brand",
+          description: indo
+            ? "Pilihan brand menjadi bagian dari proses quotation."
+            : "Brand choice becomes part of the quotation flow.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan branding quotation tetap terbuka."
+            : "Keep quotation branding open.",
+        },
+      ],
+      recommendation: indo
+        ? "Brand pemilik lead biasanya paling konsisten untuk reporting, approval, dan histori quotation."
+        : "Using the lead-owning brand is usually clearest for reporting, approvals, and quotation history.",
+      priority: 9,
+      reasonAsked: indo
+        ? "Keputusan ini menjaga quotation tetap punya konteks brand tanpa memecah customer history."
+        : "This keeps each quotation tied to a brand without splitting the customer history.",
+    });
+  }
+
+  if (domain === "CRM" && topic === "duplicate_handling") {
+    return question({
+      id: "crm-duplicate-handling",
+      topic,
+      category: "DATA",
+      text: indo
+        ? `Kalau nomor telepon atau akun sosial yang sama masuk dari dua channel atau dua brand, apakah ${name} langsung menggabungkan customer, atau membuat lead terpisah sampai ada yang meninjau?`
+        : `If the same phone number or social account arrives through two channels or brands, should ${name} merge the customer immediately or keep separate leads until someone reviews them?`,
+      contextReferences: ["name", "entities", "integrations"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "merge_with_review",
+          label: indo ? "Gabungkan dengan review" : "Merge with review",
+          description: indo
+            ? "Sistem memberi sinyal, user mengonfirmasi."
+            : "The system flags it; a user confirms.",
+        },
+        {
+          id: "keep_separate_until_review",
+          label: indo
+            ? "Pisahkan dulu sampai direview"
+            : "Keep separate until review",
+          description: indo
+            ? "Tidak ada data yang menyatu tanpa pengecekan."
+            : "No data is merged without review.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan duplicate tetap terbuka."
+            : "Keep duplicate handling open.",
+        },
+      ],
+      recommendation: indo
+        ? "Sinyal duplicate dengan review manual biasanya mengurangi data ganda tanpa berisiko menyatukan orang yang berbeda."
+        : "A duplicate signal with human review reduces duplicates without silently merging different people.",
+      priority: 8,
+      reasonAsked: indo
+        ? "Duplicate handling memengaruhi kualitas customer history dan kepercayaan sales pada data CRM."
+        : "Duplicate handling affects customer-history quality and sales trust in the CRM data.",
+    });
+  }
+
+  if (domain === "RENTAL" && topic === "vehicle_location") {
+    return question({
+      id: "rental-vehicle-location",
+      topic,
+      category: "DATA",
+      text: indo
+        ? `Untuk rental mobil dengan beberapa cabang, apakah setiap kendaraan selalu terikat ke satu cabang saat tersedia, atau kendaraan boleh tersedia di cabang lain setelah dipindahkan?`
+        : `For this multi-branch car rental, is each vehicle tied to one branch while available, or can it become available at another branch after a transfer?`,
+      contextReferences: ["rawIdea", "name", "entities", "workflows"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "branch_bound",
+          label: indo ? "Terikat ke cabang" : "Branch-bound",
+          description: indo
+            ? "Availability hanya berasal dari cabang pemilik."
+            : "Availability comes only from the owning branch.",
+        },
+        {
+          id: "transferable",
+          label: indo ? "Bisa dipindahkan" : "Transferable",
+          description: indo
+            ? "Lokasi aktif berubah setelah transfer."
+            : "The active location changes after transfer.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan lokasi terbuka."
+            : "Keep the location rule open.",
+        },
+      ],
+      recommendation: indo
+        ? "Simpan lokasi aktif dan histori transfer terpisah supaya availability tidak salah."
+        : "Keep current location separate from transfer history so availability stays trustworthy.",
+      priority: 10,
+      reasonAsked: indo
+        ? "Lokasi kendaraan menentukan availability, booking, dan operasi antar cabang."
+        : "Vehicle location determines availability, booking, and cross-branch operations.",
+    });
+  }
+
+  if (domain === "RENTAL" && topic === "cross_branch_booking") {
+    return question({
+      id: "rental-cross-branch-booking",
+      topic,
+      category: "WORKFLOW",
+      text: indo
+        ? `Customer bisa booking kendaraan di beberapa cabang. Apakah customer boleh pickup di satu cabang dan return di cabang lain, atau booking harus selesai di cabang yang sama?`
+        : `Customers can book across branches. Can they pick up at one branch and return at another, or must each booking stay within the same branch?`,
+      contextReferences: ["rawIdea", "entities", "workflows"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "cross_branch_allowed",
+          label: indo ? "Boleh lintas cabang" : "Cross-branch allowed",
+          description: indo
+            ? "Pickup dan return boleh berbeda."
+            : "Pickup and return can differ.",
+        },
+        {
+          id: "same_branch_only",
+          label: indo ? "Harus cabang yang sama" : "Same branch only",
+          description: indo
+            ? "Operasi lebih sederhana dan terlokalisasi."
+            : "Operations stay simple and local.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan booking terbuka."
+            : "Keep the booking rule open.",
+        },
+      ],
+      recommendation: indo
+        ? "Tentukan ini sejak awal karena memengaruhi availability dan biaya operasional transfer."
+        : "Decide this early because it changes availability and transfer operations.",
+      priority: 10,
+      reasonAsked: indo
+        ? "Aturan pickup dan return mengubah model booking dan koordinasi antar cabang."
+        : "Pickup and return rules change the booking model and branch coordination.",
+    });
+  }
+
+  if (domain === "RENTAL" && topic === "customer_identity") {
+    return question({
+      id: "rental-customer-identity",
+      topic,
+      category: "DATA",
+      text: indo
+        ? `Kalau customer rental pernah menyewa di dua cabang, apakah ${name} menyimpan satu histori customer lintas cabang atau profil terpisah per cabang?`
+        : `If a rental customer has used two branches, should ${name} keep one customer history across branches or separate profiles per branch?`,
+      contextReferences: ["name", "entities", "workflows"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "company_wide",
+          label: indo
+            ? "Satu customer lintas cabang"
+            : "One customer across branches",
+          description: indo
+            ? "Riwayat sewa tetap utuh."
+            : "Rental history stays together.",
+        },
+        {
+          id: "unit_specific",
+          label: indo
+            ? "Profil terpisah per cabang"
+            : "Separate profile per branch",
+          description: indo
+            ? "Setiap cabang mengelola histori sendiri."
+            : "Each branch manages its own history.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan identitas terbuka."
+            : "Keep identity open.",
+        },
+      ],
+      recommendation: indo
+        ? "Satu histori lintas cabang biasanya membantu pengecekan customer dan repeat rental."
+        : "One cross-branch history usually helps with customer checks and repeat rentals.",
+      priority: 9,
+      reasonAsked: indo
+        ? "Identitas customer memengaruhi histori sewa, duplicate detection, dan kebijakan antar cabang."
+        : "Customer identity affects rental history, duplicate detection, and cross-branch policies.",
+    });
+  }
+
+  if (domain === "RENTAL" && topic === "vehicle_transfer") {
+    return question({
+      id: "rental-vehicle-transfer",
+      topic,
+      category: "WORKFLOW",
+      text: indo
+        ? `Saat kendaraan dipindahkan antar cabang, kapan statusnya berubah menjadi tersedia di ${name}: saat berangkat, saat diterima, atau setelah staff cabang tujuan mengonfirmasi?`
+        : `When a vehicle moves between branches, when should it become available in ${name}: when it leaves, when it arrives, or after the destination staff confirms it?`,
+      contextReferences: ["name", "entities", "workflows"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "destination_confirmed",
+          label: indo
+            ? "Setelah cabang tujuan konfirmasi"
+            : "After destination confirmation",
+          description: indo
+            ? "Availability tidak muncul sebelum kendaraan diterima."
+            : "Availability waits until receipt is confirmed.",
+        },
+        {
+          id: "transfer_started",
+          label: indo ? "Saat transfer dimulai" : "When transfer starts",
+          description: indo
+            ? "Cabang tujuan bisa merencanakan lebih awal."
+            : "The destination can plan earlier.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan status terbuka."
+            : "Keep status handling open.",
+        },
+      ],
+      recommendation: indo
+        ? "Availability setelah konfirmasi penerimaan paling aman untuk mencegah double booking."
+        : "Availability after receipt confirmation is safest for preventing double booking.",
+      priority: 8,
+      reasonAsked: indo
+        ? "Status transfer mengubah availability dan risiko double booking."
+        : "Transfer status changes availability and double-booking risk.",
+    });
+  }
+
+  if (domain === "RENTAL" && topic === "pickup_return") {
+    return question({
+      id: "rental-pickup-return",
+      topic,
+      category: "WORKFLOW",
+      text: indo
+        ? `Saat pickup dan return kendaraan dicatat, data apa yang wajib menjadi bagian dari status booking: kondisi kendaraan, kilometer, bahan bakar, atau biaya kerusakan?`
+        : `When a vehicle is picked up and returned, which details must change the booking status: condition, mileage, fuel, or damage charges?`,
+      contextReferences: ["entities", "workflows", "name"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "FREE_TEXT",
+      priority: 8,
+      reasonAsked: indo
+        ? "Aturan pickup dan return menentukan data operasional yang harus dicatat."
+        : "Pickup and return rules determine which operational data must be recorded.",
+    });
+  }
+
+  if (domain === "INVENTORY" && topic === "slab_identity") {
+    return question({
+      id: "inventory-slab-identity",
+      topic,
+      category: "DATA",
+      text: indo
+        ? `Untuk inventory slab marmer, apakah setiap slab harus punya identitas dan histori sendiri, atau cukup menyimpan total quantity per jenis dan gudang?`
+        : `For this marble slab inventory, should every slab have its own identity and history, or is aggregate quantity by type and warehouse enough?`,
+      contextReferences: ["rawIdea", "name", "entities"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "individual_slab",
+          label: indo ? "Identitas setiap slab" : "Individual slab identity",
+          description: indo
+            ? "Lokasi dan movement bisa dilacak per slab."
+            : "Location and movement are tracked per slab.",
+        },
+        {
+          id: "aggregate_quantity",
+          label: indo ? "Total quantity saja" : "Aggregate quantity only",
+          description: indo
+            ? "Model lebih sederhana, tanpa histori per slab."
+            : "Simpler model, without per-slab history.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan semantics inventory terbuka."
+            : "Keep inventory semantics open.",
+        },
+      ],
+      recommendation: indo
+        ? "Jika slab dijual atau dicari satu per satu, identitas individual lebih aman; kalau hanya stok massal, quantity cukup."
+        : "If slabs are sold or searched individually, identity is safer; aggregate quantity is enough for bulk stock.",
+      priority: 10,
+      reasonAsked: indo
+        ? "Identitas slab menentukan ERD, transfer, reservation, dan histori inventory."
+        : "Slab identity determines the ERD, transfers, reservations, and inventory history.",
+    });
+  }
+
+  if (domain === "INVENTORY" && topic === "warehouse_transfer") {
+    return question({
+      id: "inventory-warehouse-transfer",
+      topic,
+      category: "WORKFLOW",
+      text: indo
+        ? `Saat stock atau slab dipindahkan antar gudang, apakah transfer langsung mengurangi gudang asal dan menambah gudang tujuan, atau harus menunggu konfirmasi penerimaan?`
+        : `When stock or slabs move between warehouses, should a transfer immediately reduce the source and add to the destination, or wait for receipt confirmation?`,
+      contextReferences: ["rawIdea", "name", "entities", "workflows"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "destination_confirmed",
+          label: indo
+            ? "Menunggu konfirmasi gudang tujuan"
+            : "Wait for destination confirmation",
+          description: indo
+            ? "Transit terlihat terpisah dari stock tersedia."
+            : "Transit stays separate from available stock.",
+        },
+        {
+          id: "transfer_started",
+          label: indo
+            ? "Langsung saat transfer dibuat"
+            : "Update when transfer is created",
+          description: indo
+            ? "Lebih cepat, tapi butuh kontrol jika gagal."
+            : "Faster, but needs failure handling.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan transfer terbuka."
+            : "Keep transfer behavior open.",
+        },
+      ],
+      recommendation: indo
+        ? "Status transit dan konfirmasi penerimaan mengurangi risiko stock terlihat tersedia padahal masih perjalanan."
+        : "Transit status plus receipt confirmation reduces the risk of showing stock as available while in motion.",
+      priority: 10,
+      reasonAsked: indo
+        ? "Transfer mengubah quantity, lokasi, permission staff, dan audit trail."
+        : "Transfers change quantity, location, staff permissions, and the audit trail.",
+    });
+  }
+
+  if (domain === "INVENTORY" && topic === "movement_history") {
+    return question({
+      id: "inventory-movement-history",
+      topic,
+      category: "DATA",
+      text: indo
+        ? `Untuk inventory ${name}, apakah setiap perubahan lokasi atau quantity harus menyimpan siapa, kapan, dari mana, ke mana, dan alasannya?`
+        : `For ${name}, should every location or quantity change preserve who changed it, when, the source, the destination, and the reason?`,
+      contextReferences: ["name", "entities", "workflows"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "full_history",
+          label: indo ? "Histori lengkap" : "Full movement history",
+          description: indo
+            ? "Setiap perubahan bisa diaudit."
+            : "Every change can be audited.",
+        },
+        {
+          id: "current_state_only",
+          label: indo ? "Current state saja" : "Current state only",
+          description: indo
+            ? "Lebih sederhana, histori terbatas."
+            : "Simpler, with limited history.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan kebutuhan audit terbuka."
+            : "Keep audit needs open.",
+        },
+      ],
+      recommendation: indo
+        ? "Histori lengkap biasanya penting untuk menemukan selisih stock dan menelusuri perpindahan slab."
+        : "Full history is usually important for reconciling stock and tracing slab movement.",
+      priority: 9,
+      reasonAsked: indo
+        ? "Movement history memengaruhi audit, koreksi stock, dan kepercayaan pada data gudang."
+        : "Movement history affects audits, stock corrections, and trust in warehouse data.",
+    });
+  }
+
+  if (domain === "INVENTORY" && topic === "reservation") {
+    return question({
+      id: "inventory-reservation",
+      topic,
+      category: "WORKFLOW",
+      text: indo
+        ? `Kalau slab sudah dipilih untuk customer atau quotation, apakah stock harus langsung di-reserve agar tidak dijual ke orang lain sebelum transaksi selesai?`
+        : `When a slab is selected for a customer or quotation, should inventory be reserved so it cannot be sold to someone else before the transaction finishes?`,
+      contextReferences: ["entities", "features", "workflows"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "SINGLE_CHOICE",
+      options: [
+        {
+          id: "reservation_supported",
+          label: indo ? "Ya, bisa di-reserve" : "Yes, support reservations",
+          description: indo
+            ? "Availability membedakan stock bebas dan reserved."
+            : "Availability distinguishes free and reserved stock.",
+        },
+        {
+          id: "no_pre_reservation",
+          label: indo ? "Tidak perlu reservation" : "No pre-reservation",
+          description: indo
+            ? "Stock berubah saat transaksi final."
+            : "Stock changes only at final transaction.",
+        },
+        {
+          id: "not_sure",
+          label: indo ? "Belum yakin" : "Not sure yet",
+          description: indo
+            ? "Biarkan aturan reservation terbuka."
+            : "Keep reservation open.",
+        },
+      ],
+      recommendation: indo
+        ? "Reservation penting jika quotation bisa berlangsung lama atau customer memesan slab tertentu."
+        : "Reservations matter when quotations remain open or customers select specific slabs.",
+      priority: 8,
+      reasonAsked: indo
+        ? "Reservation memengaruhi availability dan hubungan inventory dengan customer atau quotation."
+        : "Reservations affect availability and how inventory connects to customers or quotations.",
+    });
+  }
+
+  if (domain === "INVENTORY" && topic === "measurement_semantics") {
+    return question({
+      id: "inventory-measurement-semantics",
+      topic,
+      category: "DATA",
+      text: indo
+        ? `Untuk quantity slab, apakah ${name} harus menghitung per slab, meter persegi, ukuran panjang-lebar, atau kombinasi beberapa satuan?`
+        : `For slab quantity, should ${name} calculate by slab, square meter, dimensions, or a combination of units?`,
+      contextReferences: ["name", "entities", "features"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "FREE_TEXT",
+      priority: 8,
+      reasonAsked: indo
+        ? "Semantics quantity menentukan field inventory, quotation, dan laporan stock."
+        : "Quantity semantics determine inventory fields, quotations, and stock reporting.",
+    });
+  }
+
+  if (topic === "primary_workflow") {
+    const entity = state.entities[0] || "record";
+    return question({
+      id: "general-primary-workflow",
+      topic,
+      category: "WORKFLOW",
+      text: `When someone uses ${name} with a ${entity}, what should the first successful outcome be?`,
+      contextReferences: ["name", "entities", "rawIdea"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "FREE_TEXT",
+      priority: 9,
+      reasonAsked:
+        "The first successful workflow anchors scope and acceptance criteria.",
+    });
+  }
+  if (topic === "record_relationships") {
+    return question({
+      id: "general-record-relationships",
+      topic,
+      category: "DATA",
+      text: `You mentioned ${state.entities.slice(0, 3).join(", ") || "important records"} in ${name}. Which records must stay connected so their history can be understood together?`,
+      contextReferences: ["name", "entities", "rawIdea"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "FREE_TEXT",
+      priority: 8,
+      reasonAsked:
+        "Record relationships shape history, search, and the data model.",
+    });
+  }
+  if (topic === "role_boundaries") {
+    return question({
+      id: "general-role-boundaries",
+      topic,
+      category: "PERMISSIONS",
+      text: `You named ${state.targetUsers.slice(0, 2).join(" and ") || "different users"} for ${name}. What should each role be allowed to see or change?`,
+      contextReferences: ["name", "targetUsers", "rawIdea"],
+      relatedRequirementIds: [topic],
+      affects: affectedFor(topic),
+      answerType: "FREE_TEXT",
+      priority: 8,
+      reasonAsked:
+        "Role boundaries prevent data ownership and permission gaps later.",
+    });
+  }
+  return null;
 }
 
 export class QuestionEngine {
-  private templates: QuestionTemplate[];
-
-  constructor() {
-    this.templates = this.buildTemplates();
-  }
-
-  private buildTemplates(): QuestionTemplate[] {
-    return [
-      // ── DATA: Entity relationships ──────────────────────
-      {
-        category: "DATA",
-        priority: 9,
-        condition: (state) => state.entities.length > 0,
-        generate: (state) => ({
-          id: "q-req-db-type",
-          text: `Because ${state.name || "this product"} tracks ${state.entities.slice(0, 3).join(", ")}, should all related records stay connected in one history (like linking a customer to their orders), or can each record exist independently?`,
-          contextReferences: ["entities"],
-          relatedRequirementIds: ["req-db-type"],
-          answerType: "SINGLE_CHOICE",
-          options: [
-            {
-              id: "connected",
-              label: "Connected history",
-              description:
-                "Records must link strictly together in a relational way.",
-            },
-            {
-              id: "independent",
-              label: "Independent records",
-              description: "Records are mostly standalone documents or events.",
-            },
-          ],
-          recommendation:
-            "Connected history is standard for most apps that need reporting and analytics.",
-          tradeoffs:
-            "Connected history enables rich queries but adds database complexity.",
-          priority: 8,
-          reasonAsked: `The entities (${state.entities.slice(0, 3).join(", ")}) suggest data relationships that affect database design.`,
-        }),
-      },
-
-      // ── DATA: Data sensitivity ──────────────────────────
-      {
-        category: "DATA",
-        priority: 7,
-        condition: (state) =>
-          (state.productType?.toLowerCase().includes("health") ?? false) ||
-          (state.productType?.toLowerCase().includes("finance") ?? false) ||
-          (state.productType?.toLowerCase().includes("medical") ?? false),
-        generate: (state) => ({
-          id: `q-data-sensitivity-${Date.now()}`,
-          text: `${state.name || "This product"} appears to be in a regulated domain. What level of data sensitivity and compliance does it need to handle? For example, does it store personal health data, financial transactions, or personally identifiable information?`,
-          contextReferences: ["productType"],
-          relatedRequirementIds: ["req-security-level"],
-          answerType: "SINGLE_CHOICE",
-          options: [
-            {
-              id: "standard",
-              label: "Standard data",
-              description: "Basic user data with standard protection.",
-            },
-            {
-              id: "sensitive",
-              label: "Sensitive data",
-              description:
-                "Personal data needing encryption and access controls.",
-            },
-            {
-              id: "regulated",
-              label: "Regulated data",
-              description:
-                "Subject to HIPAA, GDPR, SOC2, or similar regulations.",
-            },
-          ],
-          recommendation:
-            "Treat data as sensitive by default. Compliance can be added later but retrofitting is expensive.",
-          priority: 7,
-          reasonAsked:
-            "The product type suggests regulated data handling requirements.",
-        }),
-      },
-
-      // ── USERS: Authentication ───────────────────────────
-      {
-        category: "USERS",
-        priority: 10,
-        condition: (state) => state.targetUsers.length > 0,
-        generate: (state) => ({
-          id: "q-req-auth-type",
-          text: `How should your ${state.targetUsers.slice(0, 2).join(" and ") || "users"} identify themselves when using ${state.name || "this product"}?`,
-          contextReferences: ["targetUsers"],
-          relatedRequirementIds: ["req-auth-type"],
-          answerType: "MULTIPLE_CHOICE",
-          options: [
-            {
-              id: "email",
-              label: "Email and password",
-              description: "Standard login form.",
-            },
-            {
-              id: "oauth",
-              label: "Sign in with Google or Apple",
-              description: "Social sign-in.",
-            },
-            {
-              id: "magic",
-              label: "Magic link (passwordless)",
-              description: "Email a one-time sign-in link.",
-            },
-            {
-              id: "sso",
-              label: "Enterprise SSO",
-              description: "SAML/SSO for company accounts.",
-            },
-            {
-              id: "none",
-              label: "No login needed",
-              description: "Fully anonymous / no accounts.",
-            },
-          ],
-          recommendation:
-            "Email + Google sign-in covers most product types and users expect it.",
-          tradeoffs:
-            "Adding auth adds complexity but is essential for personalization and data ownership.",
-          priority: 9,
-          reasonAsked:
-            "Authentication is the foundation of user identity and security.",
-        }),
-      },
-
-      // ── USERS: Multiple user types ──────────────────────
-      {
-        category: "USERS",
-        priority: 8,
-        condition: (state) => state.targetUsers.length > 1,
-        generate: (state) => ({
-          id: `q-user-roles-${Date.now()}`,
-          text: `${state.name || "The product"} has multiple user types: ${state.targetUsers.join(", ")}. Do they need different permissions and access levels? For example, should ${state.targetUsers[0] || "one type"} see different things than ${state.targetUsers[1] || "another type"}?`,
-          contextReferences: ["targetUsers"],
-          relatedRequirementIds: ["req-auth-type"],
-          answerType: "SINGLE_CHOICE",
-          options: [
-            {
-              id: "roles",
-              label: "Yes, role-based access",
-              description: "Each user type has permissions and views.",
-            },
-            {
-              id: "same",
-              label: "No, same experience",
-              description: "All users see the same interface.",
-            },
-          ],
-          recommendation:
-            "Role-based access is safer to build early — merging roles later is easier than splitting.",
-          priority: 8,
-          reasonAsked: "Multiple user types suggest different access needs.",
-        }),
-      },
-
-      // ── USERS: Registration flow ────────────────────────
-      {
-        category: "USERS",
-        priority: 7,
-        condition: (state) =>
-          state.targetUsers.some(
-            (u) =>
-              u.toLowerCase().includes("internal") ||
-              u.toLowerCase().includes("employee"),
-          ),
-        generate: (state) => ({
-          id: `q-registration-${Date.now()}`,
-          text: `Since ${state.name || "the product"} involves internal users, should registration be invite-only (admin creates accounts), or can anyone sign up? This affects onboarding flow and security model.`,
-          contextReferences: ["targetUsers"],
-          relatedRequirementIds: ["req-auth-type"],
-          answerType: "SINGLE_CHOICE",
-          options: [
-            {
-              id: "invite",
-              label: "Invite-only",
-              description: "Admin sends invites to new users.",
-            },
-            {
-              id: "open",
-              label: "Open registration with approval",
-              description: "Anyone can request, admin approves.",
-            },
-          ],
-          recommendation:
-            "Internal tools work best with invite-only to control access.",
-          priority: 7,
-          reasonAsked: "Internal users need controlled access.",
-        }),
-      },
-
-      // ── WORKFLOW: Core actions ──────────────────────────
-      {
-        category: "WORKFLOW",
-        priority: 8,
-        condition: (state) => state.features.length > 0,
-        generate: (state) => ({
-          id: `q-workflow-priority-${Date.now()}`,
-          text: `Of these features — ${state.features.slice(0, 4).join(", ")} — which one should work first in an MVP? Focus on the single most important action a user takes.`,
-          contextReferences: ["features"],
-          relatedRequirementIds: ["req-workflow-core"],
-          answerType: "SINGLE_CHOICE",
-          options: state.features.slice(0, 5).map((f, i) => ({
-            id: `feat-${i}`,
-            label: f.length > 40 ? f.substring(0, 40) + "..." : f,
-            description: `Prioritize ${f} in the MVP.`,
-          })),
-          recommendation:
-            "Focus on the feature that delivers the core value proposition.",
-          tradeoffs:
-            "Building more features slows down the MVP — launch with the minimum valuable set.",
-          priority: 8,
-          reasonAsked:
-            "Knowing the MVP feature helps prioritize the implementation plan.",
-        }),
-      },
-
-      // ── SCALE: Expected usage ───────────────────────────
-      {
-        category: "SCALE",
-        priority: 6,
-        condition: (state) => state.features.length > 2,
-        generate: (state) => ({
-          id: `q-scale-users-${Date.now()}`,
-          text: `How many ${state.targetUsers[0] || "users"} do you expect to have in the first 6 months? This helps decide hosting infrastructure and database design.`,
-          contextReferences: ["targetUsers"],
-          relatedRequirementIds: ["req-scale"],
-          answerType: "SINGLE_CHOICE",
-          options: [
-            {
-              id: "tens",
-              label: "Tens of users",
-              description: "Small team or pilot.",
-            },
-            {
-              id: "hundreds",
-              label: "Hundreds of users",
-              description: "Growing product.",
-            },
-            {
-              id: "thousands",
-              label: "Thousands of users",
-              description: "Scaling product.",
-            },
-            { id: "unknown", label: "No idea yet", description: "Uncertain." },
-          ],
-          recommendation:
-            "Start simple with what you know. Most products overestimate early scale needs.",
-          tradeoffs:
-            "Over-engineering for scale slows development; under-engineering needs rework.",
-          priority: 6,
-          reasonAsked:
-            "Scale expectations shape hosting, database, and caching decisions.",
-        }),
-      },
-
-      // ── DESIGN: Platform preference ─────────────────────
-      {
-        category: "DESIGN",
-        priority: 5,
-        condition: (state: ProjectState) => state.platforms.length === 0,
-        generate: (state) => ({
-          id: `q-platform-${Date.now()}`,
-          text: `Which platforms should ${state.name || "the product"} be available on? This affects the technology choices and development approach.`,
-          contextReferences: [],
-          relatedRequirementIds: ["req-platform"],
-          answerType: "MULTIPLE_CHOICE",
-          options: [
-            {
-              id: "web",
-              label: "Web (responsive)",
-              description: "Works in any browser.",
-            },
-            {
-              id: "mobile",
-              label: "Mobile app",
-              description: "iOS and/or Android native.",
-            },
-            {
-              id: "both",
-              label: "Both web and mobile",
-              description: "Web-first then mobile app.",
-            },
-          ],
-          recommendation:
-            "Start web-first unless offline or native device features are essential from day one.",
-          tradeoffs:
-            "Web is faster to build and iterate; mobile provides better native experience.",
-          priority: 5,
-          reasonAsked:
-            "Platform choice determines the technology stack and development approach.",
-        }),
-      },
-
-      // ── INTEGRATIONS: Third-party services ──────────────
-      {
-        category: "INTEGRATIONS",
-        priority: 6,
-        condition: (state) =>
-          state.integrations.length === 0 && state.features.length > 0,
-        generate: (state) => ({
-          id: `q-integrations-${Date.now()}`,
-          text: `${state.name || "The product"} will likely need to connect to other services. Do you have any existing tools or services ${state.name || "the product"} should integrate with? For example: payment processors (Stripe), email services (SendGrid), or analytics platforms?`,
-          contextReferences: ["features"],
-          relatedRequirementIds: ["req-integrations"],
-          answerType: "FREE_TEXT",
-          recommendation:
-            "Start with the bare minimum integrations. Add more as user feedback confirms the need.",
-          priority: 6,
-          reasonAsked:
-            "Integrations affect the API design and data flow architecture.",
-        }),
-      },
-
-      // ── SECURITY: Privacy considerations ────────────────
-      {
-        category: "SECURITY",
-        priority: 7,
-        condition: (state) =>
-          state.features.some(
-            (f) =>
-              f.toLowerCase().includes("payment") ||
-              f.toLowerCase().includes("profile") ||
-              f.toLowerCase().includes("personal"),
-          ),
-        generate: (state) => ({
-          id: `q-privacy-${Date.now()}`,
-          text: `${state.name || "The product"} involves personal or payment data. What privacy regulations or data protection requirements apply to your target users? For example: GDPR for European users, CCPA for California, or industry-specific rules like HIPAA for healthcare.`,
-          contextReferences: ["features"],
-          relatedRequirementIds: ["req-security-level"],
-          answerType: "MULTIPLE_CHOICE",
-          options: [
-            {
-              id: "none",
-              label: "None at this stage",
-              description: "Start with basic security best practices.",
-            },
-            {
-              id: "gdpr",
-              label: "GDPR",
-              description: "European data protection.",
-            },
-            { id: "ccpa", label: "CCPA", description: "California privacy." },
-            {
-              id: "soc2",
-              label: "SOC2",
-              description: "Enterprise security compliance.",
-            },
-          ],
-          recommendation:
-            "Apply GDPR-level data protection as a baseline — it's the most comprehensive standard.",
-          tradeoffs:
-            "Compliance adds development cost but removes barriers for enterprise customers.",
-          priority: 7,
-          reasonAsked:
-            "Privacy requirements affect data storage, user consent flows, and legal compliance.",
-        }),
-      },
-
-      // ── DEPLOYMENT: Hosting preference ──────────────────
-      {
-        category: "DEPLOYMENT",
-        priority: 5,
-        condition: (state) => true,
-        generate: (state) => ({
-          id: `q-hosting-${Date.now()}`,
-          text: `Where should ${state.name || "the product"} be hosted initially?`,
-          contextReferences: [],
-          relatedRequirementIds: ["req-hosting"],
-          answerType: "SINGLE_CHOICE",
-          options: [
-            {
-              id: "cloud",
-              label: "Cloud hosting (Vercel/Railway)",
-              description: "Fast setup, managed infrastructure.",
-            },
-            {
-              id: "vps",
-              label: "VPS (DigitalOcean/Linode)",
-              description: "More control, higher maintenance.",
-            },
-            {
-              id: "self",
-              label: "Self-hosted",
-              description: "Full control, highest maintenance.",
-            },
-            {
-              id: "unknown",
-              label: "Not sure yet",
-              description: "Need to research options.",
-            },
-          ],
-          recommendation:
-            "Start with a managed cloud provider like Vercel or Railway to minimize DevOps overhead.",
-          tradeoffs:
-            "Managed cloud is simpler but more expensive at scale; VPS is cheaper but needs maintenance.",
-          priority: 5,
-          reasonAsked:
-            "Hosting choice affects deployment strategy, CI/CD setup, and infrastructure costs.",
-        }),
-      },
-
-      // ── LAUNCH: Monetization ───────────────────────────
-      {
-        category: "LAUNCH",
-        priority: 6,
-        condition: (state) =>
-          !state.productType ||
-          state.productType.toLowerCase().includes("internal") === false,
-        generate: (state) => ({
-          id: `q-monetization-${Date.now()}`,
-          text: `How does ${state.name || "the product"} plan to make money? This feeds into the business model and payment integration requirements.`,
-          contextReferences: [],
-          relatedRequirementIds: ["req-monetization"],
-          answerType: "SINGLE_CHOICE",
-          options: [
-            {
-              id: "subscription",
-              label: "Monthly/Yearly subscription",
-              description: "Recurring billing.",
-            },
-            {
-              id: "free",
-              label: "Free to use",
-              description: "No monetization yet.",
-            },
-            {
-              id: "ads",
-              label: "Ad-supported",
-              description: "Revenue from ads.",
-            },
-            {
-              id: "marketplace",
-              label: "Transaction fees",
-              description: "Commission on transactions.",
-            },
-            {
-              id: "enterprise",
-              label: "Enterprise licensing",
-              description: "Custom pricing for businesses.",
-            },
-            { id: "unknown", label: "Not sure yet", description: "Undecided." },
-          ],
-          recommendation:
-            "Subscription works best for SaaS products with recurring value delivery.",
-          tradeoffs:
-            "Free is easiest for adoption but zero revenue; subscriptions need payment infrastructure.",
-          priority: 6,
-          reasonAsked:
-            "Monetization model affects user account design, payment integration, and feature gating.",
-        }),
-      },
-    ];
-  }
-
   generateQuestions(
     state: ProjectState,
-    topUnresolved: RequirementNode[],
-    maxCount: number = 5,
+    _topUnresolved: RequirementNode[] = [],
+    maxCount = 5,
   ): Question[] {
+    const evaluation = evaluateDiscovery(state);
     const questions: Question[] = [];
-    const usedCategories = new Set<string>();
-
-    // First, try to match templates based on state
-    const applicableTemplates = this.templates
-      .filter((t) => t.condition(state))
-      .sort((a, b) => b.priority - a.priority);
-
-    for (const template of applicableTemplates) {
-      if (questions.length >= maxCount) break;
-
-      // Avoid asking the same category twice in a row
-      if (usedCategories.has(template.category) && questions.length < 3)
+    for (const requirement of evaluation.topUnresolved) {
+      if (hasDecision(state, requirement.id)) continue;
+      const candidate = topicQuestion(state, requirement.id);
+      if (!candidate || !validateQuestionQuality(candidate, state).accepted)
         continue;
-
-      const question = template.generate(state);
-      // Avoid duplicate questions by checking if similar text already exists
-      const isDuplicate = questions.some(
-        (q) => q.text.substring(0, 50) === question.text.substring(0, 50),
-      );
-      if (!isDuplicate && validateQuestionQuality(question, state).accepted) {
-        questions.push(question);
-        usedCategories.add(template.category);
-      }
-    }
-
-    // Fill remaining slots with requirement-based questions
-    if (questions.length < maxCount) {
-      for (const node of topUnresolved) {
-        if (questions.length >= maxCount) break;
-
-        // Skip if this node's category is already covered
-        if (
-          usedCategories.has(node.category) &&
-          questions.some((q) => q.relatedRequirementIds.includes(node.id))
-        ) {
-          continue;
-        }
-
-        questions.push({
-          id: `q-req-${node.id}-${Date.now()}`,
-          text: `Regarding **${node.title}**: ${node.description}. How would you like to approach this?`,
-          contextReferences: [],
-          relatedRequirementIds: [node.id],
-          answerType: "FREE_TEXT",
-          priority: node.priority || 5,
-          reasonAsked: `This is an unresolved requirement with priority ${node.priority} that affects ${node.category}.`,
-          recommendation: node.resolution || undefined,
-        });
-
-        usedCategories.add(node.category);
-      }
-    }
-
-    // If still empty, add a generic question to start the conversation
-    if (questions.length === 0) {
-      questions.push({
-        id: `q-generic-${Date.now()}`,
-        text: `Great, you've started ${state.name || "a new project"}! What's the primary problem you're trying to solve for your users?`,
-        contextReferences: [],
-        relatedRequirementIds: [],
-        answerType: "FREE_TEXT",
-        priority: 10,
-        reasonAsked:
-          "Every product needs a clear understanding of the problem it solves.",
-      });
+      if (!questions.some((item) => item.topic === candidate.topic))
+        questions.push(candidate);
+      if (questions.length >= maxCount) break;
     }
 
     return questions;
   }
 
-  /**
-   * Process an answer and return updated state with provenance tracking.
-   */
   processAnswer(
     state: ProjectState,
     questionId: string,
     answer: string | string[],
+    currentQuestion?: Question,
   ): {
     updatedState: ProjectState;
+    decision?: ProjectState["decisions"][number];
     revision: { version: number; createdAt: string };
   } {
-    const nextState = JSON.parse(JSON.stringify(state)) as ProjectState & {
-      _version?: number;
-    };
-
-    // Track version for revision history (stored in metadata)
-    const currentVersion = (nextState as any)._version || 1;
-
-    // Record the decision
+    const parsed = ProjectStateSchema.parse(JSON.parse(JSON.stringify(state)));
+    const question = currentQuestion || undefined;
     const answerText = Array.isArray(answer) ? answer.join(", ") : answer;
-    nextState.decisions.push({
-      id: `dec-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      topic: questionId,
-      decision: answerText,
-      reason: "User answered during adaptive discovery",
-      source: "USER",
-      confidence: "EXPLICIT",
-      status: "ACCEPTED",
-      affects: [],
-    });
+    const option = question?.options?.find(
+      (item) => item.id === answerText || item.label === answerText,
+    );
+    const topic =
+      question?.topic ||
+      questionId
+        .replace(/^(crm|rental|inventory|general)-/, "")
+        .replace(/-/g, "_");
+    const decision = canonicalDecision(topic, answerText, option?.id);
+    const currentVersion = Number(parsed.generationMetadata._version || 1);
 
-    // Record provenance
-    if (!nextState.generationMetadata) {
-      nextState.generationMetadata = {};
-    }
-    nextState.generationMetadata[`answer_${questionId}_${Date.now()}`] = {
+    parsed.generationMetadata[`answer_${questionId}_${Date.now()}`] = {
       answer: answerText,
+      topic,
       timestamp: new Date().toISOString(),
       previousVersion: currentVersion,
     };
 
+    if (decision === "undecided") {
+      if (!parsed.openQuestions.includes(question?.text || questionId))
+        parsed.openQuestions.push(question?.text || questionId);
+      parsed.discovery.activeQuestionId = questionId;
+      return {
+        updatedState: parsed,
+        revision: {
+          version: currentVersion,
+          createdAt: new Date().toISOString(),
+        },
+      };
+    }
+
+    const recorded = recordDecision(parsed, {
+      topic,
+      decision,
+      reason:
+        question?.reasonAsked || "User answered during adaptive discovery.",
+      source: "USER",
+      affects: question?.affects?.length
+        ? question.affects
+        : affectedFor(topic),
+    });
+    applyCanonicalRule(recorded.state, topic, decision);
+    recorded.state.discovery.activeQuestionId = undefined;
+
     return {
-      updatedState: nextState,
+      updatedState: recorded.state,
+      decision: recorded.decision,
       revision: {
         version: currentVersion,
         createdAt: new Date().toISOString(),

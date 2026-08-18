@@ -102,7 +102,7 @@ export class MockGatewayProvider implements AiGatewayProvider {
     };
 
     if (
-      /marble|stone|slab|granite/.test(lower) &&
+      /marble|marmer|stone|slab|granite/.test(lower) &&
       !/warehouse|inventory|stock|transfer history|movement/.test(lower)
     ) {
       extraction.primaryUsers.push(
@@ -205,7 +205,7 @@ export class MockGatewayProvider implements AiGatewayProvider {
           "Transfer workflow is named in the idea",
         ),
       );
-      if (/marble|stone|slab|granite/.test(lower))
+      if (/marble|marmer|stone|slab|granite/.test(lower))
         extraction.coreEntities.push(
           item(
             "Brand",
@@ -306,6 +306,14 @@ export class MockGatewayProvider implements AiGatewayProvider {
     if (/whatsapp/.test(lower))
       extraction.integrationsMentioned.push(
         item("WhatsApp", "EXPLICIT", "WhatsApp is named in the idea"),
+      );
+    if (/instagram/.test(lower))
+      extraction.integrationsMentioned.push(
+        item("Instagram", "EXPLICIT", "Instagram is named in the idea"),
+      );
+    if (/website|web site|web/.test(lower))
+      extraction.integrationsMentioned.push(
+        item("Website", "EXPLICIT", "Website is named in the idea"),
       );
     if (/payment|pay|invoice|checkout/.test(lower))
       extraction.integrationsMentioned.push(

@@ -5,7 +5,8 @@
   "description": "Open-source agentic product discovery for AI builders. Find hidden decisions and turn rough ideas into build-ready BRDs, PRDs, and ERDs.",
   "scripts": {
     "dev": "pnpm --filter web dev",
-    "build": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter web build",
+    "predev": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter @rockfoundry/db build",
+    "build": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter @rockfoundry/db build && pnpm --filter web build",
     "start": "pnpm --filter web start",
     "lint": "pnpm --filter web lint",
     "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/playwright/*.ts\" \"packages/core/src/**/*.{ts,tsx}\" \"packages/ai/src/**/*.{ts,tsx}\" \"packages/db/index.ts\" \"packages/db/paths.ts\" \"packages/db/tsconfig.json\" \"packages/db/prisma.config.ts\" \"package.json\" \"pnpm-workspace.yaml\" \"packages/*/package.json\" \"docs/**/*.md\" \"product/**/*.md\" \"design/*.md\" \"technical/*.md\" \"delivery/*.md\" \"decisions/*.md\" \"README*.md\" \"PRD.md\" \"PROJECT_MANIFEST.json\" \"SECURITY.md\" \"CHANGELOG.md\" \"CONTRIBUTING.md\"",
@@ -14,7 +15,7 @@
     "test": "pnpm -r test",
     "test:core": "pnpm --filter @rockfoundry/core test",
     "test:ai": "pnpm --filter @rockfoundry/ai test",
-    "test:e2e": "pnpm exec playwright test --config apps/web/playwright.config.ts",
+    "test:e2e": "pnpm --filter web exec playwright test --config playwright.config.ts",
     "ai:smoke": "pnpm --filter @rockfoundry/ai exec tsx src/smoke.ts",
     "db:migrate": "pnpm --filter @rockfoundry/db exec prisma migrate deploy",
     "db:generate": "pnpm --filter @rockfoundry/db exec prisma generate",

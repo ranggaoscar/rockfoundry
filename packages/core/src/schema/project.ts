@@ -87,6 +87,14 @@ export const DecisionGraphSchema = z.object({
 });
 export type DecisionGraph = z.infer<typeof DecisionGraphSchema>;
 
+export const DiscoveryStateSchema = z.object({
+  evaluated: z.boolean().default(false),
+  importantDecisionsRemaining: z.number().int().min(0).nullable().default(null),
+  unresolvedTopics: z.array(z.string()).default([]),
+  activeQuestionId: z.string().optional(),
+});
+export type DiscoveryState = z.infer<typeof DiscoveryStateSchema>;
+
 export const ReadinessLevelSchema = z.enum([
   "NOT_READY",
   "DRAFT_READY",
@@ -131,6 +139,11 @@ export const ProjectStateSchema = z.object({
     )
     .default({}),
   decisionGraph: DecisionGraphSchema.default({ nodes: [], edges: [] }),
+  discovery: DiscoveryStateSchema.default({
+    evaluated: false,
+    importantDecisionsRemaining: null,
+    unresolvedTopics: [],
+  }),
   readiness: ReadinessLevelSchema.default("NOT_READY"),
   readinessScore: z.number().min(0).max(100).default(0),
   readinessBreakdown: z
@@ -143,6 +156,74 @@ export const ProjectStateSchema = z.object({
   generationMetadata: z.record(z.string(), z.unknown()).default({}),
 });
 export type ProjectState = z.infer<typeof ProjectStateSchema>;
+
+function countLabel(rawIdea: string, pattern: RegExp) {
+  const match = rawIdea.match(pattern);
+  return match?.[1] ? `${match[1]}-` : "Multi-";
+}
+
+function titleCase(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      if (/^(crm|erp|pos|api|whatsapp|instagram)$/i.test(word))
+        return word.toUpperCase();
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+/** Create a stable, semantic title from explicit domain cues in the idea. */
+export function deriveProjectTitle(rawIdea: string) {
+  const idea = rawIdea.trim();
+  const lower = idea.toLowerCase();
+  if (!idea) return "New project";
+
+  if (/crm|customer relationship|sales pipeline|lead management/.test(lower)) {
+    const brandCount = countLabel(
+      idea,
+      /\b(\d+)\s+(?:brand|brands|merek|merk)\b/i,
+    );
+    const material = /marble|marmer|stone|slab|granite/.test(lower)
+      ? "Marble"
+      : "Sales";
+    return `${brandCount}Brand ${material} CRM`;
+  }
+
+  if (/rental|car rental|vehicle rental|sewa mobil|booking mobil/.test(lower)) {
+    const branchCount = countLabel(
+      idea,
+      /\b(\d+)\s+(?:branch|branches|cabang)\b/i,
+    );
+    return `${branchCount}Branch Car Rental`;
+  }
+
+  if (/inventory|warehouse|gudang|slab|stock|stok/.test(lower)) {
+    const warehouseCount = countLabel(
+      idea,
+      /\b(\d+)\s+(?:warehouse|warehouses|gudang)\b/i,
+    );
+    const material = /marble|marmer|slab|granite|stone/.test(lower)
+      ? "Slab"
+      : "Inventory";
+    return warehouseCount === "Multi-"
+      ? `${material} Inventory`
+      : `${warehouseCount}Warehouse ${material} Inventory`;
+  }
+
+  const sentence = idea.split(/[.!?\n]/, 1)[0] || idea;
+  const cleaned = sentence
+    .replace(
+      /^(?:i want to|i'd like to|i would like to|build|create|make|buat|bikin|gua mau bikin|gue mau bikin)\s+/i,
+      "",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = cleaned.split(" ").filter(Boolean).slice(0, 6);
+  const fallback = words.join(" ").replace(/[,:;]+$/, "");
+  return fallback ? titleCase(fallback) : "New project";
+}
 
 export function createInitialProjectState(input: {
   id: string;

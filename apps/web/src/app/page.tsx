@@ -42,17 +42,10 @@ export default function LandingPage() {
     setCreating(true);
     setError("");
     try {
-      const name =
-        idea
-          .trim()
-          .split(/\s+/)
-          .slice(0, 5)
-          .join(" ")
-          .replace(/[.!?]+$/, "") || "New project";
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description: idea.trim() }),
+        body: JSON.stringify({ description: idea.trim() }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.project?.id) {
@@ -72,7 +65,7 @@ export default function LandingPage() {
   }
 
   return (
-    <main className="rf-app min-h-[100dvh] bg-background text-foreground">
+    <main className="rf-app isolate min-h-dvh bg-background text-foreground antialiased">
       <aside className="rf-sidebar hidden w-[264px] shrink-0 flex-col border-r border-border/70 bg-sidebar px-3 py-4 lg:flex">
         <div className="flex items-center justify-between px-2 pb-5">
           <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
@@ -159,6 +152,7 @@ export default function LandingPage() {
               </label>
               <textarea
                 id="idea-composer"
+                name="idea"
                 value={idea}
                 onChange={(event) => setIdea(event.target.value)}
                 placeholder="Describe your idea..."
