@@ -55,6 +55,24 @@ export const AssumptionSchema = z.object({
 });
 export type Assumption = z.infer<typeof AssumptionSchema>;
 
+/**
+ * A relationship is canonical only when both endpoints and its cardinality
+ * are explicit. Optionality, fields, indexes, and constraints stay outside
+ * this shape until the user actually decides them.
+ */
+export const EntityRelationshipSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  cardinality: z.enum([
+    "ONE_TO_ONE",
+    "ONE_TO_MANY",
+    "MANY_TO_ONE",
+    "MANY_TO_MANY",
+  ]),
+  label: z.string().optional(),
+});
+export type EntityRelationship = z.infer<typeof EntityRelationshipSchema>;
+
 export const ContradictionSchema = z.object({
   id: z.string(),
   severity: z.enum(["BLOCKING", "WARNING", "INFO"]),
@@ -145,6 +163,7 @@ export const ProjectStateSchema = z.object({
   integrations: z.array(z.string()).default([]),
   design: z.array(z.string()).default([]),
   businessRules: z.array(z.string()).default([]),
+  relationships: z.array(EntityRelationshipSchema).default([]),
   references: z.array(ReferenceSchema).default([]),
   assumptions: z.array(AssumptionSchema).default([]),
   decisions: z.array(DecisionSchema).default([]),

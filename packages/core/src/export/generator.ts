@@ -9,8 +9,11 @@ import {
   derivedEdgeCaseLines,
   derivedNonGoals,
   derivedPermissionLines,
-  derivedRelationshipLines,
+  derivedRelationships,
   listOrUnresolved,
+  mermaidRelationshipMarkers,
+  relationshipLine,
+  relationshipsForEntity,
 } from "./derived";
 
 export interface ArtifactDocuments {
@@ -624,34 +627,74 @@ ${openQuestions(state)}
 See \`DO_NOT_INVENT.md\`.
 `;
 
-  const entities = state.entities.length
-    ? state.entities
-    : ["UnresolvedEntity"];
-  const mermaidEntities = entities
-    .map((entity) => `  ${entityName(entity)} {\n    string id\n  }`)
-    .join("\n");
+  const entities = [...new Set(state.entities.filter(Boolean))];
+  const relationships = derivedRelationships(state);
+  const mermaidEntities = entities.length
+    ? `  %% Canonical entities without a known relationship are documented below; no fields are invented.\n  %% ${entities.map(entityName).join(", ")}`
+    : "  %% No canonical entities are known yet.";
+  const mermaidRelationships = relationships.length
+    ? relationships
+        .map((relationship) => {
+          const [fromMarker, toMarker] = mermaidRelationshipMarkers(
+            relationship.cardinality,
+          );
+          const label = (relationship.label || "relationship").replace(/\"/g, '\\\"');
+          return `  ${entityName(relationship.fromEntity)} ${fromMarker}--${toMarker} ${entityName(relationship.toEntity)} : "${label}"`;
+        })
+        .join("\n")
+    : "  %% No canonical relationships are known yet.";
+  const entitySections = entities.length
+    ? entities
+        .map(
+          (entity) => `### ${entityName(entity)}
+
+| Field | Type | Required | Description |
+| ----- | ---- | -------- | ----------- |
+| ${UNRESOLVED} | ${UNRESOLVED} | ${UNRESOLVED} | No canonical field is explicit yet. |
+
+Relationships:
+
+${listOrUnresolved(relationshipsForEntity(state, entity))}
+
+Business Rules:
+
+${listOrUnresolved(derivedBusinessRuleLines(state))}
+
+Indexes:
+
+${UNRESOLVED}
+
+Lifecycle:
+
+${UNRESOLVED}`,
+        )
+        .join("\n\n")
+    : UNRESOLVED;
   const erd = `# Entity Relationship Document
 
 ## 1. Data Model Overview
 
-The data model is derived from the entities and workflows currently understood by RockFoundry. Unresolved fields remain explicit instead of being invented.
+The data model is derived from canonical entities, explicit canonical relationships, and accepted decisions whose endpoints are already known entities. Unresolved fields remain explicit instead of being invented.
 
 **Decision Debt:** ${debt.score}/100 (${debt.inventionRisk})
 
 ## 2. Entity Relationship Diagram
 
+Mermaid edges below are emitted only for known relationships. Cardinality shows the known one/many shape; requiredness, optionality, fields, indexes, and constraints remain unresolved unless they exist in canonical state.
+
 \`\`\`mermaid
 erDiagram
 ${mermaidEntities}
+${mermaidRelationships}
 \`\`\`
 
 ## 3. Entities
 
-${entities.map((entity) => `### ${entityName(entity)}\n\n| Field | Type | Required | Description |\n| ----- | ---- | -------- | ----------- |\n| id | string | Yes | Stable identity for the record. |\n\nRelationships:\n\n${listOrUnresolved(derivedRelationshipLines(state))}\n\nBusiness Rules:\n\n${listOrUnresolved(derivedBusinessRuleLines(state))}\n\nIndexes:\n\n${UNRESOLVED}\n\nLifecycle:\n\n${UNRESOLVED}`).join("\n\n")}
+${entitySections}
 
 ## 4. Relationships
 
-${listOrUnresolved(derivedRelationshipLines(state))}
+${listOrUnresolved(relationships.map(relationshipLine))}
 
 ## 5. Constraints
 
