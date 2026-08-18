@@ -12,14 +12,16 @@ RockFoundry does not generate the application source code. It stops at a high-qu
 ## Read in this order
 
 1. `product/WIN_WEDGE.md` - how RockFoundry wins in the next 30 days.
-2. `product/GAP_MAP.md` - vision vs code gaps.
-3. `delivery/30_DAY_BUILD.md` - execution plan.
-4. `PRD.md` - the current product contract and chat-first UI direction.
-5. `PROJECT_MANIFEST.json` - the canonical structured product state.
-6. `agent/AGENTS.md` - implementation rules for coding agents.
-7. `technical/SYSTEM_ARCHITECTURE.md` - the local-first architecture.
-8. `design/DESIGN_DIRECTION.md` and `design/INFORMATION_ARCHITECTURE.md` - UI constraints.
-9. `agent/FIRST_BUILD_PROMPT.md` - a bounded starting prompt.
+2. `product/WEEK4_FREEZE.md` - what stays in scope after the wedge polish.
+3. `product/GAP_MAP.md` - vision vs code gaps.
+4. `delivery/30_DAY_BUILD.md` - execution plan.
+5. `delivery/OSS_DEMO_LAUNCH_CHECKLIST.md` - public local demo checklist.
+6. `PRD.md` - the current product contract and chat-first UI direction.
+7. `PROJECT_MANIFEST.json` - the canonical structured product state.
+8. `agent/AGENTS.md` - implementation rules for coding agents.
+9. `technical/SYSTEM_ARCHITECTURE.md` - the local-first architecture.
+10. `design/DESIGN_DIRECTION.md` and `design/INFORMATION_ARCHITECTURE.md` - UI constraints.
+11. `agent/FIRST_BUILD_PROMPT.md` - a bounded starting prompt.
 
 If another document conflicts with these files, treat the product reset in `PRD.md` and `PROJECT_MANIFEST.json` as authoritative. Legacy Alpha SaaS decisions are preserved in Git history, not in the V1 contract.
 

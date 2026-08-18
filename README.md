@@ -141,6 +141,10 @@ pnpm eval:invention
 
 This runs a deterministic CRM benchmark: same ideas with vs without RockFoundry decisions, scoring how much a coding agent would still need to invent.
 
+### Share a local demo
+
+Use the 5-minute script in [`delivery/OSS_DEMO_LAUNCH_CHECKLIST.md`](delivery/OSS_DEMO_LAUNCH_CHECKLIST.md). Beachhead remains multi-brand CRM; rental and inventory are support paths only.
+
 ## Docs
 
 | Doc | Use |

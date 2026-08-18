@@ -1,11 +1,15 @@
 # Agentic V1 Review Checklist
 
+For the public OSS demo path, also complete [`OSS_DEMO_LAUNCH_CHECKLIST.md`](OSS_DEMO_LAUNCH_CHECKLIST.md).
+
 ## Product
 
 - [ ] Decision Debt is explained consistently in README, PRD, positioning, and UI copy.
+- [ ] Build readiness and Decision Debt are not collapsed into one vague “score”.
 - [ ] The chat asks contextual questions instead of rendering a generic questionnaire.
 - [ ] Confirmed decisions, assumptions, contradictions, provenance, and readiness remain visible.
-- [ ] The app stops at BRD, PRD, and ERD generation and does not generate application source code.
+- [ ] The app stops at the anti-invention handoff package and does not generate application source code.
+- [ ] Landing empty state teaches the category before the first idea is typed.
 
 ## Local setup
 
@@ -38,4 +42,5 @@
 ## GitHub
 
 - [ ] Repository description and topics match Agentic V1, or the exact proposed values are reported when authentication is unavailable.
-- [ ] No release is created and `main` is not merged.
+- [ ] README stays short and demo-oriented.
+- [ ] Week 4 freeze decisions in `product/WEEK4_FREEZE.md` are respected.

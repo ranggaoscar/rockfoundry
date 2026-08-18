@@ -1,5 +1,12 @@
 # Changelog
 
+## Agentic V1 week 4 — beachhead polish and freeze
+
+- Clarified Decision Debt vs build readiness copy in the workspace UI.
+- Reworked landing/empty-state messaging to teach the category in one glance.
+- Added rental + inventory support-domain regression tests (no new beachhead).
+- Added OSS demo launch checklist and Week 4 scope freeze decision.
+
 ## Agentic V1 week 3 — coding-agent win proof
 
 - Added a deterministic invention-risk harness comparing raw idea vs RockFoundry handoff.

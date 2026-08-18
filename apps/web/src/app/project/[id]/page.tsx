@@ -69,7 +69,9 @@ function initialMessages(project: ProjectData): Message[] {
       {
         id: "welcome",
         role: "assistant",
-        text: "What do you want to build? Tell me the idea in your own words, and I’ll surface the decisions that shape it before coding starts.",
+        text: "What do you want to build?",
+        detail:
+          "Tell me the idea in plain language. I’ll surface the hidden decisions a coding agent would otherwise invent — then we’ll pay down Decision Debt before handoff.",
       },
     ];
   return [{ id: "idea", role: "user", text: idea }];
@@ -78,10 +80,10 @@ function initialMessages(project: ProjectData): Message[] {
 function projectStatus(state: any) {
   const readiness = String(state?.readiness || "NOT_READY").toUpperCase();
   if (readiness.includes("BUILD") || readiness.includes("MVP"))
-    return "Build ready";
+    return "Safe to build";
   if (readiness.includes("DRAFT") || readiness.includes("PROTOTYPE"))
-    return "Draft ready";
-  return "Discovery";
+    return "Draft only";
+  return "Not ready";
 }
 
 function readinessScore(state: any) {
@@ -94,9 +96,9 @@ function readinessScore(state: any) {
 function discoverySummary(state: any) {
   const count = state?.discovery?.importantDecisionsRemaining;
   if (!state?.discovery?.evaluated || typeof count !== "number")
-    return "Still exploring";
-  if (count === 0) return "No critical blockers";
-  return `${count} important decision${count === 1 ? "" : "s"} remaining`;
+    return "Finding missing decisions";
+  if (count === 0) return "Critical decisions locked";
+  return `${count} high-risk decision${count === 1 ? "" : "s"} still open`;
 }
 
 function decisionDebtScore(state: any) {
@@ -108,11 +110,20 @@ function decisionDebtScore(state: any) {
 
 function inventionRiskLabel(state: any) {
   const risk = String(state?.decisionDebt?.inventionRisk || "").toUpperCase();
-  if (risk === "CRITICAL") return "Critical invention risk";
-  if (risk === "HIGH") return "High invention risk";
-  if (risk === "MEDIUM") return "Medium invention risk";
-  if (risk === "LOW") return "Low invention risk";
-  return "Invention risk unknown";
+  if (risk === "CRITICAL") return "Critical — coding agent would invent major rules";
+  if (risk === "HIGH") return "High — several material rules still open";
+  if (risk === "MEDIUM") return "Medium — draft possible, MVP still risky";
+  if (risk === "LOW") return "Low — major rules are explicit enough to hand off";
+  return "Invention risk not scored yet";
+}
+
+function readinessPlainLabel(state: any) {
+  const status = projectStatus(state);
+  if (status === "Safe to build")
+    return "Build readiness: safe enough for MVP implementation";
+  if (status === "Draft only")
+    return "Build readiness: good for a draft, not a locked MVP";
+  return "Build readiness: too much Decision Debt to build safely";
 }
 
 export default function ProjectWorkspace({
@@ -672,7 +683,10 @@ export default function ProjectWorkspace({
               type="button"
               className="rf-status-line"
               onClick={() => setDrawer("context")}
+              title={`${readinessPlainLabel(state)}. Decision Debt is invention risk for coding agents (higher is worse).`}
             >
+              {projectStatus(state)}
+              {" · "}
               Ready <span className="tabular-nums">{score}%</span>
               {debtScore !== null ? (
                 <>
@@ -983,6 +997,10 @@ function ContextContent({
         <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Decision Debt
         </h3>
+        <p className="text-sm leading-5 text-muted-foreground">
+          Higher Decision Debt means a coding agent must invent more product
+          rules. Pay it down before handoff.
+        </p>
         <p className="text-sm leading-5">
           {debtScore !== null ? (
             <>
@@ -991,7 +1009,7 @@ function ContextContent({
               {inventionRiskLabel(state)}
             </>
           ) : (
-            "Decision Debt will appear after discovery starts."
+            "Decision Debt appears after discovery starts."
           )}
         </p>
         {state.decisionDebt?.summary ? (
@@ -1002,6 +1020,16 @@ function ContextContent({
         <div className="rf-meter rf-meter-debt">
           <span style={{ width: `${debtScore ?? 0}%` }} />
         </div>
+      </section>
+      <section className="space-y-1">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Build readiness
+        </h3>
+        <p className="text-sm leading-5">{readinessPlainLabel(state)}</p>
+        <p className="text-xs leading-5 text-muted-foreground">
+          Ready score is coverage. Decision Debt is invention risk. Optimize
+          both before export.
+        </p>
       </section>
       <ContextList
         title="Top invention risks"
@@ -1014,7 +1042,7 @@ function ContextContent({
       />
       <div>
         <div className="mb-2 flex items-center justify-between text-xs">
-          <span>Business</span>
+          <span>Business coverage</span>
           <span className="tabular-nums">
             {state.readinessBreakdown?.business ?? "-"}%
           </span>
@@ -1027,7 +1055,7 @@ function ContextContent({
       </div>
       <div>
         <div className="mb-2 flex items-center justify-between text-xs">
-          <span>Product</span>
+          <span>Product coverage</span>
           <span className="tabular-nums">
             {state.readinessBreakdown?.product ?? "-"}%
           </span>
@@ -1040,7 +1068,7 @@ function ContextContent({
       </div>
       <div>
         <div className="mb-2 flex items-center justify-between text-xs">
-          <span>Data</span>
+          <span>Data coverage</span>
           <span className="tabular-nums">
             {state.readinessBreakdown?.data ?? "-"}%
           </span>
@@ -1139,8 +1167,15 @@ function DocumentsContent({
   return (
     <div className="space-y-5 px-5 py-5">
       <p className="text-sm leading-6 text-muted-foreground">
-        Generate the anti-invention handoff package from the current canonical
-        state. Coding agents should read DO_NOT_INVENT first.
+        Export the anti-invention package. Your coding agent should read{" "}
+        <span className="font-medium text-foreground">DO_NOT_INVENT.md</span>{" "}
+        first, then decisions and invariants.
+      </p>
+      <p className="text-xs leading-5 text-muted-foreground">
+        {readinessPlainLabel(state)}
+        {decisionDebtScore(state) !== null
+          ? ` · Decision Debt ${decisionDebtScore(state)}/100`
+          : ""}
       </p>
       <div className="space-y-2">
         {files.map((doc) => (

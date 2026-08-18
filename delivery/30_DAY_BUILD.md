@@ -91,15 +91,15 @@ In ≥3 of 5 trials, handoff reduces invented high-risk decisions. _(Locked by `
 
 ### Build
 
-- [ ] UX copy around Decision Debt / Build readiness
-- [ ] Empty states that teach the category in one sentence
-- [ ] One rental + one inventory regression path (support, not expansion)
-- [ ] Launch checklist for local OSS demo
-- [ ] Decide go/no-go on reference-evidence deep work vs more CRM depth
+- [x] UX copy around Decision Debt / Build readiness
+- [x] Empty states that teach the category in one sentence
+- [x] One rental + one inventory regression path (support, not expansion)
+- [x] Launch checklist for local OSS demo (`delivery/OSS_DEMO_LAUNCH_CHECKLIST.md`)
+- [x] Decide go/no-go on reference-evidence deep work vs more CRM depth (`product/WEEK4_FREEZE.md`)
 
 ### Exit check
 
-Wedge still narrow; product feels uniquely useful on CRM multi-brand ideas.
+Wedge still narrow; product feels uniquely useful on CRM multi-brand ideas. **Freeze: keep CRM beachhead; defer reference-depth and native provider breadth.**
 
 ## Daily operating cadence
 

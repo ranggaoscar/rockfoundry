@@ -11,16 +11,16 @@ type Example = {
 
 const EXAMPLES: Example[] = [
   {
-    label: "CRM for marble sales",
-    idea: "Build a CRM for marble sales teams to manage WhatsApp leads, quotations, and follow-ups.",
+    label: "Multi-brand marble CRM",
+    idea: "Build a CRM for five marble brands. Each brand has its own salespeople, but the owner should see everything. Leads come from WhatsApp, Instagram, and the website.",
   },
   {
-    label: "Rental car booking",
-    idea: "Create a rental car booking system for several branches with vehicles, availability, and customer history.",
+    label: "Multi-branch car rental",
+    idea: "Create a rental car booking system for several branches with vehicles, availability, transfers, and customer history.",
   },
   {
-    label: "Three-warehouse inventory",
-    idea: "Build an inventory system for three marble warehouses that tracks slabs, transfers, and current location.",
+    label: "Multi-warehouse inventory",
+    idea: "Build an inventory system for three marble warehouses that tracks individual slabs, transfers, and current location.",
   },
 ];
 
@@ -135,14 +135,15 @@ export default function LandingPage() {
           <div className="w-full max-w-[720px]">
             <div className="mb-9 text-center">
               <div className="mb-4 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Product discovery workspace
+                Before coding agents invent your product
               </div>
               <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
                 What do you want to build?
               </h1>
-              <p className="mx-auto mt-3 max-w-[480px] text-sm leading-6 text-muted-foreground">
-                Start with the idea in your head. RockFoundry will help clarify
-                what a coding agent needs to know.
+              <p className="mx-auto mt-3 max-w-[520px] text-sm leading-6 text-muted-foreground">
+                Describe the idea. RockFoundry finds the missing decisions,
+                scores Decision Debt, and exports a handoff your coding agent
+                should not invent around.
               </p>
             </div>
 
@@ -155,7 +156,7 @@ export default function LandingPage() {
                 name="idea"
                 value={idea}
                 onChange={(event) => setIdea(event.target.value)}
-                placeholder="Describe your idea..."
+                placeholder="e.g. CRM for five brands, sales per brand, owner sees all..."
                 rows={4}
                 className="rf-composer min-h-[142px] w-full resize-none pr-14"
                 disabled={creating}
@@ -173,7 +174,7 @@ export default function LandingPage() {
                 <span>
                   {idea.length > 0
                     ? `${idea.length} characters`
-                    : "Local-first"}
+                    : "No account required"}
                 </span>
               </div>
             </form>
@@ -189,7 +190,7 @@ export default function LandingPage() {
 
             <div className="mt-12">
               <div className="mb-3 text-center text-xs text-muted-foreground">
-                Try an example
+                Try a beachhead example
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
                 {EXAMPLES.map((example) => (
@@ -206,9 +207,9 @@ export default function LandingPage() {
             </div>
 
             <div className="mt-14 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
-              <span>Free and open source</span>
-              <span>Bring your own AI provider</span>
-              <span>BRD · PRD · ERD</span>
+              <span>Find hidden decisions</span>
+              <span>Measure Decision Debt</span>
+              <span>Export DO_NOT_INVENT</span>
             </div>
           </div>
         </div>
