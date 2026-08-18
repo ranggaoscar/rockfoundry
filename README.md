@@ -62,7 +62,7 @@ my-project/
 **Requirements:** Git, Node.js 20+, pnpm
 
 ```bash
-git clone --branch agentic-v1 --single-branch https://github.com/ranggaoscar/rockfoundry.git
+git clone https://github.com/ranggaoscar/rockfoundry.git
 cd rockfoundry
 pnpm install
 pnpm db:generate
@@ -73,6 +73,8 @@ pnpm dev
 Open [http://localhost:3000](http://localhost:3000).
 
 No account. No hosted backend. No Docker required for the default local run.
+
+5-minute walkthrough: [`DEMO.md`](DEMO.md)
 
 ### Optional AI provider (BYOK)
 

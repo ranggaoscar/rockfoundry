@@ -147,6 +147,9 @@ export default function ProjectWorkspace({
   const [activityOpen, setActivityOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState("");
+  const [recentProjects, setRecentProjects] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const conversationRef = useRef<HTMLDivElement>(null);
 
   const fetchProject = useCallback(async (id: string) => {
@@ -181,6 +184,26 @@ export default function ProjectWorkspace({
         .finally(() => setLoading(false));
     });
   }, [fetchProject, params]);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/projects")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!active || !data?.projects) return;
+        setRecentProjects(
+          (data.projects as Array<{ id: string; name: string }>)
+            .slice(0, 8)
+            .map((item) => ({ id: item.id, name: item.name })),
+        );
+      })
+      .catch(() => {
+        /* best-effort sidebar */
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
 
   const fetchQuestion = useCallback(async () => {
     if (!projectId) return;
@@ -359,8 +382,12 @@ export default function ProjectWorkspace({
     await fetchQuestion();
   }
 
-  async function answerQuestion(option: QuestionOption | string) {
-    if (!projectId || !question || working) return;
+  async function answerQuestion(
+    option: QuestionOption | string,
+    questionIdFromMessage?: string,
+  ) {
+    const activeQuestionId = questionIdFromMessage || question?.id;
+    if (!projectId || !activeQuestionId || working) return;
     const answer = typeof option === "string" ? option : option.id;
     setWorking(true);
     setMessages((current) => [
@@ -375,7 +402,7 @@ export default function ProjectWorkspace({
       const response = await fetch(`/api/projects/${projectId}/questions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: question.id, answer }),
+        body: JSON.stringify({ questionId: activeQuestionId, answer }),
       });
       const data = await response.json();
       if (!response.ok)
@@ -617,13 +644,24 @@ export default function ProjectWorkspace({
         <div className="mt-7 px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
           Recent
         </div>
-        <button
-          className="rf-project-item mt-2"
-          type="button"
-          aria-current="page"
-        >
-          {project.name}
-        </button>
+        <div className="mt-2 space-y-0.5">
+          {(recentProjects.length
+            ? recentProjects
+            : [{ id: project.id, name: project.name }]
+          ).map((item) => (
+            <button
+              key={item.id}
+              className="rf-project-item w-full text-left"
+              type="button"
+              aria-current={item.id === project.id ? "page" : undefined}
+              onClick={() => {
+                if (item.id !== project.id) router.push(`/project/${item.id}`);
+              }}
+            >
+              <span className="block truncate">{item.name}</span>
+            </button>
+          ))}
+        </div>
         <div className="mt-auto border-t border-border/70 pt-3">
           <button
             className="rf-sidebar-link"
@@ -723,7 +761,9 @@ export default function ProjectWorkspace({
                 message={message}
                 activityOpen={activityOpen}
                 onToggleActivity={() => setActivityOpen((current) => !current)}
-                onAnswer={answerQuestion}
+                onAnswer={(option) =>
+                  answerQuestion(option, message.questionId)
+                }
               />
             ))}
             {working && (
@@ -1224,33 +1264,30 @@ function ProviderContent() {
   return (
     <div className="space-y-5 px-5 py-5">
       <p className="text-sm leading-6 text-muted-foreground">
-        Configure your own provider when RockFoundry needs AI. Credentials stay
-        local and never enter project documents.
+        RockFoundry is free. Bring your own key. Credentials stay in local env
+        vars and never enter project documents or exports.
       </p>
-      <label className="rf-field">
-        Provider
-        <select defaultValue="openai-compatible">
-          <option value="openai-compatible">OpenAI Compatible</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="gemini">Gemini</option>
-          <option value="mock">Mock provider</option>
-        </select>
-      </label>
-      <label className="rf-field">
-        Base URL
-        <input defaultValue="https://api.openai.com/v1" />
-      </label>
-      <label className="rf-field">
-        API key
-        <input type="password" placeholder="Stored locally" />
-      </label>
-      <label className="rf-field">
-        Model
-        <input placeholder="model-name" />
-      </label>
-      <button className="rf-secondary-button w-full" type="button">
-        Test connection
-      </button>
+      <div className="rf-code-block">
+        <code>
+          AI_PROVIDER_MODE=&quot;mock&quot;
+          <br />
+          # or openai-compatible
+          <br />
+          OPENAI_COMPATIBLE_BASE_URL=&quot;https://api.openai.com/v1&quot;
+          <br />
+          OPENAI_COMPATIBLE_API_KEY=&quot;your-key&quot;
+          <br />
+          OPENAI_COMPATIBLE_MODEL=&quot;gpt-4o-mini&quot;
+        </code>
+      </div>
+      <p className="text-sm leading-6 text-muted-foreground">
+        Mock mode is enough for offline demos. Restart{" "}
+        <span className="text-foreground">pnpm dev</span> after changing env.
+        UI credential forms are intentionally not required in V1.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Details: docs/AI_PROVIDERS.md
+      </p>
     </div>
   );
 }

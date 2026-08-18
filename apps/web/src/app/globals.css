@@ -419,6 +419,39 @@
   .rf-meter-debt span {
     background: color-mix(in oklch, var(--foreground) 72%, var(--muted));
   }
+  .rf-code-block {
+    border-radius: 0.7rem;
+    background: var(--muted);
+    padding: 0.9rem 1rem;
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--foreground);
+    overflow-x: auto;
+  }
+  .rf-example {
+    border: 0;
+    border-radius: 0.7rem;
+    background: color-mix(in oklch, var(--muted) 88%, var(--background));
+    padding: 0.85rem 0.95rem;
+    text-align: left;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    color: var(--foreground);
+    transition: background 0.16s ease, transform 0.16s ease;
+  }
+  .rf-example:hover {
+    background: color-mix(in oklch, var(--muted) 70%, var(--foreground) 8%);
+    transform: translateY(-1px);
+  }
+  .rf-example:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .rf-example:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .rf-drawer-backdrop {
     position: fixed;
     inset: 0;

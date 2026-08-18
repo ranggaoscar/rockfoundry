@@ -2,7 +2,27 @@
   "name": "rockfoundry",
   "version": "1.0.0-agentic.1",
   "private": true,
-  "description": "Open-source agentic product discovery for AI builders. Find hidden decisions and turn rough ideas into build-ready BRDs, PRDs, and ERDs.",
+  "description": "Open-source local-first product discovery for AI builders. Find hidden decisions, score Decision Debt, and export anti-invention handoffs before coding agents invent your product.",
+  "homepage": "https://github.com/ranggaoscar/rockfoundry",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ranggaoscar/rockfoundry.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ranggaoscar/rockfoundry/issues"
+  },
+  "keywords": [
+    "product-discovery",
+    "decision-debt",
+    "local-first",
+    "open-source",
+    "byok",
+    "prd",
+    "brd",
+    "erd",
+    "coding-agents",
+    "agentic"
+  ],
   "scripts": {
     "dev": "pnpm --filter web dev",
     "predev": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter @rockfoundry/db build",

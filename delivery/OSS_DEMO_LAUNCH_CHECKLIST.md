@@ -41,21 +41,23 @@ This is **not** a hosted SaaS launch.
 
 ## 4. Quality gates
 
-- [ ] `pnpm test:core` passes
-- [ ] `pnpm eval:invention` shows ≥3/5 CRM wins
-- [ ] Support domains still open correctly:
+- [x] `pnpm test:core` passes
+- [x] `pnpm eval:invention` shows ≥3/5 CRM wins
+- [x] Support domains still open correctly:
   - rental → `vehicle_location`
   - inventory → `slab_identity`
-- [ ] No secrets in exports / git
-- [ ] Typecheck/build green for the packages you touched
+- [x] Playwright e2e auth + CRM discovery pass
+- [x] No secrets in exports / git
+- [x] Typecheck/build green for the packages you touched
 
 ## 5. Distribution assets
 
-- [ ] GitHub README current
-- [ ] `product/WIN_WEDGE.md` still locked (no scope drift)
-- [ ] Demo idea + expected first questions written above
+- [x] GitHub README current
+- [x] `DEMO.md` 5-minute share script
+- [x] `product/WIN_WEDGE.md` still locked (no scope drift)
+- [x] Demo idea + expected first questions written above
 - [ ] Optional: short Loom / clip of the 5-minute script
-- [ ] Topics/description on GitHub mention local-first + product discovery
+- [ ] Topics/description on GitHub (paste from `delivery/GITHUB_METADATA.md`)
 
 ## 6. Go / no-go (Week 4 freeze)
 

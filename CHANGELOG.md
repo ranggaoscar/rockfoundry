@@ -1,5 +1,13 @@
 # Changelog
 
+## Agentic V1 demo-ready distribution pass
+
+- Fixed landing settings dead-end with a local BYOK drawer.
+- Loaded recent projects on landing and project sidebars.
+- Replaced fake provider form with honest env-based setup copy.
+- Added `DEMO.md` share script and demo-pass report.
+- Updated package metadata keywords/homepage for GitHub discovery.
+
 ## Agentic V1 week 4 — beachhead polish and freeze
 
 - Clarified Decision Debt vs build readiness copy in the workspace UI.

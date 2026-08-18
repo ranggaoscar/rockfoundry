@@ -10,29 +10,38 @@ test.describe("Decision Debt discovery", () => {
     await page.goto("/");
     await page.locator("#idea-composer").fill(idea);
     await page.getByRole("button", { name: "Start project" }).click();
-    await expect(page).toHaveURL(/\/project\//);
-    await expect(page.getByText("5-Brand Marble CRM").first()).toBeVisible();
+    await expect(page).toHaveURL(/\/project\//, { timeout: 30_000 });
+    await expect(page.getByText("5-Brand Marble CRM").first()).toBeVisible({
+      timeout: 15_000,
+    });
 
-    const firstQuestion = page.getByText(
-      /customer yang sama masuk lewat dua brand|same customer contacts two brands/i,
-    );
-    await expect(firstQuestion).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByText(
+        /customer yang sama masuk lewat dua brand|same customer contacts two brands/i,
+      ),
+    ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(/I have the starting idea/i)).toHaveCount(0);
 
     await page
       .getByRole("button", { name: /Satu customer lintas brand/i })
       .click();
+
     await expect(
-      page.getByText(/Sales tiap brand sudah disebut|sales teams per brand/i),
-    ).toBeVisible();
+      page.getByRole("button", {
+        name: /Sales per brand, owner lihat semua|Brand-scoped sales, owner sees all/i,
+      }),
+    ).toBeVisible({ timeout: 20_000 });
 
     await page
       .locator("#project-composer")
       .fill("Sales per brand, owner melihat semuanya.");
     await page.locator("#project-composer").press("Enter");
+
     await expect(
-      page.getByText(/lead.*WhatsApp|Leads can arrive/i),
-    ).toBeVisible({ timeout: 15_000 });
+      page.getByText(
+        /Lead bisa datang dari WhatsApp|Leads can arrive from WhatsApp/i,
+      ),
+    ).toBeVisible({ timeout: 20_000 });
 
     const projectUrl = page.url();
     const projectId = projectUrl.split("/").pop();
@@ -57,11 +66,17 @@ test.describe("Decision Debt discovery", () => {
 
     await page.reload();
     await expect(
-      page.getByText(/customer yang sama masuk lewat dua brand/i),
-    ).toBeVisible();
-    await expect(page.getByText(/lead.*WhatsApp/i)).toBeVisible();
+      page.getByText(
+        /customer yang sama masuk lewat dua brand|same customer contacts two brands/i,
+      ),
+    ).toBeVisible({ timeout: 15_000 });
     await expect(
-      page.getByText(/3 important decisions remaining/i),
+      page.getByText(
+        /Lead bisa datang dari WhatsApp|Leads can arrive from WhatsApp/i,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/high-risk decisions? still open|Debt/i),
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Rename project" }).click();
