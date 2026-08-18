@@ -62,6 +62,13 @@ const StateReadOutput = z.object({
     level: z.string(),
     breakdown: z.record(z.string(), z.number()),
   }),
+  decisionDebt: z.object({
+    score: z.number(),
+    inventionRisk: z.string(),
+    summary: z.string(),
+    unresolvedHighRiskCount: z.number(),
+    topRisks: z.array(z.unknown()),
+  }),
 });
 const JsonOutput = z.record(z.string(), z.unknown());
 
@@ -85,6 +92,14 @@ export function createDefaultToolRegistry() {
           score: project.readinessScore,
           level: project.readiness,
           breakdown: project.readinessBreakdown,
+        },
+        decisionDebt: {
+          score: project.decisionDebt?.score ?? 0,
+          inventionRisk: project.decisionDebt?.inventionRisk ?? "HIGH",
+          summary: project.decisionDebt?.summary ?? "",
+          unresolvedHighRiskCount:
+            project.decisionDebt?.unresolvedHighRiskCount ?? 0,
+          topRisks: project.decisionDebt?.topRisks ?? [],
         },
       }),
     })
@@ -112,9 +127,24 @@ export function createDefaultToolRegistry() {
     .register({
       name: "artifact_generate",
       description:
-        "Render the three user-facing artifacts from canonical state.",
+        "Render the handoff package from canonical state, including anti-invention files.",
       inputSchema: z.object({
-        types: z.array(z.enum(["BRD", "PRD", "ERD", "ALL"])).default(["ALL"]),
+        types: z
+          .array(
+            z.enum([
+              "BRD",
+              "PRD",
+              "ERD",
+              "DO_NOT_INVENT",
+              "DECISIONS",
+              "INVARIANTS",
+              "READINESS",
+              "AGENT_HANDOFF",
+              "DECISIONS_JSON",
+              "ALL",
+            ]),
+          )
+          .default(["ALL"]),
       }),
       outputSchema: JsonOutput,
       execute: ({ project }, input) => {

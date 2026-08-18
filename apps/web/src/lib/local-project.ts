@@ -101,6 +101,7 @@ export async function saveProjectState(
     readiness: readiness.level,
     readinessScore: readiness.score,
     readinessBreakdown: readiness.breakdown,
+    decisionDebt: readiness.decisionDebt,
     discovery: {
       ...parsed.discovery,
       evaluated: readiness.discovery.evaluated,

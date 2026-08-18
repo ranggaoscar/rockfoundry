@@ -1,5 +1,9 @@
 import { ProjectState } from "../schema";
 import { evaluateDiscovery } from "../questions/requirements";
+import {
+  evaluateDecisionDebt,
+  type DecisionDebtResult,
+} from "./decision-debt";
 
 export type ReadinessResult = {
   score: number;
@@ -7,6 +11,7 @@ export type ReadinessResult = {
   breakdown: { business: number; product: number; data: number };
   blocking: string[];
   discovery: ReturnType<typeof evaluateDiscovery>;
+  decisionDebt: DecisionDebtResult;
 };
 
 function ratio(known: number, total: number) {
@@ -79,11 +84,19 @@ export function evaluateReadinessDirectly(
         : score >= 38
           ? "DRAFT_READY"
           : "NOT_READY";
+  const decisionDebt = evaluateDecisionDebt({
+    ...state,
+    readiness: level,
+    readinessScore: score,
+    readinessBreakdown: { business, product, data },
+  });
+
   return {
     score,
     level,
     breakdown: { business, product, data },
     blocking,
     discovery,
+    decisionDebt,
   };
 }

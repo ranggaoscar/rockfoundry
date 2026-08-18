@@ -55,6 +55,7 @@ export async function GET(
         score: readiness.score,
         breakdown: readiness.breakdown,
       },
+      decisionDebt: readiness.decisionDebt,
       discovery: {
         evaluated: readiness.discovery.evaluated,
         importantDecisionsRemaining:
@@ -131,12 +132,14 @@ export async function POST(
       state: saved.state,
       version: saved.version,
       decision: processed.decision,
+      impact: processed.impact,
       question: nextQuestion,
       readiness: {
         level: saved.state.readiness,
         score: saved.state.readinessScore,
         breakdown: saved.state.readinessBreakdown,
       },
+      decisionDebt: saved.state.decisionDebt,
       discovery: saved.state.discovery,
     });
   } catch (error) {

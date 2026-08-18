@@ -5,6 +5,11 @@ import {
   RequirementNode,
 } from "../schema";
 import { recordDecision } from "../decision-graph";
+import {
+  CRM_DECISION_META,
+  describeDecisionImpact,
+  type CrmDecisionTopic,
+} from "./crm-catalog";
 import { detectDiscoveryDomain, evaluateDiscovery } from "./requirements";
 import { validateQuestionQuality } from "./quality";
 
@@ -27,6 +32,8 @@ function question(input: Question): Question {
 }
 
 function affectedFor(topic: string) {
+  const crmMeta = CRM_DECISION_META[topic as CrmDecisionTopic];
+  if (crmMeta) return [...crmMeta.affects];
   const affects: Record<string, string[]> = {
     customer_identity: [
       "customer model",
@@ -103,7 +110,13 @@ function canonicalDecision(topic: string, answer: string, optionId?: string) {
   }
   if (topic === "sales_visibility") {
     if (
-      /owner[_ -]?all|owner.*all|all brands|semua|lintas|company[_ -]?wide/.test(
+      /all_sales_all_brands|all sales see all|semua sales.*semua|sales.*all brands/.test(
+        value,
+      )
+    )
+      return "all_sales_all_brands";
+    if (
+      /owner[_ -]?all|owner.*all|owner.*semua|lintas|company[_ -]?wide|brand-scoped sales/.test(
         value,
       )
     )
@@ -122,13 +135,27 @@ function canonicalDecision(topic: string, answer: string, optionId?: string) {
       return "shared_sales_pool";
   }
   if (topic === "quotation_branding") {
-    if (/lead|brand.*lead|brand asal|originating/.test(value))
+    if (
+      /owning_brand|lead-owning|brand.*lead|brand asal|originating|quotation_uses_owning_brand/.test(
+        value,
+      )
+    )
       return "quotation_uses_owning_brand";
+    if (/customer[_ -]?choice|customer chooses|customer memilih/.test(value))
+      return "customer_chooses_brand";
   }
   if (topic === "duplicate_handling") {
-    if (/merge|one|gabung|satu customer|same customer|unify/.test(value))
+    if (
+      /merge_with_review|merge|one|gabung|satu customer|same customer|unify/.test(
+        value,
+      )
+    )
       return "merge_with_review";
-    if (/separate|terpisah|keep.*lead|pisah/.test(value))
+    if (
+      /keep_separate|never_merge|separate|terpisah|keep.*lead|pisah|ignore/.test(
+        value,
+      )
+    )
       return "keep_separate_until_review";
   }
   if (topic === "cross_branch_booking") {
@@ -924,6 +951,7 @@ export class QuestionEngine {
   ): {
     updatedState: ProjectState;
     decision?: ProjectState["decisions"][number];
+    impact?: { headline: string; detail: string };
     revision: { version: number; createdAt: string };
   } {
     const parsed = ProjectStateSchema.parse(JSON.parse(JSON.stringify(state)));
@@ -960,22 +988,29 @@ export class QuestionEngine {
       };
     }
 
+    const affects = question?.affects?.length
+      ? question.affects
+      : affectedFor(topic);
     const recorded = recordDecision(parsed, {
       topic,
       decision,
       reason:
         question?.reasonAsked || "User answered during adaptive discovery.",
       source: "USER",
-      affects: question?.affects?.length
-        ? question.affects
-        : affectedFor(topic),
+      affects,
     });
     applyCanonicalRule(recorded.state, topic, decision);
     recorded.state.discovery.activeQuestionId = undefined;
+    const impact = describeDecisionImpact({
+      topic,
+      decision,
+      affects,
+    });
 
     return {
       updatedState: recorded.state,
       decision: recorded.decision,
+      impact,
       revision: {
         version: currentVersion,
         createdAt: new Date().toISOString(),

@@ -1,10 +1,19 @@
 import JSZip from "jszip";
 import { ProjectState } from "../schema";
+import { evaluateDecisionDebt } from "../graph/decision-debt";
+import { evaluateReadinessDirectly } from "../graph/evaluator";
+import { buildDecisionGraph } from "../decision-graph";
 
 export interface ArtifactDocuments {
   BRD: string;
   PRD: string;
   ERD: string;
+  DO_NOT_INVENT: string;
+  DECISIONS: string;
+  INVARIANTS: string;
+  READINESS: string;
+  AGENT_HANDOFF: string;
+  DECISIONS_JSON: string;
 }
 
 export interface ExportPackage {
@@ -25,7 +34,7 @@ function decisionList(state: ProjectState) {
     ? state.decisions
         .map(
           (item) =>
-            `- **${item.topic}**: ${item.decision} (source: ${item.source})`,
+            `- **${item.topic}**: ${item.decision} (source: ${item.source}${item.affects?.length ? `; affects: ${item.affects.join(", ")}` : ""})`,
         )
         .join("\n")
     : UNRESOLVED;
@@ -35,7 +44,7 @@ function assumptions(state: ProjectState) {
     ? state.assumptions
         .map(
           (item) =>
-            `- ${item.statement} (confidence: ${item.confidence}, impact: ${item.impact})`,
+            `- ${item.statement} (confidence: ${item.confidence}, impact: ${item.impact}${item.resolved ? ", resolved" : ", unresolved"})`,
         )
         .join("\n")
     : UNRESOLVED;
@@ -56,15 +65,317 @@ function entityName(value: string) {
   return cleaned || "UnresolvedEntity";
 }
 
+function debtFor(state: ProjectState) {
+  return state.decisionDebt?.summary
+    ? state.decisionDebt
+    : evaluateDecisionDebt(state);
+}
+
+function renderDoNotInvent(state: ProjectState) {
+  const debt = debtFor(state);
+  const warnings =
+    debt.codingAgentWarnings.length > 0
+      ? debt.codingAgentWarnings
+      : [
+          "No high-risk unresolved decisions were catalogued. Still refuse to invent ownership, permissions, or identity rules that are not explicit below.",
+        ];
+
+  const accepted = state.decisions.filter((item) =>
+    ["ACCEPTED", "PROPOSED"].includes(item.status),
+  );
+
+  return `# DO NOT INVENT
+
+> Coding agents must treat this file as a hard constraint contract.
+
+## Invention risk
+
+- **Decision Debt score:** ${debt.score}/100
+- **Risk level:** ${debt.inventionRisk}
+- **Summary:** ${debt.summary}
+
+## Hard rules
+
+1. Do not fill gaps with plausible product behavior.
+2. Do not silently choose identity, ownership, permission, or workflow rules.
+3. If a required behavior is unresolved, keep it explicit as unresolved or ask the human.
+4. Prefer failing closed over inventing multi-tenant or cross-unit behavior.
+
+## Do not invent these unresolved decisions
+
+${warnings.map((item) => `- ${item}`).join("\n")}
+
+## Already decided (safe to implement)
+
+${
+  accepted.length
+    ? accepted
+        .map(
+          (item) =>
+            `- **${item.topic}:** ${item.decision}${item.affects?.length ? ` _(affects: ${item.affects.join(", ")})_` : ""}`,
+        )
+        .join("\n")
+    : "- None yet. Treat all material product rules as unresolved."
+}
+
+## Open contradictions
+
+${
+  state.contradictions.filter((item) => item.status === "OPEN").length
+    ? state.contradictions
+        .filter((item) => item.status === "OPEN")
+        .map(
+          (item) =>
+            `- **${item.severity}:** ${item.explanation} → ${item.recommendedResolution}`,
+        )
+        .join("\n")
+    : "- None open."
+}
+
+## Unresolved high-impact assumptions
+
+${
+  state.assumptions.filter((item) => !item.resolved && item.impact === "HIGH")
+    .length
+    ? state.assumptions
+        .filter((item) => !item.resolved && item.impact === "HIGH")
+        .map((item) => `- ${item.statement}`)
+        .join("\n")
+    : "- None recorded."
+}
+`;
+}
+
+function renderDecisionsMarkdown(state: ProjectState) {
+  const graph = state.decisionGraph?.nodes?.length
+    ? state.decisionGraph
+    : buildDecisionGraph(state);
+  const debt = debtFor(state);
+
+  return `# Decisions
+
+## Decision Debt
+
+- Score: **${debt.score}/100**
+- Invention risk: **${debt.inventionRisk}**
+- Decided: ${debt.decidedCount}
+- Unresolved high-risk: ${debt.unresolvedHighRiskCount}
+
+## Accepted and proposed decisions
+
+${
+  state.decisions.length
+    ? state.decisions
+        .map((item) => {
+          const affects = item.affects?.length
+            ? item.affects.map((value) => `  - ${value}`).join("\n")
+            : "  - (not linked yet)";
+          return `### ${item.topic}\n\n- **Decision:** ${item.decision}\n- **Status:** ${item.status}\n- **Source:** ${item.source}\n- **Confidence:** ${item.confidence}\n- **Reason:** ${item.reason || "—"}\n- **Affects:**\n${affects}`;
+        })
+        .join("\n\n")
+    : "_No decisions recorded yet._"
+}
+
+## Top remaining invention risks
+
+${
+  debt.topRisks.length
+    ? debt.topRisks
+        .map(
+          (item) =>
+            `- **${item.title}** (\`${item.topic}\`, weight ${item.riskWeight}): ${item.reason}`,
+        )
+        .join("\n")
+    : "- None ranked."
+}
+
+## Decision graph snapshot
+
+- Nodes: ${graph.nodes.length}
+- Edges: ${graph.edges.length}
+
+${
+  graph.edges.length
+    ? graph.edges
+        .slice(0, 40)
+        .map(
+          (edge) =>
+            `- \`${edge.from}\` ${edge.relation} \`${edge.to}\`${edge.rationale ? ` — ${edge.rationale}` : ""}`,
+        )
+        .join("\n")
+    : "- No edges recorded yet."
+}
+`;
+}
+
+function renderInvariants(state: ProjectState) {
+  const accepted = state.decisions.filter((item) =>
+    ["ACCEPTED", "PROPOSED"].includes(item.status),
+  );
+  return `# Invariants
+
+These statements should remain true while implementing the product. If code would violate one, stop and ask.
+
+## Product invariants from decisions
+
+${
+  accepted.length
+    ? accepted
+        .map((item) => `- ${item.topic} = ${item.decision}`)
+        .join("\n")
+    : "- No decision-backed invariants yet."
+}
+
+## Explicit business rules
+
+${list(state.businessRules)}
+
+## Permission boundaries
+
+${list(state.permissions)}
+
+## Constraints
+
+${list(state.constraints)}
+
+## Safety invariants
+
+- Unresolved decisions remain unresolved in behavior, UI copy, and data model comments.
+- Reference evidence is not an automatic requirement.
+- Do not create hidden admin overrides that bypass undecided permissions.
+`;
+}
+
+function renderReadiness(state: ProjectState) {
+  const readiness = evaluateReadinessDirectly(state);
+  const debt = readiness.decisionDebt;
+  return `# Readiness
+
+## Build readiness
+
+- **Level:** ${readiness.level}
+- **Score:** ${readiness.score}/100
+- **Business:** ${readiness.breakdown.business}%
+- **Product:** ${readiness.breakdown.product}%
+- **Data:** ${readiness.breakdown.data}%
+
+## Decision Debt
+
+- **Score:** ${debt.score}/100 _(higher = more invention risk)_
+- **Invention risk:** ${debt.inventionRisk}
+- **Summary:** ${debt.summary}
+- **Unresolved high-risk decisions:** ${debt.unresolvedHighRiskCount}
+- **Open contradictions:** ${debt.openContradictionCount}
+- **Unresolved assumptions:** ${debt.unresolvedAssumptionCount}
+
+## Blocking issues
+
+${
+  readiness.blocking.length
+    ? readiness.blocking.map((item) => `- ${item}`).join("\n")
+    : "- None."
+}
+
+## Discovery
+
+- Evaluated: ${readiness.discovery.evaluated ? "yes" : "no"}
+- Domain: ${readiness.discovery.domain || "unknown"}
+- Important decisions remaining: ${
+    readiness.discovery.importantDecisionsRemaining === null
+      ? "n/a"
+      : readiness.discovery.importantDecisionsRemaining
+  }
+
+## Interpretation
+
+| Level | Meaning |
+| --- | --- |
+| NOT_READY | Too much Decision Debt for safe implementation |
+| DRAFT_READY | Prototype possible if unresolved risks stay explicit |
+| BUILD_READY | Major invention risks are paid down enough for MVP implementation |
+`;
+}
+
+function renderAgentHandoff(state: ProjectState) {
+  const debt = debtFor(state);
+  return `# Agent Handoff
+
+Use this package as the source of product truth before writing code.
+
+## Package contents
+
+- \`BRD.md\` — business problem, goals, scope
+- \`PRD.md\` — product behavior and requirements
+- \`ERD.md\` — entities and relationships
+- \`DO_NOT_INVENT.md\` — hard constraints against invented product rules
+- \`DECISIONS.md\` / \`decisions.json\` — explicit decisions and remaining risks
+- \`INVARIANTS.md\` — must-hold rules while coding
+- \`READINESS.md\` — build readiness and Decision Debt
+
+## Recommended prompt for coding agents
+
+\`\`\`text
+Implement from this RockFoundry handoff package.
+
+Rules:
+1. Read DO_NOT_INVENT.md first and obey it strictly.
+2. Treat DECISIONS.md and INVARIANTS.md as source of truth.
+3. If a behavior is unresolved, do not invent it. Leave a clear TODO or ask.
+4. Prefer the explicit decisions over any generic SaaS defaults.
+5. When identity, permissions, ownership, or multi-unit behavior is involved, cite the decision you are following.
+\`\`\`
+
+## Current handoff quality
+
+- Project: ${state.name || "Untitled project"}
+- Readiness: ${state.readiness} (${state.readinessScore}%)
+- Decision Debt: ${debt.score}/100 (${debt.inventionRisk})
+- ${debt.summary}
+
+## Suggested implementation order
+
+1. Data model only for entities and relationships that are explicit
+2. Permission checks required by accepted decisions
+3. Primary workflows that are decided
+4. Leave unresolved multi-unit edge cases unimplemented rather than guessed
+`;
+}
+
+function renderDecisionsJson(state: ProjectState) {
+  const debt = debtFor(state);
+  const graph = state.decisionGraph?.nodes?.length
+    ? state.decisionGraph
+    : buildDecisionGraph(state);
+  return JSON.stringify(
+    {
+      projectId: state.id,
+      name: state.name,
+      readiness: state.readiness,
+      readinessScore: state.readinessScore,
+      decisionDebt: debt,
+      decisions: state.decisions,
+      assumptions: state.assumptions,
+      contradictions: state.contradictions,
+      openQuestions: state.openQuestions,
+      decisionGraph: graph,
+      generatedAt: new Date().toISOString(),
+    },
+    null,
+    2,
+  );
+}
+
 export function renderArtifacts(state: ProjectState): ArtifactDocuments {
   const status = `${state.readiness} (${state.readinessScore}%)`;
+  const debt = debtFor(state);
   const brd = `# Business Requirements Document
 
 ## 1. Executive Summary
 
 ${state.normalizedSummary || state.rawIdea || UNRESOLVED}
 
-**Discovery status:** ${status}
+**Discovery status:** ${status}  
+**Decision Debt:** ${debt.score}/100 (${debt.inventionRisk})
 
 ## 2. Business Problem
 
@@ -118,7 +429,14 @@ ${list(state.constraints)}
 
 ## 13. Risks
 
-${list(state.risks.concat(state.contradictions.filter((item) => item.status === "OPEN").map((item) => item.explanation)))}
+${list(
+    state.risks.concat(
+      state.contradictions
+        .filter((item) => item.status === "OPEN")
+        .map((item) => item.explanation),
+      debt.topRisks.map((item) => `${item.title}: ${item.reason}`),
+    ),
+  )}
 
 ## 14. Assumptions
 
@@ -135,6 +453,10 @@ ${decisionList(state)}
 ### Open Questions
 
 ${openQuestions(state)}
+
+### Decision Debt warnings
+
+${list(debt.codingAgentWarnings)}
 `;
 
   const prd = `# Product Requirements Document
@@ -142,6 +464,8 @@ ${openQuestions(state)}
 ## 1. Product Overview
 
 ${state.normalizedSummary || state.rawIdea || UNRESOLVED}
+
+**Decision Debt:** ${debt.score}/100 (${debt.inventionRisk})
 
 ## 2. Product Goals
 
@@ -201,7 +525,7 @@ ${UNRESOLVED}
 
 ## 16. Edge Cases
 
-${UNRESOLVED}
+${list(debt.topRisks.map((item) => `${item.title} remains unresolved: ${item.reason}`))}
 
 ## 17. Security & Privacy Requirements
 
@@ -230,6 +554,10 @@ ${decisionList(state)}
 ### Open Questions
 
 ${openQuestions(state)}
+
+### Do not invent
+
+See \`DO_NOT_INVENT.md\`.
 `;
 
   const entities = state.entities.length
@@ -243,6 +571,8 @@ ${openQuestions(state)}
 ## 1. Data Model Overview
 
 The data model is derived from the entities and workflows currently understood by RockFoundry. Unresolved fields remain explicit instead of being invented.
+
+**Decision Debt:** ${debt.score}/100 (${debt.inventionRisk})
 
 ## 2. Entity Relationship Diagram
 
@@ -278,8 +608,23 @@ ${decisionList(state)}
 ### Open Questions
 
 ${openQuestions(state)}
+
+### Identity and ownership risks
+
+${list(debt.topRisks.map((item) => `${item.title}: ${item.reason}`))}
 `;
-  return { BRD: brd, PRD: prd, ERD: erd };
+
+  return {
+    BRD: brd,
+    PRD: prd,
+    ERD: erd,
+    DO_NOT_INVENT: renderDoNotInvent(state),
+    DECISIONS: renderDecisionsMarkdown(state),
+    INVARIANTS: renderInvariants(state),
+    READINESS: renderReadiness(state),
+    AGENT_HANDOFF: renderAgentHandoff(state),
+    DECISIONS_JSON: renderDecisionsJson(state),
+  };
 }
 
 export async function generateExport(
@@ -290,11 +635,21 @@ export async function generateExport(
   zip.file("BRD.md", documents.BRD);
   zip.file("PRD.md", documents.PRD);
   zip.file("ERD.md", documents.ERD);
+  zip.file("DO_NOT_INVENT.md", documents.DO_NOT_INVENT);
+  zip.file("DECISIONS.md", documents.DECISIONS);
+  zip.file("INVARIANTS.md", documents.INVARIANTS);
+  zip.file("READINESS.md", documents.READINESS);
+  zip.file("AGENT_HANDOFF.md", documents.AGENT_HANDOFF);
+  zip.file("decisions.json", documents.DECISIONS_JSON);
   const buffer = await zip.generateAsync({ type: "nodebuffer" });
   const generatedAt = new Date().toISOString();
   return {
     buffer,
     documents,
-    metadata: { sizeBytes: buffer.length, fileCount: 3, generatedAt },
+    metadata: {
+      sizeBytes: buffer.length,
+      fileCount: 9,
+      generatedAt,
+    },
   };
 }

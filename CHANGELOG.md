@@ -1,5 +1,22 @@
 # Changelog
 
+## Agentic V1 week 2 — CRM magic moment
+
+- Extracted a stable CRM decision catalog and queue: identity → visibility → ownership → quotation → duplicates.
+- Added CRM contradiction rules for identity/visibility/duplicate conflicts.
+- Returned decision impact (blast radius) from answer processing into the workspace chat.
+- Added CRM golden fixtures/tests for five multi-brand ideas.
+- Rewrote the public README to be shorter and clearer for GitHub visitors.
+
+## Agentic V1 wedge foundations
+
+- Locked the beachhead wedge around multi-brand / multi-unit decision discovery.
+- Added Decision Debt scoring as a first-class product signal (higher = more invention risk).
+- Expanded export from BRD/PRD/ERD into an anti-invention handoff package:
+  `DO_NOT_INVENT.md`, `DECISIONS.md`, `decisions.json`, `INVARIANTS.md`, `READINESS.md`, and `AGENT_HANDOFF.md`.
+- Surfaced Decision Debt and top invention risks in the project workspace.
+- Added wedge strategy, gap map, and 30-day build plan under `product/` and `delivery/`.
+
 ## Agentic V1 product reset
 
 RockFoundry is being reset from the cancelled Alpha SaaS direction to a free, open-source, local-first agentic product discovery system.

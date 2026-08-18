@@ -99,6 +99,22 @@ function discoverySummary(state: any) {
   return `${count} important decision${count === 1 ? "" : "s"} remaining`;
 }
 
+function decisionDebtScore(state: any) {
+  const score = state?.decisionDebt?.score;
+  if (typeof score === "number")
+    return Math.max(0, Math.min(100, Math.round(score)));
+  return null;
+}
+
+function inventionRiskLabel(state: any) {
+  const risk = String(state?.decisionDebt?.inventionRisk || "").toUpperCase();
+  if (risk === "CRITICAL") return "Critical invention risk";
+  if (risk === "HIGH") return "High invention risk";
+  if (risk === "MEDIUM") return "Medium invention risk";
+  if (risk === "LOW") return "Low invention risk";
+  return "Invention risk unknown";
+}
+
 export default function ProjectWorkspace({
   params,
 }: {
@@ -161,16 +177,23 @@ export default function ProjectWorkspace({
     if (!response.ok) return;
     const data = await response.json();
     setQuestion(data.questions?.[0] || null);
-    if (data.readiness) {
+    if (data.readiness || data.decisionDebt) {
       setProject((current) =>
         current
           ? {
               ...current,
               canonicalState: {
                 ...current.canonicalState,
-                readiness: data.readiness.level,
-                readinessScore: data.readiness.score,
-                readinessBreakdown: data.readiness.breakdown,
+                ...(data.readiness
+                  ? {
+                      readiness: data.readiness.level,
+                      readinessScore: data.readiness.score,
+                      readinessBreakdown: data.readiness.breakdown,
+                    }
+                  : {}),
+                ...(data.decisionDebt
+                  ? { decisionDebt: data.decisionDebt }
+                  : {}),
                 discovery: data.discovery || current.canonicalState.discovery,
               },
             }
@@ -203,6 +226,7 @@ export default function ProjectWorkspace({
 
   const state = project?.canonicalState || {};
   const score = readinessScore(state);
+  const debtScore = decisionDebtScore(state);
   const status = projectStatus(state);
 
   const visibleMessages = useMemo(() => {
@@ -354,9 +378,35 @@ export default function ProjectWorkspace({
       );
       const nextQuestion = data.question || null;
       setQuestion(nextQuestion);
+      const affects = Array.isArray(data.decision?.affects)
+        ? data.decision.affects.filter(Boolean)
+        : [];
+      const debt = data.state?.decisionDebt;
+      const impactLines: Message[] = [];
+      const impactHeadline =
+        typeof data.impact?.headline === "string"
+          ? data.impact.headline
+          : affects.length
+            ? `Locked. This decision affects ${affects.join(", ")}.`
+            : "Decision recorded.";
+      const impactDetailParts = [
+        typeof data.impact?.detail === "string" ? data.impact.detail : "",
+        typeof debt?.summary === "string"
+          ? `Decision Debt ${debt.score}/100 · ${debt.summary}`
+          : "",
+      ].filter(Boolean);
+      if (data.decision || data.impact || debt?.summary) {
+        impactLines.push({
+          id: `impact-${Date.now()}`,
+          role: "assistant",
+          text: impactHeadline,
+          detail: impactDetailParts.join(" ") || undefined,
+        });
+      }
       if (nextQuestion && nextQuestion.id !== question.id) {
         setMessages((current) => [
           ...current,
+          ...impactLines,
           {
             id: `question-${nextQuestion.id}`,
             role: "assistant",
@@ -371,12 +421,15 @@ export default function ProjectWorkspace({
       } else if (!nextQuestion) {
         setMessages((current) => [
           ...current,
+          ...impactLines,
           {
             id: `readiness-${Date.now()}`,
             role: "assistant",
             text: "No critical blockers remain. The current decisions are enough to draft the build documents.",
           },
         ]);
+      } else if (impactLines.length) {
+        setMessages((current) => [...current, ...impactLines]);
       }
     } catch (cause) {
       setPageError(
@@ -466,8 +519,9 @@ export default function ProjectWorkspace({
         {
           id: `artifact-${Date.now()}`,
           role: "tool",
-          text: "BRD, PRD, and ERD generated",
-          detail: "The documents are ready to preview or download.",
+          text: "Handoff package generated",
+          detail:
+            "BRD, PRD, ERD, DO_NOT_INVENT, decisions, invariants, readiness, and agent handoff are ready.",
         },
       ]);
     } catch (cause) {
@@ -619,8 +673,13 @@ export default function ProjectWorkspace({
               className="rf-status-line"
               onClick={() => setDrawer("context")}
             >
-              Discovery: <span className="tabular-nums">{score}%</span> ·{" "}
-              {discoverySummary(state)}
+              Ready <span className="tabular-nums">{score}%</span>
+              {debtScore !== null ? (
+                <>
+                  {" "}· Debt <span className="tabular-nums">{debtScore}</span>
+                </>
+              ) : null}{" "}
+              · {discoverySummary(state)}
             </button>
           </div>
           <button
@@ -916,8 +975,43 @@ function ContextContent({
   const decisions = state.decisions || [];
   const assumptions = state.assumptions || [];
   const contradictions = state.contradictions || [];
+  const topRisks = state.decisionDebt?.topRisks || [];
+  const debtScore = decisionDebtScore(state);
   return (
     <div className="space-y-7 overflow-y-auto px-5 py-5">
+      <section className="space-y-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Decision Debt
+        </h3>
+        <p className="text-sm leading-5">
+          {debtScore !== null ? (
+            <>
+              <span className="font-medium tabular-nums">{debtScore}/100</span>
+              {" · "}
+              {inventionRiskLabel(state)}
+            </>
+          ) : (
+            "Decision Debt will appear after discovery starts."
+          )}
+        </p>
+        {state.decisionDebt?.summary ? (
+          <p className="text-sm leading-5 text-muted-foreground">
+            {state.decisionDebt.summary}
+          </p>
+        ) : null}
+        <div className="rf-meter rf-meter-debt">
+          <span style={{ width: `${debtScore ?? 0}%` }} />
+        </div>
+      </section>
+      <ContextList
+        title="Top invention risks"
+        items={topRisks.map((item: any) =>
+          item.title && item.reason
+            ? `${item.title}: ${item.reason}`
+            : String(item.title || item.topic || item),
+        )}
+        empty="No ranked invention risks yet."
+      />
       <div>
         <div className="mb-2 flex items-center justify-between text-xs">
           <span>Business</span>
@@ -1031,19 +1125,31 @@ function DocumentsContent({
   onDownload: () => void;
 }) {
   const status = state.readiness ? projectStatus(state) : "Draft";
+  const files = [
+    "BRD.md",
+    "PRD.md",
+    "ERD.md",
+    "DO_NOT_INVENT.md",
+    "DECISIONS.md",
+    "INVARIANTS.md",
+    "READINESS.md",
+    "AGENT_HANDOFF.md",
+    "decisions.json",
+  ];
   return (
     <div className="space-y-5 px-5 py-5">
       <p className="text-sm leading-6 text-muted-foreground">
-        Generate the three build documents from the current canonical state.
+        Generate the anti-invention handoff package from the current canonical
+        state. Coding agents should read DO_NOT_INVENT first.
       </p>
       <div className="space-y-2">
-        {["BRD", "PRD", "ERD"].map((doc) => (
+        {files.map((doc) => (
           <div
             key={doc}
             className="flex items-center gap-3 border-b border-border/60 py-3"
           >
             <FileText className="size-4 text-muted-foreground" />
-            <span className="flex-1 text-sm font-medium">{doc}.md</span>
+            <span className="flex-1 text-sm font-medium">{doc}</span>
             <span className="text-xs text-muted-foreground">
               {exportReady ? "Ready" : status}
             </span>
@@ -1062,7 +1168,7 @@ function DocumentsContent({
           </>
         ) : (
           <>
-            <FileText className="size-4" /> Generate documents
+            <FileText className="size-4" /> Generate handoff package
           </>
         )}
       </button>

@@ -85,16 +85,18 @@ describe("Agentic core state", () => {
     ).toBe(true);
   });
 
-  it("exports exactly the three primary artifacts", async () => {
+  it("exports the anti-invention handoff package with primary docs", async () => {
     const result = await generateExport(
       state({
         features: ["Track quotations"],
         entities: ["Customer", "Quotation"],
       }),
     );
-    expect(result.metadata.fileCount).toBe(3);
+    expect(result.metadata.fileCount).toBe(9);
     expect(result.documents.BRD).toContain("# Business Requirements Document");
     expect(result.documents.PRD).toContain("## 22. Open Decisions");
     expect(result.documents.ERD).toContain("```mermaid");
+    expect(result.documents.DO_NOT_INVENT).toContain("# DO NOT INVENT");
+    expect(result.documents.AGENT_HANDOFF).toContain("Agent Handoff");
   });
 });

@@ -1,7 +1,11 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
-import { generateExport, validateConsistency } from "@rockfoundry/core";
+import {
+  evaluateDecisionDebt,
+  generateExport,
+  validateConsistency,
+} from "@rockfoundry/core";
 import {
   getLocalProject,
   jsonError,
@@ -45,9 +49,20 @@ export async function POST(
       ),
     );
     return Response.json({
-      generated: ["BRD", "PRD", "ERD"],
+      generated: [
+        "BRD",
+        "PRD",
+        "ERD",
+        "DO_NOT_INVENT",
+        "DECISIONS",
+        "INVARIANTS",
+        "READINESS",
+        "AGENT_HANDOFF",
+        "DECISIONS_JSON",
+      ],
       version: project.version,
       consistency,
+      decisionDebt: evaluateDecisionDebt(state),
       downloadUrl: `/api/projects/${id}/export`,
     });
   } catch {

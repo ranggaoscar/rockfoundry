@@ -416,6 +416,9 @@
     border-radius: inherit;
     background: var(--foreground);
   }
+  .rf-meter-debt span {
+    background: color-mix(in oklch, var(--foreground) 72%, var(--muted));
+  }
   .rf-drawer-backdrop {
     position: fixed;
     inset: 0;

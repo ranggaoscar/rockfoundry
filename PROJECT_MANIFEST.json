@@ -128,7 +128,25 @@
   ],
   "artifacts": {
     "primary": ["BRD", "PRD", "ERD"],
-    "defaultExport": ["BRD.md", "PRD.md", "ERD.md"],
+    "handoff": [
+      "DO_NOT_INVENT.md",
+      "DECISIONS.md",
+      "decisions.json",
+      "INVARIANTS.md",
+      "READINESS.md",
+      "AGENT_HANDOFF.md"
+    ],
+    "defaultExport": [
+      "BRD.md",
+      "PRD.md",
+      "ERD.md",
+      "DO_NOT_INVENT.md",
+      "DECISIONS.md",
+      "decisions.json",
+      "INVARIANTS.md",
+      "READINESS.md",
+      "AGENT_HANDOFF.md"
+    ],
     "sourceOfTruth": "canonical project state",
     "crossDocumentValidation": true
   },
@@ -202,12 +220,26 @@
   ],
   "export": {
     "format": "directory or zip",
-    "defaultContents": ["BRD.md", "PRD.md", "ERD.md"],
+    "defaultContents": [
+      "BRD.md",
+      "PRD.md",
+      "ERD.md",
+      "DO_NOT_INVENT.md",
+      "DECISIONS.md",
+      "decisions.json",
+      "INVARIANTS.md",
+      "READINESS.md",
+      "AGENT_HANDOFF.md"
+    ],
     "advancedContentsOptional": [
       ".rockfoundry/state.json",
-      ".rockfoundry/decisions.json",
       ".rockfoundry/requirements.json",
       ".rockfoundry/references.json"
     ]
+  },
+  "wedge": {
+    "document": "product/WIN_WEDGE.md",
+    "beachhead": "multi-brand CRM and multi-unit ops",
+    "northStar": "reduce invented product decisions by coding agents"
   }
 }

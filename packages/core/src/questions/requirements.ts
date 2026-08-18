@@ -3,6 +3,7 @@ import type {
   RequirementNode,
   RequirementStatus,
 } from "../schema";
+import { CRM_DECISION_META, CRM_DECISION_ORDER, sortByCrmQueue } from "./crm-catalog";
 
 export type DiscoveryDomain = "CRM" | "RENTAL" | "INVENTORY" | "GENERAL";
 
@@ -85,53 +86,17 @@ export function buildDiscoveryRequirements(
   const domain = detectDiscoveryDomain(state);
 
   if (domain === "CRM") {
-    return [
-      node(state, {
-        id: "customer_identity",
-        category: "DATA",
-        title: "Customer identity across brands",
-        description:
-          "Whether one customer has one company-wide identity or a separate identity for each brand.",
-        priority: 10,
-        riskWeight: 10,
-      }),
-      node(state, {
-        id: "sales_visibility",
-        category: "PERMISSIONS",
-        title: "Sales visibility boundaries",
-        description:
-          "What brand-specific sales teams can see and what the owner can see across all brands.",
-        priority: 10,
-        riskWeight: 10,
-      }),
-      node(state, {
-        id: "lead_ownership",
-        category: "WORKFLOW",
-        title: "Lead ownership",
-        description:
-          "Which brand and salesperson own a lead when it arrives through WhatsApp, Instagram, or the website.",
-        priority: 9,
-        riskWeight: 9,
-      }),
-      node(state, {
-        id: "quotation_branding",
-        category: "DATA",
-        title: "Quotation brand and ownership",
-        description:
-          "How a quotation keeps the selling brand, responsible salesperson, and customer history connected.",
-        priority: 9,
-        riskWeight: 9,
-      }),
-      node(state, {
-        id: "duplicate_handling",
-        category: "DATA",
-        title: "Duplicate customer handling",
-        description:
-          "What happens when the same phone number or social contact appears through more than one channel or brand.",
-        priority: 8,
-        riskWeight: 8,
-      }),
-    ];
+    return CRM_DECISION_ORDER.map((topic) => {
+      const meta = CRM_DECISION_META[topic];
+      return node(state, {
+        id: topic,
+        category: meta.category,
+        title: meta.title,
+        description: meta.description,
+        priority: meta.priority,
+        riskWeight: meta.riskWeight,
+      });
+    });
   }
 
   if (domain === "RENTAL") {
@@ -269,14 +234,17 @@ export function buildDiscoveryRequirements(
 export function evaluateDiscovery(state: ProjectState): DiscoveryEvaluation {
   const domain = detectDiscoveryDomain(state);
   const requirements = buildDiscoveryRequirements(state);
-  const unresolved = requirements
-    .filter((requirement) =>
-      ["UNRESOLVED", "CONFLICTING"].includes(requirement.status),
-    )
-    .sort(
-      (left, right) =>
-        right.priority * right.riskWeight - left.priority * left.riskWeight,
-    );
+  const unresolvedBase = requirements.filter((requirement) =>
+    ["UNRESOLVED", "CONFLICTING"].includes(requirement.status),
+  );
+  const unresolved =
+    domain === "CRM"
+      ? sortByCrmQueue(unresolvedBase)
+      : unresolvedBase.sort(
+          (left, right) =>
+            right.priority * right.riskWeight -
+            left.priority * left.riskWeight,
+        );
   const important = unresolved.filter(
     (requirement) => requirement.priority >= 8,
   );

@@ -2,22 +2,24 @@
 
 RockFoundry is a free, open-source, local-first agentic product architect for vibe coders.
 
-You describe what you want to build. RockFoundry investigates the idea through conversation, asks the next useful question, records decisions, inspects public references when relevant, detects contradictions, and generates three build specifications for a coding agent:
+You describe what you want to build. RockFoundry investigates the idea through conversation, asks the next useful question, records decisions, inspects public references when relevant, detects contradictions, scores Decision Debt, and generates an anti-invention handoff package for a coding agent:
 
-- `BRD.md`
-- `PRD.md`
-- `ERD.md`
+- `BRD.md` / `PRD.md` / `ERD.md`
+- `DO_NOT_INVENT.md` / `DECISIONS.md` / `INVARIANTS.md` / `READINESS.md` / `AGENT_HANDOFF.md`
 
 RockFoundry does not generate the application source code. It stops at a high-quality, internally consistent build brief.
 
 ## Read in this order
 
-1. `PRD.md` - the current product contract and chat-first UI direction.
-2. `PROJECT_MANIFEST.json` - the canonical structured product state.
-3. `agent/AGENTS.md` - implementation rules for coding agents.
-4. `technical/SYSTEM_ARCHITECTURE.md` - the local-first architecture.
-5. `design/DESIGN_DIRECTION.md` and `design/INFORMATION_ARCHITECTURE.md` - UI constraints.
-6. `agent/FIRST_BUILD_PROMPT.md` - a bounded starting prompt.
+1. `product/WIN_WEDGE.md` - how RockFoundry wins in the next 30 days.
+2. `product/GAP_MAP.md` - vision vs code gaps.
+3. `delivery/30_DAY_BUILD.md` - execution plan.
+4. `PRD.md` - the current product contract and chat-first UI direction.
+5. `PROJECT_MANIFEST.json` - the canonical structured product state.
+6. `agent/AGENTS.md` - implementation rules for coding agents.
+7. `technical/SYSTEM_ARCHITECTURE.md` - the local-first architecture.
+8. `design/DESIGN_DIRECTION.md` and `design/INFORMATION_ARCHITECTURE.md` - UI constraints.
+9. `agent/FIRST_BUILD_PROMPT.md` - a bounded starting prompt.
 
 If another document conflicts with these files, treat the product reset in `PRD.md` and `PROJECT_MANIFEST.json` as authoritative. Legacy Alpha SaaS decisions are preserved in Git history, not in the V1 contract.
 
@@ -28,10 +30,11 @@ idea
   -> conversation
   -> contextual questions
   -> decisions and assumptions
+  -> Decision Debt score
   -> safe reference inspection
   -> contradiction resolution
   -> readiness
-  -> BRD / PRD / ERD
+  -> anti-invention handoff package
   -> export for a coding agent
 ```
 

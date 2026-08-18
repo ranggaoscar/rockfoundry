@@ -102,6 +102,29 @@ export const ReadinessLevelSchema = z.enum([
 ]);
 export type ReadinessLevel = z.infer<typeof ReadinessLevelSchema>;
 
+export const DecisionDebtRiskSchema = z.object({
+  topic: z.string(),
+  title: z.string(),
+  reason: z.string(),
+  riskWeight: z.number(),
+});
+export type DecisionDebtRisk = z.infer<typeof DecisionDebtRiskSchema>;
+
+export const DecisionDebtSchema = z.object({
+  score: z.number().min(0).max(100).default(0),
+  inventionRisk: z
+    .enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"])
+    .default("HIGH"),
+  unresolvedHighRiskCount: z.number().int().min(0).default(0),
+  openContradictionCount: z.number().int().min(0).default(0),
+  unresolvedAssumptionCount: z.number().int().min(0).default(0),
+  decidedCount: z.number().int().min(0).default(0),
+  topRisks: z.array(DecisionDebtRiskSchema).default([]),
+  codingAgentWarnings: z.array(z.string()).default([]),
+  summary: z.string().default(""),
+});
+export type DecisionDebt = z.infer<typeof DecisionDebtSchema>;
+
 export const ProjectStateSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -153,6 +176,17 @@ export const ProjectStateSchema = z.object({
       data: z.number().min(0).max(100),
     })
     .default({ business: 0, product: 0, data: 0 }),
+  decisionDebt: DecisionDebtSchema.default({
+    score: 0,
+    inventionRisk: "HIGH",
+    unresolvedHighRiskCount: 0,
+    openContradictionCount: 0,
+    unresolvedAssumptionCount: 0,
+    decidedCount: 0,
+    topRisks: [],
+    codingAgentWarnings: [],
+    summary: "",
+  }),
   generationMetadata: z.record(z.string(), z.unknown()).default({}),
 });
 export type ProjectState = z.infer<typeof ProjectStateSchema>;
