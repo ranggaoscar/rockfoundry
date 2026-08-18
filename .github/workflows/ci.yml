@@ -15,8 +15,6 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     env:
-      ROCKFOUNDRY_DATA_DIR: ${{ runner.temp }}/rockfoundry-quality-data
-      ROCKFOUNDRY_DATABASE_URL: file:${{ runner.temp }}/rockfoundry-quality-data/rockfoundry.db
       AI_PROVIDER_MODE: mock
       NODE_ENV: test
     steps:
@@ -30,6 +28,12 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Configure isolated SQLite
+        run: |
+          data_dir="$RUNNER_TEMP/rockfoundry-quality-data"
+          echo "ROCKFOUNDRY_DATA_DIR=$data_dir" >> "$GITHUB_ENV"
+          echo "ROCKFOUNDRY_DATABASE_URL=file:$data_dir/rockfoundry.db" >> "$GITHUB_ENV"
 
       - name: Generate Prisma client
         run: pnpm db:generate
@@ -56,8 +60,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      ROCKFOUNDRY_DATA_DIR: ${{ runner.temp }}/rockfoundry-test-data
-      ROCKFOUNDRY_DATABASE_URL: file:${{ runner.temp }}/rockfoundry-test-data/rockfoundry.db
       AI_PROVIDER_MODE: mock
       NODE_ENV: test
     steps:
@@ -71,6 +73,12 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Configure isolated SQLite
+        run: |
+          data_dir="$RUNNER_TEMP/rockfoundry-test-data"
+          echo "ROCKFOUNDRY_DATA_DIR=$data_dir" >> "$GITHUB_ENV"
+          echo "ROCKFOUNDRY_DATABASE_URL=file:$data_dir/rockfoundry.db" >> "$GITHUB_ENV"
 
       - name: Generate Prisma client
         run: pnpm db:generate
@@ -100,8 +108,6 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     env:
-      ROCKFOUNDRY_DATA_DIR: ${{ runner.temp }}/rockfoundry-e2e-data
-      ROCKFOUNDRY_DATABASE_URL: file:${{ runner.temp }}/rockfoundry-e2e-data/rockfoundry.db
       AI_PROVIDER_MODE: mock
       NODE_ENV: test
     steps:
@@ -115,6 +121,12 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Configure isolated SQLite
+        run: |
+          data_dir="$RUNNER_TEMP/rockfoundry-e2e-data"
+          echo "ROCKFOUNDRY_DATA_DIR=$data_dir" >> "$GITHUB_ENV"
+          echo "ROCKFOUNDRY_DATABASE_URL=file:$data_dir/rockfoundry.db" >> "$GITHUB_ENV"
 
       - name: Generate Prisma client
         run: pnpm db:generate
