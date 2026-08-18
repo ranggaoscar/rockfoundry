@@ -33,7 +33,7 @@ BRD.md · PRD.md · ERD.md
 - human-in-the-loop material decisions;
 - build readiness based on risk and coverage, not question count;
 - vendor-neutral, open-source, local-first architecture;
-- provider-neutral BYOK for OpenAI, Anthropic, Gemini, OpenRouter, Ollama, 9Router, and custom OpenAI-compatible endpoints.
+- provider-neutral BYOK architecture; the current runtime implements an OpenAI-compatible path for OpenAI, OpenRouter, Ollama where compatible, 9Router, and custom endpoints, while native Anthropic and Gemini adapters remain targets.
 
 ## What it is not
 

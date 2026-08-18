@@ -41,7 +41,7 @@ The chat is the primary interface. The default workspace is not a dashboard, wiz
 
 - Fully free and open source.
 - No RockFoundry account, login, signup, or hosted backend.
-- BYOK provider profiles: OpenAI, Anthropic, Gemini, OpenRouter, Ollama, 9Router, and custom OpenAI-compatible endpoints.
+- BYOK through the implemented OpenAI-compatible runtime for OpenAI, OpenRouter, Ollama where compatible, 9Router, and custom endpoints. Native Anthropic and Gemini adapters remain architecture targets.
 - Local-first project data, SQLite, Prisma, and local Markdown project folders.
 - No subscriptions, payments, SumoPod, plans, entitlements, usage credits, managed AI billing, PostgreSQL requirement, Redis, MinIO, cloud storage, or cloud queues.
 - No application source-code generation, deployment, external repository writes, or outbound messaging.

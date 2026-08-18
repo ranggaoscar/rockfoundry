@@ -50,7 +50,7 @@ Do not ask for implementation details that can safely be recommended in the PRD.
 
 ## Provider support
 
-The provider abstraction supports OpenAI, Anthropic, Gemini, OpenRouter, Ollama, 9Router, and custom OpenAI-compatible endpoints. See `docs/AI_PROVIDERS.md`.
+The current runtime implements an OpenAI-compatible path for OpenAI, OpenRouter, Ollama where compatible, 9Router, and custom endpoints, plus the explicit Mock Provider. Native Anthropic and Gemini adapters remain architecture targets. See `docs/AI_PROVIDERS.md`.
 
 ## Safety
 

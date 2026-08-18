@@ -2,19 +2,22 @@
 
 RockFoundry is free and open source. Users bring their own provider key or choose the explicit Mock Provider.
 
-## Supported architecture
+## Supported architecture and current status
 
-| Provider        | Adapter                         | Notes                                                |
-| --------------- | ------------------------------- | ---------------------------------------------------- |
-| OpenAI          | OpenAI-compatible               | Native OpenAI base URL and chat/completions contract |
-| OpenRouter      | OpenAI-compatible               | User supplies base URL, key, and model               |
-| 9Router         | OpenAI-compatible               | User supplies local/provider endpoint configuration  |
-| Ollama          | OpenAI-compatible where enabled | Local endpoint, usually no remote key                |
-| Custom endpoint | OpenAI-compatible               | User controls base URL and model                     |
-| Anthropic       | Anthropic adapter               | Native messages API                                  |
-| Gemini          | Gemini adapter                  | Native Gemini API                                    |
+| Provider or mode | Adapter / path                  | Current status                    | Notes                                                            |
+| ---------------- | ------------------------------- | --------------------------------- | ---------------------------------------------------------------- |
+| Mock Provider    | Local deterministic provider    | **Implemented**                   | Offline demos, tests, and E2E.                                   |
+| OpenAI           | OpenAI-compatible               | **Implemented**                   | Uses the current configurable chat-completions path.             |
+| OpenRouter       | OpenAI-compatible               | **Available through the adapter** | User supplies a compatible base URL, key, and model.             |
+| 9Router          | OpenAI-compatible               | **Available through the adapter** | User supplies a compatible endpoint configuration.               |
+| Ollama           | OpenAI-compatible where enabled | **Available through the adapter** | Local endpoint; capability depends on the Ollama-compatible API. |
+| Custom endpoint  | OpenAI-compatible               | **Available through the adapter** | User controls the base URL and model.                            |
+| Anthropic        | Native messages API             | **Architecture target**           | Native adapter is not wired into the current runtime.            |
+| Gemini           | Native Gemini API               | **Architecture target**           | Native adapter is not wired into the current runtime.            |
 
 V1 needs one active profile. The model and UI should not hardcode a single vendor. Multiple named profiles can be added later.
+
+The current Agentic V1 runtime reads the OpenAI-compatible configuration from local environment variables. The provider settings surface is a UI direction, not yet a persisted multi-provider configuration manager.
 
 ## Provider contract
 
@@ -31,7 +34,7 @@ All structured agent output is validated against Zod action schemas before it ca
 
 ## Settings UX
 
-Provider setup is progressive. Do not block first launch with configuration. When AI is required, open a compact settings sheet:
+Provider setup is progressive. Do not block first launch with configuration. The settings sheet below is the intended product direction; the current Agentic V1 runtime reads the implemented OpenAI-compatible configuration from local environment variables rather than persisting a multi-provider profile from this UI. When AI is required, open a compact settings sheet:
 
 ```text
 AI Provider

@@ -292,11 +292,11 @@ interface AIProvider {
 }
 ```
 
-Initial adapters:
+Current implementation and architecture targets:
 
-- `OpenAICompatibleProvider`
-- `AnthropicProvider`
-- `GeminiProvider`
+- `OpenAICompatibleProvider` — implemented in Agentic V1.
+- `AnthropicProvider` — architecture target; not wired into the current runtime.
+- `GeminiProvider` — architecture target; not wired into the current runtime.
 
 OpenAI-compatible endpoints must be able to represent OpenAI, OpenRouter, 9Router, Ollama where compatible, and custom endpoints.
 

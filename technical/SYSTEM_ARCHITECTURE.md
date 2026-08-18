@@ -32,9 +32,8 @@ Next.js App Router
         │     └── BRD/PRD/ERD renderers
         │
         ├── packages/ai
-        │     ├── OpenAI-compatible adapter
-        │     ├── Anthropic adapter
-        │     ├── Gemini adapter
+        │     ├── OpenAI-compatible adapter (current runtime)
+        │     ├── Mock Provider (explicit offline mode)
         │     └── structured action prompts
         │
         ├── packages/db
@@ -46,6 +45,8 @@ Next.js App Router
               ├── browser-safe UI
               └── local provider/config boundary
 ```
+
+Native Anthropic and Gemini adapters remain architecture targets and are not wired into the current Agentic V1 runtime. See `docs/AI_PROVIDERS.md`.
 
 ## Agent loop
 

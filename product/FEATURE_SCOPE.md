@@ -10,11 +10,11 @@
 | Canonical state | Typed project state with facts, requirements, decisions, assumptions, contradictions, references, readiness, and provenance |
 | Agent runtime   | Structured actions routed through deterministic handlers                                                                    |
 | Questions       | Contextual, project-specific, high-value questions with quality validation                                                  |
-| Providers       | Explicit mock provider, OpenAI-compatible, Anthropic, Gemini, local config                                                  |
+| Providers       | Explicit Mock Provider and OpenAI-compatible runtime; native Anthropic/Gemini adapters remain architecture targets          |
 | References      | Safe public website and GitHub inspection, license reporting, prompt-injection isolation                                    |
 | Artifacts       | Deterministic BRD, PRD, ERD renderers and cross-document consistency validation                                             |
 | Export          | Simple project folder or ZIP containing BRD.md, PRD.md, and ERD.md                                                          |
-| Settings        | Local provider configuration and connection test                                                                            |
+| Settings        | Provider settings direction; current runtime configuration uses local environment variables                                 |
 
 ## Do not build
 

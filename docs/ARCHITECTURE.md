@@ -32,9 +32,11 @@ Next.js App Router
         │     └── artifact_generate
         │
         ├── Provider Adapters
-        │     ├── OpenAI-compatible
-        │     ├── Anthropic
-        │     └── Gemini
+        │     └── OpenAI-compatible (current Agentic V1 runtime)
+        │           ├── OpenAI
+        │           ├── OpenRouter / 9Router
+        │           ├── Ollama where compatible
+        │           └── custom endpoints
         │
         ├── Prisma Client
         │     └── SQLite in OS-aware app-data directory
@@ -102,6 +104,8 @@ A changed decision creates a revision and marks affected requirements/artifacts 
 ## Persistence
 
 SQLite + Prisma is the default. Projects, messages, decisions, assumptions, contradictions, requirements, references, tool runs, agent runs, artifacts, and provider profile metadata are local records. Secret values should be stored in an OS-aware config path or secure OS credential store when available.
+
+Native Anthropic and Gemini adapters remain architecture targets and are not wired into the current runtime. See [`AI_PROVIDERS.md`](AI_PROVIDERS.md) for the implementation boundary.
 
 Previous Alpha PostgreSQL data is not automatically migrated into Agentic V1. Docker support is intentionally outside the active V1 tree.
 

@@ -105,7 +105,8 @@
   "readinessDimensions": ["business", "product", "data", "technical"],
   "providers": {
     "activeProfileV1": true,
-    "supportedAdapters": ["openai_compatible", "anthropic", "gemini"],
+    "supportedAdapters": ["openai_compatible"],
+    "architectureTargetAdapters": ["anthropic", "gemini"],
     "openaiCompatibleTargets": [
       "openai",
       "openrouter",
