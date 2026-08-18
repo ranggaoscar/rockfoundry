@@ -1,5 +1,6 @@
 import type { ProjectState } from "../schema";
 import type { Question } from "../schema/question";
+import { extractStructuralContext } from "./context-extractor";
 
 export type QuestionQualityResult = { accepted: boolean; reasons: string[] };
 
@@ -18,13 +19,19 @@ const technicalPattern =
   /\b(postgres|postgresql|sqlite|mysql|database|orm|rest|graphql|uuid|integer id|server actions|api design|tech stack)\b/i;
 
 function knownContextTerms(state: ProjectState) {
+  const context = extractStructuralContext(state);
   return [
     state.name,
     ...state.targetUsers,
+    ...state.roles,
     ...state.entities,
     ...state.features,
     ...state.workflows,
     ...state.integrations,
+    ...context.roles.map((item) => item.value),
+    ...context.entities.map((item) => item.value),
+    ...context.workflows.map((item) => item.value),
+    ...context.channels.map((item) => item.value),
   ]
     .filter(Boolean)
     .flatMap((value) => {

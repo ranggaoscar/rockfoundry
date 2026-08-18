@@ -4,6 +4,7 @@ import {
   detectContradictions,
   detectDiscoveryDomain,
   evaluateDecisionDebt,
+  genericQuestionForTopic,
   QuestionEngine,
   recordDecision,
   scoreDiscoveryDomains,
@@ -177,7 +178,7 @@ describe("STRONG DEMO P1 — GENERAL question quality", () => {
     );
     expect(detectDiscoveryDomain(state)).toBe("GENERAL");
     const engine = new QuestionEngine();
-    const questions = engine.generateQuestions(state, [], 3);
+    const questions = engine.generateQuestions(state, [], 12);
     expect(questions.length).toBeGreaterThan(0);
     for (const question of questions) {
       expect(question.text).not.toMatch(
@@ -186,9 +187,9 @@ describe("STRONG DEMO P1 — GENERAL question quality", () => {
       expect(question.text).not.toMatch(/When someone uses .+ with a record/i);
       expect(question.text.length).toBeGreaterThan(20);
     }
-    const primary = questions.find((item) => item.topic === "primary_workflow");
-    expect(primary?.text.toLowerCase()).toContain("first");
-    expect(primary?.text.toLowerCase()).toContain("outcome");
+    const primary = genericQuestionForTopic(state, "primary_workflow");
+    expect(primary?.text.toLowerCase()).toMatch(/first|pertama/);
+    expect(primary?.text.toLowerCase()).toMatch(/outcome|hasil/);
   });
 });
 

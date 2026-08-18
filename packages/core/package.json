@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run src/tests",
-    "eval:invention": "pnpm exec tsx src/eval/smoke.ts"
+    "eval:invention": "pnpm exec tsx src/eval/smoke.ts",
+    "eval:generalization": "pnpm exec tsx src/eval/generalization-smoke.ts"
   },
   "keywords": [],
   "author": "",

@@ -1,7 +1,4 @@
-import type {
-  EntityRelationship,
-  ProjectState,
-} from "../schema";
+import type { EntityRelationship, ProjectState } from "../schema";
 import { acceptedDecision } from "../questions/crm-catalog";
 
 const UNRESOLVED = "[UNRESOLVED]";
@@ -20,7 +17,9 @@ export function derivedPermissionLines(state: ProjectState): string[] {
       "Owner can access customers, leads, follow-ups, and quotations across all brands.",
     );
   } else if (visibility === "all_sales_all_brands") {
-    lines.push("All sales roles can access customer and pipeline data across brands.");
+    lines.push(
+      "All sales roles can access customer and pipeline data across brands.",
+    );
   } else if (visibility === "brand_scoped") {
     lines.push("All non-owner access is limited to the user's brand.");
   }
@@ -31,7 +30,9 @@ export function derivedPermissionLines(state: ProjectState): string[] {
       "Lead follow-up ownership starts with the brand/sales team that first receives the lead.",
     );
   } else if (ownership === "shared_sales_pool") {
-    lines.push("Leads are assigned from a shared sales pool rather than a single brand inbox.");
+    lines.push(
+      "Leads are assigned from a shared sales pool rather than a single brand inbox.",
+    );
   }
   return unique(lines);
 }
@@ -44,12 +45,16 @@ export function derivedBusinessRuleLines(state: ProjectState): string[] {
       "A customer has one company-wide identity; brand context lives on leads and quotations.",
     );
   } else if (identity === "unit_specific") {
-    lines.push("Customer identity is separate per brand; cross-brand history is not automatic.");
+    lines.push(
+      "Customer identity is separate per brand; cross-brand history is not automatic.",
+    );
   }
 
   const quotation = d(state, "quotation_branding");
   if (quotation === "quotation_uses_owning_brand") {
-    lines.push("A quotation is branded and attributed to the lead-owning brand.");
+    lines.push(
+      "A quotation is branded and attributed to the lead-owning brand.",
+    );
   } else if (quotation === "customer_chooses_brand") {
     lines.push("The customer chooses the brand during quotation creation.");
   }
@@ -64,21 +69,71 @@ export function derivedBusinessRuleLines(state: ProjectState): string[] {
       "Potential duplicates stay separate until a human review decides otherwise.",
     );
   }
+  const genericDecisionLabels: Record<string, string> = {
+    identity_boundary: "Identity boundary",
+    ownership_boundary: "Ownership boundary",
+    visibility_boundary: "Visibility boundary",
+    lifecycle_transitions: "Lifecycle transition rule",
+    resource_conflict_policy: "Resource conflict policy",
+    assignment_behavior: "Assignment rule",
+    cross_boundary_behavior: "Cross-boundary behavior",
+    duplicate_semantics: "Duplicate semantics",
+    history_auditability: "History and auditability rule",
+    completion_semantics: "Completion semantics",
+    approval_responsibility: "Approval responsibility",
+    money_responsibility: "Money responsibility",
+    retention_deletion: "Retention and deletion rule",
+    primary_workflow: "Primary workflow outcome",
+    record_relationships: "Record relationship decision",
+    role_boundaries: "Role boundary",
+  };
+  for (const [topic, label] of Object.entries(genericDecisionLabels)) {
+    const decision = d(state, topic);
+    if (decision) lines.push(`${label}: ${decision}`);
+  }
   return unique(lines);
+}
+
+export function derivedStateStatusLines(state: ProjectState): string[] {
+  const topics = [
+    "lifecycle_transitions",
+    "completion_semantics",
+    "resource_conflict_policy",
+    "approval_responsibility",
+    "money_responsibility",
+  ];
+  const lines = topics
+    .map((topic) => {
+      const decision = d(state, topic);
+      return decision ? `${topic}: ${decision}` : "";
+    })
+    .filter(Boolean);
+  return unique(lines);
+}
+
+export function derivedRetentionLines(state: ProjectState): string[] {
+  const decision = d(state, "retention_deletion");
+  return decision ? [`retention_deletion: ${decision}`] : [UNRESOLVED];
 }
 
 export function derivedDataOwnershipLines(state: ProjectState): string[] {
   const lines: string[] = [];
   const identity = d(state, "customer_identity");
   if (identity === "company_wide") {
-    lines.push("Customer master data is company-owned; brand is a dimension on commercial records.");
+    lines.push(
+      "Customer master data is company-owned; brand is a dimension on commercial records.",
+    );
   } else if (identity === "unit_specific") {
-    lines.push("Customer master data is brand-owned; no automatic shared customer profile.");
+    lines.push(
+      "Customer master data is brand-owned; no automatic shared customer profile.",
+    );
   }
 
   const quotation = d(state, "quotation_branding");
   if (quotation) {
-    lines.push(`Quotation commercial ownership follows decision: ${quotation}.`);
+    lines.push(
+      `Quotation commercial ownership follows decision: ${quotation}.`,
+    );
   }
 
   const ownership = d(state, "lead_ownership");
@@ -197,7 +252,12 @@ export function derivedRelationships(
   // SalesOwner is deliberately not synthesized from a decision. It is only
   // rendered when that role/entity was explicitly added to canonical state.
   if (d(state, "lead_ownership")) {
-    addDecisionRelationship("Lead", "SalesOwner", "MANY_TO_ONE", "operational owner");
+    addDecisionRelationship(
+      "Lead",
+      "SalesOwner",
+      "MANY_TO_ONE",
+      "operational owner",
+    );
   }
   if (d(state, "quotation_branding")) {
     addDecisionRelationship("Quotation", "Brand", "MANY_TO_ONE");
@@ -288,13 +348,17 @@ export function derivedNonGoals(state: ProjectState): string[] {
     "Do not invent undecided multi-brand identity, permission, or ownership rules.",
   ];
   if (!d(state, "duplicate_handling")) {
-    lines.push("Automatic silent merge of customers is out of scope until decided.");
+    lines.push(
+      "Automatic silent merge of customers is out of scope until decided.",
+    );
   }
   return lines;
 }
 
 export function listOrUnresolved(values: string[]) {
-  return values.length ? values.map((value) => `- ${value}`).join("\n") : UNRESOLVED;
+  return values.length
+    ? values.map((value) => `- ${value}`).join("\n")
+    : UNRESOLVED;
 }
 
 function unique(values: string[]) {

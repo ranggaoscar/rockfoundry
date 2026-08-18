@@ -90,7 +90,10 @@ export const rules: ContradictionRule[] = [
       return {
         id: "crm-unit-customers-vs-open-sales",
         severity: "WARNING",
-        conflictingFields: ["decisions.customer_identity", "decisions.sales_visibility"],
+        conflictingFields: [
+          "decisions.customer_identity",
+          "decisions.sales_visibility",
+        ],
         explanation:
           "Customers are separate per brand, but every salesperson can see all brands. That usually creates confusing ownership and history.",
         recommendedResolution:
@@ -209,6 +212,94 @@ export const rules: ContradictionRule[] = [
           "Leads are handled by a shared cross-brand sales pool, but sales visibility is brand-scoped. Pool members cannot see the leads they are supposed to work.",
         recommendedResolution:
           "Either assign leads to brand-owned sales teams, or open sales visibility for the shared pool.",
+        status: "OPEN",
+      };
+    },
+  },
+  {
+    id: "generic-global-visibility-vs-strict-isolation",
+    check: (state) => {
+      const visibility = decisionValue(state, "visibility_boundary");
+      const ownership = decisionValue(state, "ownership_boundary");
+      if (!visibility || !ownership) return null;
+      const globalVisibility =
+        /global|everyone|all|shared|full|semua|lintas/.test(visibility);
+      const strictIsolation =
+        /only|strict|separate|private|assigned|own|terpisah|sendiri/.test(
+          ownership,
+        );
+      if (!globalVisibility || !strictIsolation) return null;
+      return {
+        id: "generic-global-visibility-vs-strict-isolation",
+        severity: "WARNING",
+        conflictingFields: [
+          "decisions.visibility_boundary",
+          "decisions.ownership_boundary",
+        ],
+        explanation:
+          "Visibility is global, but ownership is described as strictly isolated. The access rule and operating responsibility may disagree.",
+        recommendedResolution:
+          "Define whether global visibility is read-only collaboration or also permits cross-boundary changes.",
+        status: "OPEN",
+      };
+    },
+  },
+  {
+    id: "generic-immutable-history-vs-hard-delete",
+    check: (state) => {
+      const history = decisionValue(state, "history_auditability");
+      const retention = decisionValue(state, "retention_deletion");
+      if (!history || !retention) return null;
+      const immutableHistory =
+        /immutable|never delete|preserve|audit|always keep|tidak boleh dihapus|simpan semua/.test(
+          history,
+        );
+      const hardDelete =
+        /hard delete|permanent delete|delete all|hapus permanen|hapus semua/.test(
+          retention,
+        );
+      if (!immutableHistory || !hardDelete) return null;
+      return {
+        id: "generic-immutable-history-vs-hard-delete",
+        severity: "BLOCKING",
+        conflictingFields: [
+          "decisions.history_auditability",
+          "decisions.retention_deletion",
+        ],
+        explanation:
+          "History is supposed to remain immutable, but retention says linked data can be permanently deleted.",
+        recommendedResolution:
+          "Define whether deletion creates an auditable tombstone, anonymizes history, or is prohibited for linked records.",
+        status: "OPEN",
+      };
+    },
+  },
+  {
+    id: "generic-single-owner-vs-multiple-assignees",
+    check: (state) => {
+      const ownership = decisionValue(state, "ownership_boundary");
+      const assignment = decisionValue(state, "assignment_behavior");
+      if (!ownership || !assignment) return null;
+      const singleOwner =
+        /one owner|single owner|only one|sole|satu pemilik|satu owner/.test(
+          ownership,
+        );
+      const multipleAssignees =
+        /multiple|shared|many|several|lebih dari satu|beberapa|bersama/.test(
+          assignment,
+        );
+      if (!singleOwner || !multipleAssignees) return null;
+      return {
+        id: "generic-single-owner-vs-multiple-assignees",
+        severity: "WARNING",
+        conflictingFields: [
+          "decisions.ownership_boundary",
+          "decisions.assignment_behavior",
+        ],
+        explanation:
+          "The product names one operational owner but also allows multiple simultaneous assignees.",
+        recommendedResolution:
+          "Distinguish one accountable owner from supporting assignees, or choose one ownership model.",
         status: "OPEN",
       };
     },

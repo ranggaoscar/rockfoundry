@@ -10,6 +10,8 @@ import {
   derivedNonGoals,
   derivedPermissionLines,
   derivedRelationships,
+  derivedRetentionLines,
+  derivedStateStatusLines,
   listOrUnresolved,
   mermaidRelationshipMarkers,
   relationshipLine,
@@ -232,9 +234,7 @@ These statements should remain true while implementing the product. If code woul
 
 ${
   accepted.length
-    ? accepted
-        .map((item) => `- ${item.topic} = ${item.decision}`)
-        .join("\n")
+    ? accepted.map((item) => `- ${item.topic} = ${item.decision}`).join("\n")
     : "- No decision-backed invariants yet."
 }
 
@@ -492,13 +492,13 @@ ${list(state.constraints)}
 ## 13. Risks
 
 ${list(
-    state.risks.concat(
-      state.contradictions
-        .filter((item) => item.status === "OPEN")
-        .map((item) => item.explanation),
-      debt.topRisks.map((item) => `${item.title}: ${item.reason}`),
-    ),
-  )}
+  state.risks.concat(
+    state.contradictions
+      .filter((item) => item.status === "OPEN")
+      .map((item) => item.explanation),
+    debt.topRisks.map((item) => `${item.title}: ${item.reason}`),
+  ),
+)}
 
 ## 14. Assumptions
 
@@ -567,7 +567,7 @@ ${listOrUnresolved(derivedPermissionLines(state))}
 
 ## 11. States and Statuses
 
-${UNRESOLVED}
+${listOrUnresolved(derivedStateStatusLines(state))}
 
 ## 12. Search / Filters / Sorting
 
@@ -588,11 +588,11 @@ ${UNRESOLVED}
 ## 16. Edge Cases
 
 ${listOrUnresolved([
-    ...derivedEdgeCaseLines(state),
-    ...debt.topRisks.map(
-      (item) => `${item.title} remains unresolved: ${item.reason}`,
-    ),
-  ])}
+  ...derivedEdgeCaseLines(state),
+  ...debt.topRisks.map(
+    (item) => `${item.title} remains unresolved: ${item.reason}`,
+  ),
+])}
 
 ## 17. Security & Privacy Requirements
 
@@ -638,7 +638,10 @@ See \`DO_NOT_INVENT.md\`.
           const [fromMarker, toMarker] = mermaidRelationshipMarkers(
             relationship.cardinality,
           );
-          const label = (relationship.label || "relationship").replace(/\"/g, '\\\"');
+          const label = (relationship.label || "relationship").replace(
+            /\"/g,
+            '\\\"',
+          );
           return `  ${entityName(relationship.fromEntity)} ${fromMarker}--${toMarker} ${entityName(relationship.toEntity)} : "${label}"`;
         })
         .join("\n")
@@ -666,7 +669,7 @@ ${UNRESOLVED}
 
 Lifecycle:
 
-${UNRESOLVED}`,
+${listOrUnresolved(derivedStateStatusLines(state))}`,
         )
         .join("\n\n")
     : UNRESOLVED;
@@ -706,7 +709,7 @@ ${listOrUnresolved(derivedDataOwnershipLines(state))}
 
 ## 7. Data Retention
 
-${UNRESOLVED}
+${listOrUnresolved(derivedRetentionLines(state))}
 
 ## 8. Open Data Decisions
 

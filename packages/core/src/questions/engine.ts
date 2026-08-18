@@ -12,6 +12,7 @@ import {
 } from "./crm-catalog";
 import { detectDiscoveryDomain, evaluateDiscovery } from "./requirements";
 import { validateQuestionQuality } from "./quality";
+import { genericQuestionForTopic } from "./candidate-generator";
 
 function isIndonesian(state: ProjectState) {
   return /\b(gua|gue|mau|bikin|buat|untuk|setiap|tapi|harus|bisa|pengen|pengin|cabang|gudang|marmer)\b/i.test(
@@ -91,7 +92,11 @@ function affectedFor(topic: string) {
 
 function canonicalDecision(topic: string, answer: string, optionId?: string) {
   const value = `${optionId || ""} ${answer}`.toLowerCase();
-  if (/not[_ -]?sure|belum yakin|belum tahu|not decided|undecided/.test(value))
+  if (
+    /not[_ -]?sure|belum yakin|belum tahu|not decided|undecided|tergantung|case by case|depends|maybe|mungkin|masih dibahas|tbd/.test(
+      value,
+    )
+  )
     return "undecided";
 
   if (topic === "customer_identity") {
@@ -206,9 +211,46 @@ function applyCanonicalRule(
     no_pre_reservation:
       "Inventory is not reserved before the operational handoff.",
   };
-  const rule = rules[decision];
+  const genericLabels: Record<string, string> = {
+    identity_boundary: "Identity boundary",
+    ownership_boundary: "Ownership boundary",
+    visibility_boundary: "Visibility boundary",
+    lifecycle_transitions: "Lifecycle transition rule",
+    resource_conflict_policy: "Resource conflict policy",
+    assignment_behavior: "Assignment rule",
+    cross_boundary_behavior: "Cross-boundary behavior",
+    duplicate_semantics: "Duplicate semantics",
+    history_auditability: "History and auditability rule",
+    completion_semantics: "Completion semantics",
+    approval_responsibility: "Approval responsibility",
+    money_responsibility: "Money responsibility",
+    retention_deletion: "Retention and deletion rule",
+    primary_workflow: "Primary workflow outcome",
+    record_relationships: "Record relationship decision",
+    role_boundaries: "Role boundary",
+  };
+  const rule =
+    rules[decision] ||
+    (genericLabels[topic] ? `${genericLabels[topic]}: ${decision}` : undefined);
   if (!rule) return;
   if (!state.businessRules.includes(rule)) state.businessRules.push(rule);
+  if (
+    ["visibility_boundary", "role_boundaries"].includes(topic) &&
+    !state.permissions.includes(rule)
+  ) {
+    state.permissions.push(rule);
+  }
+  if (
+    [
+      "ownership_boundary",
+      "assignment_behavior",
+      "lifecycle_transitions",
+      "primary_workflow",
+    ].includes(topic) &&
+    !state.workflows.includes(rule)
+  ) {
+    state.workflows.push(rule);
+  }
   if (topic === "sales_visibility" && decision.includes("owner_all")) {
     const permission =
       "Salespeople see their brand; the owner sees all brands.";
@@ -873,60 +915,7 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
     });
   }
 
-  if (topic === "primary_workflow") {
-    const entity = state.entities[0];
-    const entityClause = entity ? ` involving a ${entity}` : "";
-    return question({
-      id: "general-primary-workflow",
-      topic,
-      category: "WORKFLOW",
-      text: `When someone successfully uses this product for the first time${entityClause}, what should that first outcome be?`,
-      contextReferences: ["name", "entities", "rawIdea"],
-      relatedRequirementIds: [topic],
-      affects: affectedFor(topic),
-      answerType: "FREE_TEXT",
-      priority: 9,
-      reasonAsked:
-        "The first successful workflow anchors scope and acceptance criteria.",
-    });
-  }
-  if (topic === "record_relationships") {
-    const records =
-      state.entities.slice(0, 3).filter(Boolean).join(", ") ||
-      "the important records";
-    return question({
-      id: "general-record-relationships",
-      topic,
-      category: "DATA",
-      text: `Which of these records must stay connected so their history can be understood together: ${records}?`,
-      contextReferences: ["name", "entities", "rawIdea"],
-      relatedRequirementIds: [topic],
-      affects: affectedFor(topic),
-      answerType: "FREE_TEXT",
-      priority: 8,
-      reasonAsked:
-        "Record relationships shape history, search, and the data model.",
-    });
-  }
-  if (topic === "role_boundaries") {
-    const roles =
-      state.targetUsers.slice(0, 2).filter(Boolean).join(" and ") ||
-      "different users";
-    return question({
-      id: "general-role-boundaries",
-      topic,
-      category: "PERMISSIONS",
-      text: `For ${roles}, what should each role be allowed to see or change?`,
-      contextReferences: ["name", "targetUsers", "rawIdea"],
-      relatedRequirementIds: [topic],
-      affects: affectedFor(topic),
-      answerType: "FREE_TEXT",
-      priority: 8,
-      reasonAsked:
-        "Role boundaries prevent data ownership and permission gaps later.",
-    });
-  }
-  return null;
+  return genericQuestionForTopic(state, topic);
 }
 
 /** Build the discovery question for a topic even if already decided (revision). */
@@ -959,7 +948,10 @@ export class QuestionEngine {
   }
 
   /** Re-open a decided topic so the user can supersede the prior answer. */
-  generateRevisionQuestion(state: ProjectState, topic: string): Question | null {
+  generateRevisionQuestion(
+    state: ProjectState,
+    topic: string,
+  ): Question | null {
     const candidate = topicQuestion(state, topic);
     if (!candidate) return null;
     if (!validateQuestionQuality(candidate, state).accepted) return null;
@@ -969,10 +961,7 @@ export class QuestionEngine {
     };
   }
 
-  resolveQuestion(
-    state: ProjectState,
-    questionId: string,
-  ): Question | null {
+  resolveQuestion(state: ProjectState, questionId: string): Question | null {
     const active = this.generateQuestions(state, [], 12).find(
       (item) => item.id === questionId,
     );

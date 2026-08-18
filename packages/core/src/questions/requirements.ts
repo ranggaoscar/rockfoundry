@@ -3,7 +3,12 @@ import type {
   RequirementNode,
   RequirementStatus,
 } from "../schema";
-import { CRM_DECISION_META, CRM_DECISION_ORDER, sortByCrmQueue } from "./crm-catalog";
+import {
+  CRM_DECISION_META,
+  CRM_DECISION_ORDER,
+  sortByCrmQueue,
+} from "./crm-catalog";
+import { genericRequirementNodes } from "./candidate-generator";
 
 export type DiscoveryDomain = "CRM" | "RENTAL" | "INVENTORY" | "GENERAL";
 
@@ -47,11 +52,21 @@ type DomainSignal = {
  */
 const DOMAIN_SIGNALS: Record<ScoredDomain, DomainSignal[]> = {
   CRM: [
-    { pattern: /\bcrm\b|customer relationship|sales pipeline|lead management/, weight: 6 },
+    {
+      pattern: /\bcrm\b|customer relationship|sales pipeline|lead management/,
+      weight: 6,
+    },
     { pattern: /\bleads?\b|\bpipeline\b|follow[- ]?ups?/, weight: 3 },
-    { pattern: /multi[- ]?brand|per brand|sales per brand|\b5 brand|five brand/, weight: 3 },
+    {
+      pattern: /multi[- ]?brand|per brand|sales per brand|\b5 brand|five brand/,
+      weight: 3,
+    },
     { pattern: /sales team|salespeople|tim sales|sales staff/, weight: 2 },
-    { pattern: /\bcustomer\b.*\b(brand|sales)\b|\b(brand|sales)\b.*\bcustomer\b/, weight: 2 },
+    {
+      pattern:
+        /\bcustomer\b.*\b(brand|sales)\b|\b(brand|sales)\b.*\bcustomer\b/,
+      weight: 2,
+    },
     // Shared / weak — inventory can also say "quotation" or "reserve for quotation".
     { pattern: /\bquotation\b|\bquotes?\b/, weight: 1 },
   ],
@@ -64,7 +79,10 @@ const DOMAIN_SIGNALS: Record<ScoredDomain, DomainSignal[]> = {
     { pattern: /\bbooking\b/, weight: 1 },
   ],
   INVENTORY: [
-    { pattern: /\binventory\b|\bwarehouse\b|\bgudang\b|\bstock\b|\bstok\b/, weight: 6 },
+    {
+      pattern: /\binventory\b|\bwarehouse\b|\bgudang\b|\bstock\b|\bstok\b/,
+      weight: 6,
+    },
     { pattern: /\bslab\b|\bmarmer\b|\bmarble\b(?!\s+crm)/, weight: 4 },
     { pattern: /multi[- ]?warehouse|tiga gudang|three warehouse/, weight: 3 },
     { pattern: /\bmovement\b|\btransfer\b|stock adjustment/, weight: 2 },
@@ -154,27 +172,63 @@ function node(
   };
 }
 
+const DOMAIN_PRIOR_TOPICS = new Set([
+  ...CRM_DECISION_ORDER,
+  "vehicle_location",
+  "cross_branch_booking",
+  "customer_identity",
+  "vehicle_transfer",
+  "pickup_return",
+  "slab_identity",
+  "warehouse_transfer",
+  "movement_history",
+  "reservation",
+  "measurement_semantics",
+]);
+
+function withGenericCandidates(
+  state: ProjectState,
+  priorRequirements: RequirementNode[],
+): RequirementNode[] {
+  const generic = genericRequirementNodes(state)
+    .filter(
+      (candidate) =>
+        !priorRequirements.some((prior) => prior.id === candidate.id),
+    )
+    .map((candidate) => ({
+      ...candidate,
+      // Domain priors remain the beachhead's high-risk opening. Generic
+      // candidates still exist and become available after the prior queue,
+      // but do not inflate the legacy "important domain decisions" count.
+      priority: Math.min(7, candidate.priority),
+    }));
+  return [...priorRequirements, ...generic];
+}
+
 export function buildDiscoveryRequirements(
   state: ProjectState,
 ): RequirementNode[] {
   const domain = detectDiscoveryDomain(state);
 
   if (domain === "CRM") {
-    return CRM_DECISION_ORDER.map((topic) => {
-      const meta = CRM_DECISION_META[topic];
-      return node(state, {
-        id: topic,
-        category: meta.category,
-        title: meta.title,
-        description: meta.description,
-        priority: meta.priority,
-        riskWeight: meta.riskWeight,
-      });
-    });
+    return withGenericCandidates(
+      state,
+      CRM_DECISION_ORDER.map((topic) => {
+        const meta = CRM_DECISION_META[topic];
+        return node(state, {
+          id: topic,
+          category: meta.category,
+          title: meta.title,
+          description: meta.description,
+          priority: meta.priority,
+          riskWeight: meta.riskWeight,
+        });
+      }),
+    );
   }
 
   if (domain === "RENTAL") {
-    return [
+    return withGenericCandidates(state, [
       node(state, {
         id: "vehicle_location",
         category: "DATA",
@@ -220,11 +274,11 @@ export function buildDiscoveryRequirements(
         priority: 8,
         riskWeight: 8,
       }),
-    ];
+    ]);
   }
 
   if (domain === "INVENTORY") {
-    return [
+    return withGenericCandidates(state, [
       node(state, {
         id: "slab_identity",
         category: "DATA",
@@ -270,16 +324,12 @@ export function buildDiscoveryRequirements(
         priority: 8,
         riskWeight: 8,
       }),
-    ];
+    ]);
   }
 
   if (domain === "GENERAL") {
-    const entityHint =
-      state.entities.slice(0, 3).filter(Boolean).join(", ") ||
-      "the important records";
-    const roleHint =
-      state.targetUsers.slice(0, 2).filter(Boolean).join(" and ") ||
-      "different users";
+    const generic = genericRequirementNodes(state);
+    if (generic.length > 0) return generic;
     return [
       node(state, {
         id: "primary_workflow",
@@ -288,22 +338,6 @@ export function buildDiscoveryRequirements(
         description:
           "What the first successful outcome should be when someone uses this product.",
         priority: 9,
-        riskWeight: 8,
-      }),
-      node(state, {
-        id: "record_relationships",
-        category: "DATA",
-        title: "Record relationships",
-        description: `How ${entityHint} stay connected over time.`,
-        priority: 8,
-        riskWeight: 8,
-      }),
-      node(state, {
-        id: "role_boundaries",
-        category: "PERMISSIONS",
-        title: "Role boundaries",
-        description: `What ${roleHint} can see or change.`,
-        priority: 8,
         riskWeight: 8,
       }),
     ];
@@ -321,11 +355,17 @@ export function evaluateDiscovery(state: ProjectState): DiscoveryEvaluation {
   const unresolved =
     domain === "CRM"
       ? sortByCrmQueue(unresolvedBase)
-      : unresolvedBase.sort(
-          (left, right) =>
-            right.priority * right.riskWeight -
-            left.priority * left.riskWeight,
-        );
+      : domain === "GENERAL"
+        ? unresolvedBase
+        : unresolvedBase.sort((left, right) => {
+            const leftIsPrior = DOMAIN_PRIOR_TOPICS.has(left.id);
+            const rightIsPrior = DOMAIN_PRIOR_TOPICS.has(right.id);
+            if (leftIsPrior !== rightIsPrior) return leftIsPrior ? -1 : 1;
+            return (
+              right.priority * right.riskWeight -
+              left.priority * left.riskWeight
+            );
+          });
   const important = unresolved.filter(
     (requirement) => requirement.priority >= 8,
   );

@@ -1,5 +1,6 @@
 import type { DecisionDebt, DecisionDebtRisk, ProjectState } from "../schema";
 import {
+  acceptedDecision,
   CRM_DECISION_META,
   type CrmDecisionTopic,
 } from "../questions/crm-catalog";
@@ -30,14 +31,11 @@ function warningForTopic(topic: string, title: string): string {
   const crm = CRM_DECISION_META[topic as CrmDecisionTopic];
   if (crm?.inventWarning) return crm.inventWarning;
   const map: Record<string, string> = {
-    vehicle_location:
-      "Do not invent which branch owns vehicle availability.",
-    cross_branch_booking:
-      "Do not invent cross-branch pickup/return behavior.",
+    vehicle_location: "Do not invent which branch owns vehicle availability.",
+    cross_branch_booking: "Do not invent cross-branch pickup/return behavior.",
     vehicle_transfer:
       "Do not invent vehicle transfer side effects on bookings or availability.",
-    pickup_return:
-      "Do not invent late-return, damage, or no-return handling.",
+    pickup_return: "Do not invent late-return, damage, or no-return handling.",
     slab_identity:
       "Do not invent whether inventory is item-level or aggregate-only.",
     warehouse_transfer:
@@ -54,22 +52,18 @@ function warningForTopic(topic: string, title: string): string {
       "Do not invent record ownership or long-term relationship rules.",
     role_boundaries:
       "Do not invent role permissions or data visibility boundaries.",
-    artifact_business_problem:
-      "Do not invent the business problem statement.",
-    artifact_current_process:
-      "Do not invent the current as-is process.",
+    artifact_business_problem: "Do not invent the business problem statement.",
+    artifact_current_process: "Do not invent the current as-is process.",
     artifact_states_statuses:
       "Do not invent entity states, status machines, or transition rules.",
     artifact_error_behaviour:
       "Do not invent error handling, empty states, or failure recovery.",
     artifact_security_privacy:
       "Do not invent auth, privacy, or security boundaries.",
-    artifact_performance:
-      "Do not invent performance or scale expectations.",
+    artifact_performance: "Do not invent performance or scale expectations.",
     artifact_lifecycle:
       "Do not invent record lifecycle, archival, or soft-delete rules.",
-    artifact_data_retention:
-      "Do not invent data retention or deletion policy.",
+    artifact_data_retention: "Do not invent data retention or deletion policy.",
     artifact_indexes:
       "Do not invent database indexes or uniqueness constraints beyond explicit decisions.",
     artifact_future_scope:
@@ -90,6 +84,10 @@ function isStillUnresolved(lines: string[]): boolean {
     lines.length === 0 ||
     lines.every((line) => /\[UNRESOLVED\]/i.test(line) || !line.trim())
   );
+}
+
+function hasAcceptedDecision(state: ProjectState, topic: string) {
+  return Boolean(acceptedDecision(state, topic));
 }
 
 /**
@@ -133,30 +131,44 @@ export function unresolvedArtifactGaps(
     "As-is process is unresolved in the BRD.",
     6,
   );
-  push(
-    "artifact_states_statuses",
-    "States and statuses",
-    "Entity states and transitions are unresolved in the PRD.",
-    10,
-  );
+  if (
+    !hasAcceptedDecision(state, "lifecycle_transitions") &&
+    !hasAcceptedDecision(state, "completion_semantics")
+  ) {
+    push(
+      "artifact_states_statuses",
+      "States and statuses",
+      "Entity states and transitions are unresolved in the PRD.",
+      10,
+    );
+  }
   push(
     "artifact_error_behaviour",
     "Error behaviour",
     "Error, empty, and failure behavior is unresolved in the PRD.",
     8,
   );
-  push(
-    "artifact_lifecycle",
-    "Entity lifecycle",
-    "Record lifecycle (create → active → archive/delete) is unresolved in the ERD.",
-    9,
-  );
-  push(
-    "artifact_data_retention",
-    "Data retention",
-    "Retention and deletion policy is unresolved in the ERD.",
-    7,
-  );
+  if (!hasAcceptedDecision(state, "lifecycle_transitions")) {
+    push(
+      "artifact_lifecycle",
+      "Entity lifecycle",
+      "Record lifecycle (create → active → archive/delete) is unresolved in the ERD.",
+      9,
+    );
+  }
+  if (
+    !hasAcceptedDecision(state, "retention_deletion") &&
+    !state.constraints.some((item) =>
+      /retention|archive|delete|hapus/i.test(item),
+    )
+  ) {
+    push(
+      "artifact_data_retention",
+      "Data retention",
+      "Retention and deletion policy is unresolved in the ERD.",
+      7,
+    );
+  }
   push(
     "artifact_indexes",
     "Indexes and uniqueness",
@@ -300,8 +312,8 @@ export function evaluateDecisionDebt(state: ProjectState): DecisionDebtResult {
     ["ACCEPTED", "PROPOSED"].includes(item.status),
   );
 
-  const unresolvedRequirements = (discovery.requirements || []).filter(
-    (item) => ["UNRESOLVED", "CONFLICTING"].includes(item.status),
+  const unresolvedRequirements = (discovery.requirements || []).filter((item) =>
+    ["UNRESOLVED", "CONFLICTING"].includes(item.status),
   );
   const highRiskUnresolved = unresolvedRequirements
     .filter((item) => item.priority >= 8)
@@ -329,8 +341,10 @@ export function evaluateDecisionDebt(state: ProjectState): DecisionDebtResult {
   let score = 0;
   if (!state.rawIdea.trim()) score += 18;
 
-  for (const item of highRiskUnresolved) {
-    score += Math.min(18, item.priority * item.riskWeight * 0.12);
+  // Count the highest-consequence open decisions without letting a long
+  // candidate list saturate the score before a single answer can move it.
+  for (const item of highRiskUnresolved.slice(0, 5)) {
+    score += Math.min(12, item.priority * item.riskWeight * 0.08);
   }
   for (const item of unresolvedRequirements.filter(
     (entry) => entry.priority < 8,
@@ -339,10 +353,10 @@ export function evaluateDecisionDebt(state: ProjectState): DecisionDebtResult {
   }
 
   // Residual artifact invention risk — this is what made "0/100 LOW" a lie.
-  for (const gap of artifactGaps) {
-    score += Math.min(7, gap.riskWeight * 0.45);
+  for (const gap of artifactGaps.slice(0, 12)) {
+    score += Math.min(4, gap.riskWeight * 0.3);
   }
-  score += Math.min(10, Math.floor(artifactGaps.length / 4) * 2);
+  score += Math.min(8, Math.floor(artifactGaps.length / 4) * 2);
 
   score += blockingContradictions.length * 16;
   score += openContradictions.length * 5;
@@ -377,10 +391,12 @@ export function evaluateDecisionDebt(state: ProjectState): DecisionDebtResult {
     ...blockingContradictions.map(
       (item) => `Resolve before build: ${item.explanation}`,
     ),
-    ...highImpactAssumptions.slice(0, 3).map(
-      (item) =>
-        `Do not treat this unresolved high-impact assumption as fact: ${item.statement}`,
-    ),
+    ...highImpactAssumptions
+      .slice(0, 3)
+      .map(
+        (item) =>
+          `Do not treat this unresolved high-impact assumption as fact: ${item.statement}`,
+      ),
   ].slice(0, 12);
 
   const artifactNote =

@@ -2,3 +2,8 @@ export * from "./engine";
 export * from "./requirements";
 export * from "./quality";
 export * from "./crm-catalog";
+export * from "./context-extractor";
+export * from "./artifact-gap-signals";
+export * from "./archetypes";
+export * from "./candidate-generator";
+export * from "./candidate-ranker";
