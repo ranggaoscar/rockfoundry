@@ -144,7 +144,7 @@ jobs:
         run: pnpm --filter @rockfoundry/db build
 
       - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
 
       - name: Run E2E tests
         run: pnpm test:e2e
