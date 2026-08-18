@@ -67,6 +67,7 @@ const StateReadOutput = z.object({
     inventionRisk: z.string(),
     summary: z.string(),
     unresolvedHighRiskCount: z.number(),
+    unresolvedArtifactSectionCount: z.number().optional(),
     topRisks: z.array(z.unknown()),
   }),
 });
@@ -99,6 +100,8 @@ export function createDefaultToolRegistry() {
           summary: project.decisionDebt?.summary ?? "",
           unresolvedHighRiskCount:
             project.decisionDebt?.unresolvedHighRiskCount ?? 0,
+          unresolvedArtifactSectionCount:
+            project.decisionDebt?.unresolvedArtifactSectionCount ?? 0,
           topRisks: project.decisionDebt?.topRisks ?? [],
         },
       }),

@@ -17,14 +17,28 @@ import { z } from "zod";
 
 const AnswerSchema = z
   .object({
-    questionId: z.string().min(1),
+    questionId: z.string().min(1).optional(),
+    topic: z.string().min(1).optional(),
+    mode: z.enum(["answer", "revise"]).optional(),
     answer: z.union([z.string(), z.array(z.string())]).optional(),
     value: z.union([z.string(), z.array(z.string())]).optional(),
   })
-  .refine(
-    (body) => body.answer !== undefined || body.value !== undefined,
-    "answer or value is required",
-  );
+  .superRefine((body, ctx) => {
+    const isReviseStart = body.mode === "revise" && body.topic && body.answer === undefined && body.value === undefined;
+    if (isReviseStart) return;
+    if (body.answer === undefined && body.value === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "answer or value is required",
+      });
+    }
+    if (!body.questionId && !(body.mode === "revise" && body.topic)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "questionId is required unless starting a revision by topic",
+      });
+    }
+  });
 
 function mergeDetectedContradictions(
   state: ReturnType<typeof parseProjectState>,
@@ -37,7 +51,7 @@ function mergeDetectedContradictions(
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -46,8 +60,11 @@ export async function GET(
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
     const readiness = evaluateReadinessDirectly(state);
-    const question =
-      new QuestionEngine().generateQuestions(state, [], 1)[0] || null;
+    const engine = new QuestionEngine();
+    const reviseTopic = req.nextUrl.searchParams.get("revise");
+    const question = reviseTopic
+      ? engine.generateRevisionQuestion(state, reviseTopic)
+      : engine.generateQuestions(state, [], 1)[0] || null;
     return Response.json({
       questions: question ? [question] : [],
       readiness: {
@@ -63,6 +80,7 @@ export async function GET(
         unresolvedTopics: readiness.discovery.unresolvedTopics,
       },
       blockers: readiness.blocking,
+      mode: reviseTopic ? "revise" : "answer",
     });
   } catch {
     return jsonError("RockFoundry couldn't prepare the next question.");
@@ -78,18 +96,59 @@ export async function POST(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const body = AnswerSchema.parse(await req.json());
-    const answer = body.answer ?? body.value!;
     const current = parseProjectState(project);
     const engine = new QuestionEngine();
-    const currentQuestion = engine
-      .generateQuestions(current, [], 5)
-      .find((item) => item.id === body.questionId);
+
+    // Start a revision: return the question for an already-decided topic.
+    if (
+      body.mode === "revise" &&
+      body.topic &&
+      body.answer === undefined &&
+      body.value === undefined
+    ) {
+      const revisionQuestion = engine.generateRevisionQuestion(
+        current,
+        body.topic,
+      );
+      if (!revisionQuestion) {
+        return jsonError("That decision topic cannot be revised here.", 404);
+      }
+      current.discovery.activeQuestionId = revisionQuestion.id;
+      const saved = await saveProjectState(id, current, project.version);
+      await persistQuestionMessage(id, revisionQuestion);
+      return Response.json({
+        state: saved.state,
+        version: saved.version,
+        question: revisionQuestion,
+        mode: "revise",
+        decisionDebt: saved.state.decisionDebt,
+        discovery: saved.state.discovery,
+      });
+    }
+
+    const answer = body.answer ?? body.value!;
+    let currentQuestion =
+      (body.questionId
+        ? engine.resolveQuestion(current, body.questionId)
+        : null) ||
+      (body.topic
+        ? engine.generateRevisionQuestion(current, body.topic)
+        : null);
+
+    if (!currentQuestion && body.questionId) {
+      // Fallback: active queue only (legacy clients).
+      currentQuestion =
+        engine
+          .generateQuestions(current, [], 5)
+          .find((item) => item.id === body.questionId) || null;
+    }
+
     if (!currentQuestion)
       return jsonError("That discovery question is no longer active.", 409);
 
     const processed = engine.processAnswer(
       current,
-      body.questionId,
+      currentQuestion.id,
       answer,
       currentQuestion,
     );
@@ -113,6 +172,7 @@ export async function POST(
       .join(", ");
     await persistUserMessage(id, displayAnswer, {
       questionId: currentQuestion.id,
+      revised: body.mode === "revise" || Boolean(processed.decision?.supersedes),
     });
     if (nextQuestion) {
       await persistQuestionMessage(id, nextQuestion);

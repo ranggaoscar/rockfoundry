@@ -382,6 +382,56 @@ export default function ProjectWorkspace({
     await fetchQuestion();
   }
 
+  async function reviseDecision(topic: string) {
+    if (!projectId || !topic || working) return;
+    setWorking(true);
+    setDrawer(null);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/questions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "revise", topic }),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          data.error || "RockFoundry couldn't open that decision for revision.",
+        );
+      setProject((current) =>
+        current
+          ? { ...current, canonicalState: data.state, version: data.version }
+          : current,
+      );
+      const nextQuestion = data.question || null;
+      setQuestion(nextQuestion);
+      if (nextQuestion) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: `revise-${nextQuestion.id}-${Date.now()}`,
+            role: "assistant",
+            text: nextQuestion.text,
+            detail:
+              nextQuestion.reasonAsked ||
+              "Revise this decision. The previous answer will be marked superseded.",
+            options: nextQuestion.options,
+            recommendation: nextQuestion.recommendation,
+            questionId: nextQuestion.id,
+            category: nextQuestion.category,
+          },
+        ]);
+      }
+    } catch (cause) {
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't open that decision for revision.",
+      );
+    } finally {
+      setWorking(false);
+    }
+  }
+
   async function answerQuestion(
     option: QuestionOption | string,
     questionIdFromMessage?: string,
@@ -435,13 +485,13 @@ export default function ProjectWorkspace({
       ].filter(Boolean);
       if (data.decision || data.impact || debt?.summary) {
         impactLines.push({
-          id: `impact-${Date.now()}`,
+          id: `impact-${data.decision?.id || activeQuestionId}`,
           role: "assistant",
           text: impactHeadline,
           detail: impactDetailParts.join(" ") || undefined,
         });
       }
-      if (nextQuestion && nextQuestion.id !== question.id) {
+      if (nextQuestion && nextQuestion.id !== question?.id) {
         setMessages((current) => [
           ...current,
           ...impactLines,
@@ -461,7 +511,7 @@ export default function ProjectWorkspace({
           ...current,
           ...impactLines,
           {
-            id: `readiness-${Date.now()}`,
+            id: `readiness-${activeQuestionId}`,
             role: "assistant",
             text: "No critical blockers remain. The current decisions are enough to draft the build documents.",
           },
@@ -846,11 +896,13 @@ export default function ProjectWorkspace({
           references={references}
           exportReady={exportReady}
           exporting={exporting}
+          working={working}
           onClose={() => setDrawer(null)}
           onExport={exportProject}
           onDownload={() =>
             window.location.assign(`/api/projects/${projectId}/export`)
           }
+          onReviseDecision={reviseDecision}
         />
       )}
     </main>
@@ -958,9 +1010,11 @@ function DrawerPanel({
   references,
   exportReady,
   exporting,
+  working,
   onClose,
   onExport,
   onDownload,
+  onReviseDecision,
 }: {
   drawer: Exclude<Drawer, null>;
   project: ProjectData;
@@ -968,9 +1022,11 @@ function DrawerPanel({
   references: Reference[];
   exportReady: boolean;
   exporting: boolean;
+  working: boolean;
   onClose: () => void;
   onExport: () => void;
   onDownload: () => void;
+  onReviseDecision: (topic: string) => void;
 }) {
   const title =
     drawer === "context"
@@ -1002,7 +1058,12 @@ function DrawerPanel({
           </button>
         </div>
         {drawer === "context" && (
-          <ContextContent state={state} references={references} />
+          <ContextContent
+            state={state}
+            references={references}
+            working={working}
+            onReviseDecision={onReviseDecision}
+          />
         )}
         {drawer === "documents" && (
           <DocumentsContent
@@ -1022,15 +1083,25 @@ function DrawerPanel({
 function ContextContent({
   state,
   references,
+  working,
+  onReviseDecision,
 }: {
   state: any;
   references: Reference[];
+  working: boolean;
+  onReviseDecision: (topic: string) => void;
 }) {
-  const decisions = state.decisions || [];
+  const decisions = (state.decisions || []).filter(
+    (item: any) => item && item.status !== "SUPERSEDED",
+  );
   const assumptions = state.assumptions || [];
   const contradictions = state.contradictions || [];
   const topRisks = state.decisionDebt?.topRisks || [];
   const debtScore = decisionDebtScore(state);
+  const artifactGaps =
+    typeof state.decisionDebt?.unresolvedArtifactSectionCount === "number"
+      ? state.decisionDebt.unresolvedArtifactSectionCount
+      : null;
   return (
     <div className="space-y-7 overflow-y-auto px-5 py-5">
       <section className="space-y-2">
@@ -1039,7 +1110,8 @@ function ContextContent({
         </h3>
         <p className="text-sm leading-5 text-muted-foreground">
           Higher Decision Debt means a coding agent must invent more product
-          rules. Pay it down before handoff.
+          rules — including unresolved artifact sections, not only open
+          discovery questions.
         </p>
         <p className="text-sm leading-5">
           {debtScore !== null ? (
@@ -1047,6 +1119,12 @@ function ContextContent({
               <span className="font-medium tabular-nums">{debtScore}/100</span>
               {" · "}
               {inventionRiskLabel(state)}
+              {artifactGaps !== null ? (
+                <span className="text-muted-foreground">
+                  {" · "}
+                  {artifactGaps} artifact gaps
+                </span>
+              ) : null}
             </>
           ) : (
             "Decision Debt appears after discovery starts."
@@ -1117,15 +1195,44 @@ function ContextContent({
           <span style={{ width: `${state.readinessBreakdown?.data ?? 0}%` }} />
         </div>
       </div>
-      <ContextList
-        title="Decisions"
-        items={decisions.map((item: any) =>
-          item.topic && item.decision
-            ? `${item.topic}: ${item.decision}`
-            : item.title || item.description || String(item),
+      <section>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Decisions
+        </h3>
+        {decisions.length ? (
+          <ul className="space-y-2 text-sm leading-5">
+            {decisions.slice(0, 8).map((item: any, index: number) => {
+              const label =
+                item.topic && item.decision
+                  ? `${item.topic}: ${item.decision}`
+                  : item.title || item.description || String(item);
+              const canRevise = Boolean(item.topic);
+              return (
+                <li
+                  key={`${item.id || item.topic || label}-${index}`}
+                  className="flex items-start justify-between gap-3 border-b border-border/50 pb-2 last:border-0"
+                >
+                  <span className="min-w-0 flex-1">{label}</span>
+                  {canRevise ? (
+                    <button
+                      type="button"
+                      className="rf-revise-button"
+                      disabled={working}
+                      onClick={() => onReviseDecision(String(item.topic))}
+                    >
+                      Revise
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No confirmed decisions yet.
+          </p>
         )}
-        empty="No confirmed decisions yet."
-      />
+      </section>
       <ContextList
         title="Assumptions"
         items={assumptions.map((item: any) => item.statement || String(item))}

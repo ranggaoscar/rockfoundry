@@ -116,6 +116,7 @@ export const DecisionDebtSchema = z.object({
     .enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"])
     .default("HIGH"),
   unresolvedHighRiskCount: z.number().int().min(0).default(0),
+  unresolvedArtifactSectionCount: z.number().int().min(0).default(0),
   openContradictionCount: z.number().int().min(0).default(0),
   unresolvedAssumptionCount: z.number().int().min(0).default(0),
   decidedCount: z.number().int().min(0).default(0),
@@ -180,6 +181,7 @@ export const ProjectStateSchema = z.object({
     score: 0,
     inventionRisk: "HIGH",
     unresolvedHighRiskCount: 0,
+    unresolvedArtifactSectionCount: 0,
     openContradictionCount: 0,
     unresolvedAssumptionCount: 0,
     decidedCount: 0,

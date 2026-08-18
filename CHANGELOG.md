@@ -1,5 +1,14 @@
 # Changelog
 
+## STRONG DEMO P1 trust fixes
+
+- Replaced first-match domain regex with weighted multi-signal scoring (`scoreDiscoveryDomains`) so weak terms like `quotation` cannot misroute inventory/rental ideas to CRM.
+- Fixed Decision Debt math: residual unresolved artifact sections now count; finishing the discovery queue can no longer clamp debt to `0/100 LOW` while BRD/PRD/ERD gaps remain.
+- Exposed decision revision in the Context drawer (`Revise`) using core `SUPERSEDED` support; questions API accepts `mode: "revise"` + topic.
+- Cleaned GENERAL fallback question copy so raw project names are not interpolated into broken English.
+- Added contradiction rule for shared sales pool vs brand-scoped visibility.
+- Added `packages/core/src/tests/strong-demo-p1.test.ts` regression coverage.
+
 ## Agentic V1 demo-ready distribution pass
 
 - Fixed landing settings dead-end with a local BYOK drawer.

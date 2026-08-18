@@ -270,10 +270,13 @@ function renderReadiness(state: ProjectState) {
 
 ## Decision Debt
 
+> Includes unresolved discovery questions **and** unresolved artifact sections a coding agent would still invent.
+
 - **Score:** ${debt.score}/100 _(higher = more invention risk)_
 - **Invention risk:** ${debt.inventionRisk}
 - **Summary:** ${debt.summary}
 - **Unresolved high-risk decisions:** ${debt.unresolvedHighRiskCount}
+- **Unresolved artifact sections:** ${debt.unresolvedArtifactSectionCount ?? 0}
 - **Open contradictions:** ${debt.openContradictionCount}
 - **Unresolved assumptions:** ${debt.unresolvedAssumptionCount}
 

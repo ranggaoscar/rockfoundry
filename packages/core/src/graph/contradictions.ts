@@ -184,6 +184,35 @@ export const rules: ContradictionRule[] = [
       };
     },
   },
+  {
+    id: "crm-shared-pool-vs-brand-scoped-visibility",
+    check: (state) => {
+      const ownership = decisionValue(state, "lead_ownership");
+      const visibility = decisionValue(state, "sales_visibility");
+      if (!ownership || !visibility) return null;
+      const sharedPool = /shared_sales_pool|shared pool|round.?robin/.test(
+        ownership,
+      );
+      const brandScopedVisibility =
+        /owner_all_sales_brand_scoped|brand_scoped|brand-only|own brand/.test(
+          visibility,
+        ) && !/all_sales_all_brands/.test(visibility);
+      if (!sharedPool || !brandScopedVisibility) return null;
+      return {
+        id: "crm-shared-pool-vs-brand-scoped-visibility",
+        severity: "WARNING",
+        conflictingFields: [
+          "decisions.lead_ownership",
+          "decisions.sales_visibility",
+        ],
+        explanation:
+          "Leads are handled by a shared cross-brand sales pool, but sales visibility is brand-scoped. Pool members cannot see the leads they are supposed to work.",
+        recommendedResolution:
+          "Either assign leads to brand-owned sales teams, or open sales visibility for the shared pool.",
+        status: "OPEN",
+      };
+    },
+  },
 ];
 
 export function detectContradictions(state: ProjectState): Contradiction[] {

@@ -874,12 +874,13 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
   }
 
   if (topic === "primary_workflow") {
-    const entity = state.entities[0] || "record";
+    const entity = state.entities[0];
+    const entityClause = entity ? ` involving a ${entity}` : "";
     return question({
       id: "general-primary-workflow",
       topic,
       category: "WORKFLOW",
-      text: `When someone uses ${name} with a ${entity}, what should the first successful outcome be?`,
+      text: `When someone successfully uses this product for the first time${entityClause}, what should that first outcome be?`,
       contextReferences: ["name", "entities", "rawIdea"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
@@ -890,11 +891,14 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
     });
   }
   if (topic === "record_relationships") {
+    const records =
+      state.entities.slice(0, 3).filter(Boolean).join(", ") ||
+      "the important records";
     return question({
       id: "general-record-relationships",
       topic,
       category: "DATA",
-      text: `You mentioned ${state.entities.slice(0, 3).join(", ") || "important records"} in ${name}. Which records must stay connected so their history can be understood together?`,
+      text: `Which of these records must stay connected so their history can be understood together: ${records}?`,
       contextReferences: ["name", "entities", "rawIdea"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
@@ -905,11 +909,14 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
     });
   }
   if (topic === "role_boundaries") {
+    const roles =
+      state.targetUsers.slice(0, 2).filter(Boolean).join(" and ") ||
+      "different users";
     return question({
       id: "general-role-boundaries",
       topic,
       category: "PERMISSIONS",
-      text: `You named ${state.targetUsers.slice(0, 2).join(" and ") || "different users"} for ${name}. What should each role be allowed to see or change?`,
+      text: `For ${roles}, what should each role be allowed to see or change?`,
       contextReferences: ["name", "targetUsers", "rawIdea"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
@@ -920,6 +927,14 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
     });
   }
   return null;
+}
+
+/** Build the discovery question for a topic even if already decided (revision). */
+export function questionForTopic(
+  state: ProjectState,
+  topic: string,
+): Question | null {
+  return topicQuestion(state, topic);
 }
 
 export class QuestionEngine {
@@ -941,6 +956,34 @@ export class QuestionEngine {
     }
 
     return questions;
+  }
+
+  /** Re-open a decided topic so the user can supersede the prior answer. */
+  generateRevisionQuestion(state: ProjectState, topic: string): Question | null {
+    const candidate = topicQuestion(state, topic);
+    if (!candidate) return null;
+    if (!validateQuestionQuality(candidate, state).accepted) return null;
+    return {
+      ...candidate,
+      reasonAsked: `${candidate.reasonAsked} You can revise the previous answer; the prior decision will be marked superseded.`,
+    };
+  }
+
+  resolveQuestion(
+    state: ProjectState,
+    questionId: string,
+  ): Question | null {
+    const active = this.generateQuestions(state, [], 12).find(
+      (item) => item.id === questionId,
+    );
+    if (active) return active;
+    // Allow answering a revision question whose topic is already decided.
+    const evaluation = evaluateDiscovery(state);
+    for (const requirement of evaluation.requirements) {
+      const candidate = topicQuestion(state, requirement.id);
+      if (candidate?.id === questionId) return candidate;
+    }
+    return null;
   }
 
   processAnswer(

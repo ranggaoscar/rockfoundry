@@ -236,9 +236,36 @@
     opacity: 0.86;
   }
   .rf-primary-button:disabled,
-  .rf-secondary-button:disabled {
+  .rf-secondary-button:disabled,
+  .rf-revise-button:disabled {
     cursor: not-allowed;
     opacity: 0.5;
+  }
+  .rf-revise-button {
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: transparent;
+    padding: 0.2rem 0.5rem;
+    color: var(--muted-foreground);
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.2;
+    transition:
+      background 0.16s ease,
+      color 0.16s ease,
+      border-color 0.16s ease;
+  }
+  .rf-revise-button:hover:not(:disabled) {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+  .rf-revise-button:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .rf-revise-button:active:not(:disabled) {
+    background: color-mix(in oklch, var(--muted) 80%, var(--foreground) 12%);
   }
   .rf-composer {
     border: 1px solid var(--border);
