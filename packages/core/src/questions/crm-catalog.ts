@@ -111,9 +111,9 @@ export function crmOrderIndex(topic: string) {
   return index === -1 ? 999 : index;
 }
 
-export function sortByCrmQueue<T extends { id: string; priority: number; riskWeight: number }>(
-  nodes: T[],
-): T[] {
+export function sortByCrmQueue<
+  T extends { id: string; priority: number; riskWeight: number },
+>(nodes: T[]): T[] {
   return [...nodes].sort((left, right) => {
     const orderDelta = crmOrderIndex(left.id) - crmOrderIndex(right.id);
     if (orderDelta !== 0) return orderDelta;
@@ -129,18 +129,22 @@ export function acceptedDecision(state: ProjectState, topic: string) {
   );
 }
 
+function humanizeTopic(topic: string) {
+  return topic.replace(/[_-]+/g, " ");
+}
+
 export function describeDecisionImpact(input: {
   topic: string;
   decision: string;
   affects?: string[];
 }): { headline: string; detail: string } {
   const meta = CRM_DECISION_META[input.topic as CrmDecisionTopic];
-  const affects =
-    input.affects?.length
-      ? input.affects
-      : meta?.affects || [input.topic];
-  const headline = `Locked ${meta?.title || input.topic}: ${input.decision}.`;
-  const detail = `This ripples into ${affects.join(", ")}. Keep those areas consistent and do not invent conflicting rules.`;
+  const affects = input.affects?.length
+    ? input.affects
+    : meta?.affects || [input.topic];
+  const title = meta?.title || humanizeTopic(input.topic);
+  const headline = `Locked for now — ${title}.`;
+  const detail = `This affects ${affects.join(", ")}.`;
   return { headline, detail };
 }
 

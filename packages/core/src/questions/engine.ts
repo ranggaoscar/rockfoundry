@@ -13,11 +13,10 @@ import {
 import { detectDiscoveryDomain, evaluateDiscovery } from "./requirements";
 import { validateQuestionQuality } from "./quality";
 import { genericQuestionForTopic } from "./candidate-generator";
+import { isIndonesianText } from "./language";
 
 function isIndonesian(state: ProjectState) {
-  return /\b(gua|gue|mau|bikin|buat|untuk|setiap|tapi|harus|bisa|pengen|pengin|cabang|gudang|marmer)\b/i.test(
-    state.rawIdea,
-  );
+  return isIndonesianText(`${state.rawIdea} ${state.name || ""}`);
 }
 
 function hasDecision(state: ProjectState, topic: string) {
@@ -266,9 +265,8 @@ function applyCanonicalRule(
 
 function topicQuestion(state: ProjectState, topic: string): Question | null {
   const indo = isIndonesian(state);
-  const name = state.name || "produk ini";
   const domain = detectDiscoveryDomain(state);
-  const contextReferences = ["rawIdea", "name", "entities", "workflows"];
+  const contextReferences = ["rawIdea", "entities", "workflows"];
 
   if (domain === "CRM" && topic === "customer_identity") {
     return question({
@@ -276,8 +274,8 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       topic,
       category: "DATA",
       text: indo
-        ? `Karena ${name} punya sales per brand sementara owner perlu melihat semuanya, kalau customer yang sama masuk lewat dua brand, apakah identitasnya satu customer lintas brand atau terpisah per brand?`
-        : `You described ${name} with sales teams per brand and an owner who sees everything. If the same customer contacts two brands, should the CRM keep one customer identity across brands or separate records per brand?`,
+        ? `Karena sales per brand sementara owner perlu melihat semuanya, kalau customer yang sama masuk lewat dua brand, apakah identitasnya satu customer lintas brand atau terpisah per brand?`
+        : `You described sales teams per brand and an owner who sees everything. If the same Customer contacts two brands, should the CRM keep one Customer identity across brands or separate records per brand?`,
       contextReferences,
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
@@ -325,8 +323,8 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       topic,
       category: "PERMISSIONS",
       text: indo
-        ? `Sales tiap brand sudah disebut terpisah dan owner harus bisa melihat semua. Di ${name}, apakah sales hanya boleh melihat customer, lead, follow-up, dan quotation brand-nya sendiri sementara owner melihat seluruh brand?`
-        : `You mentioned sales teams per brand and an owner who can see everything. In ${name}, should each salesperson see only their brand's customers, leads, follow-ups, and quotations while the owner sees all brands?`,
+        ? `Sales tiap brand sudah disebut terpisah dan owner harus bisa melihat semua. Apakah sales hanya boleh melihat customer, lead, follow-up, dan quotation brand-nya sendiri sementara owner melihat seluruh brand?`
+        : `You mentioned sales teams per brand and an owner who can see everything. Should each salesperson see only their brand's customers, leads, follow-ups, and quotations while the owner sees all brands?`,
       contextReferences,
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
@@ -421,9 +419,9 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       topic,
       category: "DATA",
       text: indo
-        ? `Quotation sudah termasuk kebutuhan ${name}. Kalau satu customer pernah berinteraksi dengan beberapa brand, quotation baru harus menggunakan brand yang mana dan tetap terhubung ke histori customer yang sama?`
-        : `Quotations are part of ${name}. If one customer has interacted with multiple brands, which brand should a new quotation use while staying linked to the same customer history?`,
-      contextReferences: ["name", "entities", "workflows"],
+        ? `Quotation sudah termasuk kebutuhan produk ini. Kalau satu customer pernah berinteraksi dengan beberapa brand, quotation baru harus menggunakan brand yang mana dan tetap terhubung ke histori customer yang sama?`
+        : `Quotations are part of this product. If one customer has interacted with multiple brands, which brand should a new quotation use while staying linked to the same customer history?`,
+      contextReferences: ["entities", "workflows"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "SINGLE_CHOICE",
@@ -466,9 +464,9 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       topic,
       category: "DATA",
       text: indo
-        ? `Kalau nomor telepon atau akun sosial yang sama masuk dari dua channel atau dua brand, apakah ${name} langsung menggabungkan customer, atau membuat lead terpisah sampai ada yang meninjau?`
-        : `If the same phone number or social account arrives through two channels or brands, should ${name} merge the customer immediately or keep separate leads until someone reviews them?`,
-      contextReferences: ["name", "entities", "integrations"],
+        ? `Kalau nomor telepon atau akun sosial yang sama masuk dari dua channel atau dua brand, apakah customer langsung digabung, atau lead tetap terpisah sampai ada yang meninjau?`
+        : `If the same phone number or social account arrives through two channels or brands, should the customer be merged immediately or should separate leads stay until someone reviews them?`,
+      contextReferences: ["entities", "integrations"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "SINGLE_CHOICE",
@@ -515,7 +513,7 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       text: indo
         ? `Untuk rental mobil dengan beberapa cabang, apakah setiap kendaraan selalu terikat ke satu cabang saat tersedia, atau kendaraan boleh tersedia di cabang lain setelah dipindahkan?`
         : `For this multi-branch car rental, is each vehicle tied to one branch while available, or can it become available at another branch after a transfer?`,
-      contextReferences: ["rawIdea", "name", "entities", "workflows"],
+      contextReferences: ["rawIdea", "entities", "workflows"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "SINGLE_CHOICE",
@@ -603,9 +601,9 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       topic,
       category: "DATA",
       text: indo
-        ? `Kalau customer rental pernah menyewa di dua cabang, apakah ${name} menyimpan satu histori customer lintas cabang atau profil terpisah per cabang?`
-        : `If a rental customer has used two branches, should ${name} keep one customer history across branches or separate profiles per branch?`,
-      contextReferences: ["name", "entities", "workflows"],
+        ? `Kalau customer rental pernah menyewa di dua cabang, apakah histori customer-nya satu lintas cabang atau profil terpisah per cabang?`
+        : `If a rental customer has used two branches, should customer history stay shared across branches or remain separate per branch?`,
+      contextReferences: ["entities", "workflows"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "SINGLE_CHOICE",
@@ -652,9 +650,9 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       topic,
       category: "WORKFLOW",
       text: indo
-        ? `Saat kendaraan dipindahkan antar cabang, kapan statusnya berubah menjadi tersedia di ${name}: saat berangkat, saat diterima, atau setelah staff cabang tujuan mengonfirmasi?`
-        : `When a vehicle moves between branches, when should it become available in ${name}: when it leaves, when it arrives, or after the destination staff confirms it?`,
-      contextReferences: ["name", "entities", "workflows"],
+        ? `Saat kendaraan dipindahkan antar cabang, kapan statusnya berubah menjadi tersedia: saat berangkat, saat diterima, atau setelah staff cabang tujuan mengonfirmasi?`
+        : `When a vehicle moves between branches, when should it become available: when it leaves, when it arrives, or after the destination staff confirms it?`,
+      contextReferences: ["entities", "workflows"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "SINGLE_CHOICE",
@@ -701,7 +699,7 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       text: indo
         ? `Saat pickup dan return kendaraan dicatat, data apa yang wajib menjadi bagian dari status booking: kondisi kendaraan, kilometer, bahan bakar, atau biaya kerusakan?`
         : `When a vehicle is picked up and returned, which details must change the booking status: condition, mileage, fuel, or damage charges?`,
-      contextReferences: ["entities", "workflows", "name"],
+      contextReferences: ["entities", "workflows"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "FREE_TEXT",
@@ -720,7 +718,7 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       text: indo
         ? `Untuk inventory slab marmer, apakah setiap slab harus punya identitas dan histori sendiri, atau cukup menyimpan total quantity per jenis dan gudang?`
         : `For this marble slab inventory, should every slab have its own identity and history, or is aggregate quantity by type and warehouse enough?`,
-      contextReferences: ["rawIdea", "name", "entities"],
+      contextReferences: ["rawIdea", "entities"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "SINGLE_CHOICE",
@@ -765,7 +763,7 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       text: indo
         ? `Saat stock atau slab dipindahkan antar gudang, apakah transfer langsung mengurangi gudang asal dan menambah gudang tujuan, atau harus menunggu konfirmasi penerimaan?`
         : `When stock or slabs move between warehouses, should a transfer immediately reduce the source and add to the destination, or wait for receipt confirmation?`,
-      contextReferences: ["rawIdea", "name", "entities", "workflows"],
+      contextReferences: ["rawIdea", "entities", "workflows"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "SINGLE_CHOICE",
@@ -812,9 +810,9 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       topic,
       category: "DATA",
       text: indo
-        ? `Untuk inventory ${name}, apakah setiap perubahan lokasi atau quantity harus menyimpan siapa, kapan, dari mana, ke mana, dan alasannya?`
-        : `For ${name}, should every location or quantity change preserve who changed it, when, the source, the destination, and the reason?`,
-      contextReferences: ["name", "entities", "workflows"],
+        ? `Untuk inventory ini, apakah setiap perubahan lokasi atau quantity harus menyimpan siapa, kapan, dari mana, ke mana, dan alasannya?`
+        : `For this inventory, should every location or quantity change preserve who changed it, when, the source, the destination, and the reason?`,
+      contextReferences: ["entities", "workflows"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "SINGLE_CHOICE",
@@ -902,9 +900,9 @@ function topicQuestion(state: ProjectState, topic: string): Question | null {
       topic,
       category: "DATA",
       text: indo
-        ? `Untuk quantity slab, apakah ${name} harus menghitung per slab, meter persegi, ukuran panjang-lebar, atau kombinasi beberapa satuan?`
-        : `For slab quantity, should ${name} calculate by slab, square meter, dimensions, or a combination of units?`,
-      contextReferences: ["name", "entities", "features"],
+        ? `Untuk quantity slab, apakah perhitungan memakai per slab, meter persegi, ukuran panjang-lebar, atau kombinasi beberapa satuan?`
+        : `For slab quantity, should calculation use per slab, square meter, dimensions, or a combination of units?`,
+      contextReferences: ["entities", "features"],
       relatedRequirementIds: [topic],
       affects: affectedFor(topic),
       answerType: "FREE_TEXT",

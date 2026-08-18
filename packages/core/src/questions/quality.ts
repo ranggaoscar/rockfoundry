@@ -13,6 +13,8 @@ const genericPatterns = [
   /^do you need an? (api|notification|integration)\??$/i,
   /^what is the tech stack\??$/i,
   /^what should we build first\??$/i,
+  /^how does .+ plan to make money\??$/i,
+  /^what is your (business|monetization) model\??$/i,
 ];
 
 const technicalPattern =
@@ -68,6 +70,16 @@ export function validateQuestionQuality(
   );
   if (!hasKnownContext)
     reasons.push("The question does not use a known project noun or workflow.");
+  if (
+    state.name &&
+    state.name.length > 4 &&
+    text.includes(state.name) &&
+    /how does|plan to make money/i.test(text)
+  ) {
+    reasons.push(
+      "The question interpolates the project title into a template.",
+    );
+  }
 
   return { accepted: reasons.length === 0, reasons };
 }

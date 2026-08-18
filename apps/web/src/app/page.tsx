@@ -1,8 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowUp, Menu, Plus, Search, Settings2, X } from "lucide-react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowUp, Menu } from "lucide-react";
+import { SettingsPanel, useProviderStatus } from "@/components/settings-panel";
+import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 
 type Example = {
   label: string;
@@ -18,11 +20,11 @@ type RecentProject = {
 
 const EXAMPLES: Example[] = [
   {
-    label: "Multi-brand marble CRM",
+    label: "Multi-brand CRM",
     idea: "Build a CRM for five marble brands. Each brand has its own salespeople, but the owner should see everything. Leads come from WhatsApp, Instagram, and the website.",
   },
   {
-    label: "Multi-branch car rental",
+    label: "Multi-branch rental",
     idea: "Create a rental car booking system for several branches with vehicles, availability, transfers, and customer history.",
   },
   {
@@ -31,13 +33,18 @@ const EXAMPLES: Example[] = [
   },
 ];
 
-export default function LandingPage() {
+function HomeWorkspace() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [idea, setIdea] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [recent, setRecent] = useState<RecentProject[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(
+    searchParams.get("settings") === "1",
+  );
+  const [navOpen, setNavOpen] = useState(false);
+  const provider = useProviderStatus();
 
   const canSubmit = useMemo(
     () => idea.trim().length > 0 && !creating,
@@ -67,8 +74,8 @@ export default function LandingPage() {
     };
   }, []);
 
-  async function startProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function startProject(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     if (!canSubmit) return;
 
     setCreating(true);
@@ -97,107 +104,56 @@ export default function LandingPage() {
   }
 
   return (
-    <main className="rf-app isolate min-h-dvh bg-background text-foreground antialiased">
-      <aside className="rf-sidebar hidden w-[264px] shrink-0 flex-col border-r border-border/70 bg-sidebar px-3 py-4 lg:flex">
-        <div className="flex items-center justify-between px-2 pb-5">
-          <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-            <span className="rf-mark" aria-hidden="true">
-              R
-            </span>
-            ROCKFOUNDRY
-          </div>
-          <button
-            className="rf-icon-button"
-            type="button"
-            aria-label="Focus composer"
-            onClick={() => document.getElementById("idea-composer")?.focus()}
-          >
-            <Menu className="size-4" />
-          </button>
-        </div>
-        <button
-          className="rf-new-project"
-          type="button"
-          onClick={() => {
-            setIdea("");
-            document.getElementById("idea-composer")?.focus();
-          }}
-        >
-          <Plus className="size-4" />
-          New project
-        </button>
-        <div className="mt-7 flex items-center justify-between px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-          <span>Recent</span>
-          <Search className="size-3.5" aria-hidden="true" />
-        </div>
-        <div className="mt-2 space-y-0.5 text-sm">
-          {recent.length ? (
-            recent.map((project) => (
-              <button
-                key={project.id}
-                type="button"
-                className="rf-project-item w-full text-left"
-                onClick={() => router.push(`/project/${project.id}`)}
-              >
-                <span className="block truncate">{project.name}</span>
-              </button>
-            ))
-          ) : (
-            <div className="rf-sidebar-placeholder">
-              Your projects appear here
-            </div>
-          )}
-        </div>
-        <div className="mt-auto border-t border-border/70 pt-3">
-          <button
-            className="rf-sidebar-link"
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Settings2 className="size-4" />
-            Settings
-          </button>
-        </div>
-      </aside>
+    <main className="rf-app isolate flex min-h-dvh bg-background text-foreground">
+      <WorkspaceSidebar
+        projects={recent}
+        provider={provider}
+        mobileOpen={navOpen}
+        onCloseMobile={() => setNavOpen(false)}
+        onNewProject={() => {
+          setIdea("");
+          setNavOpen(false);
+          document.getElementById("idea-composer")?.focus();
+        }}
+        onOpenProject={(id) => router.push(`/project/${id}`)}
+        onOpenSettings={() => {
+          setNavOpen(false);
+          setSettingsOpen(true);
+        }}
+      />
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="rf-topbar flex h-14 items-center justify-between border-b border-border/70 px-4 lg:px-7">
+        <header className="rf-topbar flex h-14 items-center justify-between border-b border-border px-4 lg:px-6">
           <button
             className="rf-icon-button lg:hidden"
             type="button"
-            aria-label="Open settings"
-            onClick={() => setSettingsOpen(true)}
+            aria-label="Open projects"
+            onClick={() => setNavOpen(true)}
           >
             <Menu className="size-4" />
           </button>
-          <div className="flex items-center gap-2 text-sm font-semibold tracking-tight lg:hidden">
-            <span className="rf-mark" aria-hidden="true">
-              R
-            </span>
-            ROCKFOUNDRY
-          </div>
-          <div className="ml-auto text-xs text-muted-foreground">
-            Local workspace · no account
+          <div className="text-[13px] text-muted-foreground">
+            Local workspace
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-12 sm:px-8">
-          <div className="w-full max-w-[720px]">
-            <div className="mb-9 text-center">
-              <div className="mb-4 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                Before coding agents invent your product
-              </div>
-              <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-                What do you want to build?
-              </h1>
-              <p className="mx-auto mt-3 max-w-[520px] text-sm leading-6 text-muted-foreground">
-                Describe the idea. RockFoundry finds the missing decisions,
-                scores Decision Debt, and exports a handoff your coding agent
-                should not invent around.
-              </p>
-            </div>
+        <div className="flex min-h-0 flex-1 justify-center overflow-y-auto px-4 pt-8 pb-10 sm:px-8 sm:pt-14">
+          <div className="flex w-full max-w-[760px] flex-col">
+            <p className="mb-3 text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
+              RockFoundry
+            </p>
+            <h1 className="max-w-[18ch] text-[1.75rem] font-semibold tracking-tight text-pretty sm:text-[2rem]">
+              What do you want to build?
+            </h1>
+            <p className="mt-2 max-w-[42ch] text-[14px] leading-6 text-muted-foreground">
+              Describe the idea. RockFoundry will ask the hidden decisions a
+              coding agent would otherwise invent.
+            </p>
 
-            <form onSubmit={startProject} className="relative">
+            <form
+              onSubmit={(event) => void startProject(event)}
+              className="relative mt-7"
+            >
               <label className="sr-only" htmlFor="idea-composer">
                 Describe your idea
               </label>
@@ -206,148 +162,67 @@ export default function LandingPage() {
                 name="idea"
                 value={idea}
                 onChange={(event) => setIdea(event.target.value)}
-                placeholder="e.g. CRM for five brands, sales per brand, owner sees all..."
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void startProject();
+                  }
+                }}
+                placeholder="Describe your idea..."
                 rows={4}
-                className="rf-composer min-h-[142px] w-full resize-none pr-14"
+                className="rf-composer min-h-[132px] w-full resize-none pr-14"
                 disabled={creating}
               />
               <button
-                className="rf-send-button absolute bottom-3 right-3"
+                className="rf-send-button absolute right-3 bottom-3"
                 type="submit"
                 disabled={!canSubmit}
                 aria-label="Start project"
               >
                 <ArrowUp className="size-4" />
               </button>
-              <div className="mt-2 flex items-center justify-between px-1 text-[11px] text-muted-foreground">
-                <span>
-                  {creating
-                    ? "Starting discovery..."
-                    : "Enter to start · Shift+Enter for a new line"}
-                </span>
-                <span>
-                  {idea.length > 0
-                    ? `${idea.length} characters`
-                    : "BYOK · local-first"}
-                </span>
+              <div className="mt-2 px-1 text-[12px] text-muted-foreground">
+                {creating
+                  ? "Creating project..."
+                  : "Enter to start · Shift+Enter for a new line"}
               </div>
             </form>
 
             {error && (
-              <p
-                className="mt-4 text-center text-sm text-destructive"
-                role="alert"
-              >
+              <p className="mt-4 text-[14px] text-destructive" role="alert">
                 {error}
               </p>
             )}
 
-            {recent.length > 0 && (
-              <div className="mt-8 lg:hidden">
-                <div className="mb-2 text-center text-xs text-muted-foreground">
-                  Recent projects
-                </div>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {recent.slice(0, 4).map((project) => (
-                    <button
-                      key={project.id}
-                      type="button"
-                      className="rf-example"
-                      onClick={() => router.push(`/project/${project.id}`)}
-                    >
-                      {project.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-12">
-              <div className="mb-3 text-center text-xs text-muted-foreground">
-                Try a beachhead example
-              </div>
-              <div className="grid gap-2 sm:grid-cols-3">
-                {EXAMPLES.map((example) => (
-                  <button
-                    key={example.label}
-                    type="button"
-                    className="rf-example"
-                    onClick={() => setIdea(example.idea)}
-                  >
-                    {example.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-14 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
-              <span>Find hidden decisions</span>
-              <span>Measure Decision Debt</span>
-              <span>Export DO_NOT_INVENT</span>
+            <div className="mt-6 flex flex-wrap gap-2">
+              {EXAMPLES.map((example) => (
+                <button
+                  key={example.label}
+                  type="button"
+                  className="rf-example"
+                  disabled={creating}
+                  onClick={() => setIdea(example.idea)}
+                >
+                  {example.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      {settingsOpen && (
-        <div
-          className="rf-drawer-backdrop"
-          role="presentation"
-          onClick={() => setSettingsOpen(false)}
-        >
-          <aside
-            className="rf-drawer"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Provider settings"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between border-b border-border/70 px-5 py-4">
-              <div>
-                <h2 className="text-sm font-semibold">AI provider</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Local BYOK configuration
-                </p>
-              </div>
-              <button
-                className="rf-icon-button"
-                type="button"
-                aria-label="Close"
-                onClick={() => setSettingsOpen(false)}
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            <div className="space-y-4 px-5 py-5 text-sm leading-6 text-muted-foreground">
-              <p>
-                RockFoundry is free. Bring your own key. Credentials stay in
-                local environment variables and never enter project exports.
-              </p>
-              <div className="rf-code-block">
-                <code>
-                  AI_PROVIDER_MODE=&quot;mock&quot;
-                  <br />
-                  # or openai-compatible
-                  <br />
-                  OPENAI_COMPATIBLE_BASE_URL=&quot;https://api.openai.com/v1&quot;
-                  <br />
-                  OPENAI_COMPATIBLE_API_KEY=&quot;your-key&quot;
-                  <br />
-                  OPENAI_COMPATIBLE_MODEL=&quot;gpt-4o-mini&quot;
-                </code>
-              </div>
-              <p>
-                Default mock mode works offline for demos. Restart{" "}
-                <code className="text-foreground">pnpm dev</code> after changing
-                env values.
-              </p>
-              <p className="text-xs">
-                Full notes: <span className="text-foreground">docs/AI_PROVIDERS.md</span>
-              </p>
-            </div>
-          </aside>
-        </div>
-      )}
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </main>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <Suspense fallback={<div className="rf-loading">Loading workspace...</div>}>
+      <HomeWorkspace />
+    </Suspense>
   );
 }

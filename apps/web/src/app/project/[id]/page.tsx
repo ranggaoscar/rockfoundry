@@ -16,14 +16,13 @@ import {
   ChevronRight,
   FileText,
   Menu,
-  MoreHorizontal,
-  Plus,
   RefreshCw,
-  Search,
-  Settings2,
   Square,
   X,
 } from "lucide-react";
+import { SettingsPanel, useProviderStatus } from "@/components/settings-panel";
+import { WorkspaceSidebar } from "@/components/workspace-sidebar";
+import { humanTopicLabel } from "@/lib/topic-label";
 
 type ProjectData = {
   id: string;
@@ -40,6 +39,8 @@ type Question = {
   options?: QuestionOption[];
   recommendation?: string;
   reasonAsked: string;
+  topic?: string;
+  category?: string;
 };
 type Reference = {
   id: string;
@@ -56,6 +57,7 @@ type Message = {
   options?: QuestionOption[];
   recommendation?: string;
   questionId?: string;
+  topic?: string;
   category?: string;
   createdAt?: string;
   collapsed?: boolean;
@@ -86,13 +88,6 @@ function projectStatus(state: any) {
   return "Not ready";
 }
 
-function readinessScore(state: any) {
-  const score = state?.readinessScore;
-  if (typeof score === "number")
-    return Math.max(0, Math.min(100, Math.round(score)));
-  return 0;
-}
-
 function discoverySummary(state: any) {
   const count = state?.discovery?.importantDecisionsRemaining;
   if (!state?.discovery?.evaluated || typeof count !== "number")
@@ -110,10 +105,12 @@ function decisionDebtScore(state: any) {
 
 function inventionRiskLabel(state: any) {
   const risk = String(state?.decisionDebt?.inventionRisk || "").toUpperCase();
-  if (risk === "CRITICAL") return "Critical — coding agent would invent major rules";
+  if (risk === "CRITICAL")
+    return "Critical — coding agent would invent major rules";
   if (risk === "HIGH") return "High — several material rules still open";
   if (risk === "MEDIUM") return "Medium — draft possible, MVP still risky";
-  if (risk === "LOW") return "Low — major rules are explicit enough to hand off";
+  if (risk === "LOW")
+    return "Low — major rules are explicit enough to hand off";
   return "Invention risk not scored yet";
 }
 
@@ -148,9 +145,12 @@ export default function ProjectWorkspace({
   const [renaming, setRenaming] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState("");
   const [recentProjects, setRecentProjects] = useState<
-    Array<{ id: string; name: string }>
+    Array<{ id: string; name: string; updatedAt?: string }>
   >([]);
+  const [navOpen, setNavOpen] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
+  const answeringRef = useRef(false);
+  const provider = useProviderStatus();
 
   const fetchProject = useCallback(async (id: string) => {
     const response = await fetch(`/api/projects/${id}`);
@@ -192,9 +192,19 @@ export default function ProjectWorkspace({
       .then((data) => {
         if (!active || !data?.projects) return;
         setRecentProjects(
-          (data.projects as Array<{ id: string; name: string }>)
+          (
+            data.projects as Array<{
+              id: string;
+              name: string;
+              updatedAt?: string;
+            }>
+          )
             .slice(0, 8)
-            .map((item) => ({ id: item.id, name: item.name })),
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+              updatedAt: item.updatedAt,
+            })),
         );
       })
       .catch(() => {
@@ -259,9 +269,7 @@ export default function ProjectWorkspace({
   }, [fetchReferences]);
 
   const state = project?.canonicalState || {};
-  const score = readinessScore(state);
   const debtScore = decisionDebtScore(state);
-  const status = projectStatus(state);
 
   const visibleMessages = useMemo(() => {
     if (
@@ -279,6 +287,8 @@ export default function ProjectWorkspace({
         options: question.options,
         recommendation: question.recommendation,
         questionId: question.id,
+        topic: question.topic,
+        category: question.category,
       },
     ];
   }, [messages, question]);
@@ -339,6 +349,7 @@ export default function ProjectWorkspace({
             options: nextQuestion.options,
             recommendation: nextQuestion.recommendation,
             questionId: nextQuestion.id,
+            topic: nextQuestion.topic,
             category: nextQuestion.category,
           },
         ]);
@@ -417,6 +428,7 @@ export default function ProjectWorkspace({
             options: nextQuestion.options,
             recommendation: nextQuestion.recommendation,
             questionId: nextQuestion.id,
+            topic: nextQuestion.topic,
             category: nextQuestion.category,
           },
         ]);
@@ -437,7 +449,15 @@ export default function ProjectWorkspace({
     questionIdFromMessage?: string,
   ) {
     const activeQuestionId = questionIdFromMessage || question?.id;
-    if (!projectId || !activeQuestionId || working) return;
+    if (!projectId || !activeQuestionId || working || answeringRef.current)
+      return;
+    if (
+      question &&
+      questionIdFromMessage &&
+      questionIdFromMessage !== question.id
+    )
+      return;
+    answeringRef.current = true;
     const answer = typeof option === "string" ? option : option.id;
     setWorking(true);
     setMessages((current) => [
@@ -455,6 +475,10 @@ export default function ProjectWorkspace({
         body: JSON.stringify({ questionId: activeQuestionId, answer }),
       });
       const data = await response.json();
+      if (response.status === 409) {
+        await fetchQuestion();
+        return;
+      }
       if (!response.ok)
         throw new Error(
           data.error || "RockFoundry couldn't save that decision.",
@@ -469,7 +493,6 @@ export default function ProjectWorkspace({
       const affects = Array.isArray(data.decision?.affects)
         ? data.decision.affects.filter(Boolean)
         : [];
-      const debt = data.state?.decisionDebt;
       const impactLines: Message[] = [];
       const impactHeadline =
         typeof data.impact?.headline === "string"
@@ -479,11 +502,8 @@ export default function ProjectWorkspace({
             : "Decision recorded.";
       const impactDetailParts = [
         typeof data.impact?.detail === "string" ? data.impact.detail : "",
-        typeof debt?.summary === "string"
-          ? `Decision Debt ${debt.score}/100 · ${debt.summary}`
-          : "",
       ].filter(Boolean);
-      if (data.decision || data.impact || debt?.summary) {
+      if (data.decision || data.impact) {
         impactLines.push({
           id: `impact-${data.decision?.id || activeQuestionId}`,
           role: "assistant",
@@ -503,6 +523,7 @@ export default function ProjectWorkspace({
             options: nextQuestion.options,
             recommendation: nextQuestion.recommendation,
             questionId: nextQuestion.id,
+            topic: nextQuestion.topic,
             category: nextQuestion.category,
           },
         ]);
@@ -526,6 +547,7 @@ export default function ProjectWorkspace({
           : "RockFoundry couldn't save that decision.",
       );
     } finally {
+      answeringRef.current = false;
       setWorking(false);
     }
   }
@@ -663,73 +685,35 @@ export default function ProjectWorkspace({
     );
 
   return (
-    <main className="rf-app isolate flex h-dvh min-h-dvh overflow-hidden bg-background text-foreground antialiased">
-      <aside className="rf-sidebar hidden w-[264px] shrink-0 flex-col border-r border-border/70 bg-sidebar px-3 py-4 lg:flex">
-        <div className="flex items-center justify-between px-2 pb-5">
-          <button
-            className="flex items-center gap-2 text-sm font-semibold tracking-tight"
-            type="button"
-            onClick={() => router.push("/")}
-          >
-            <span className="rf-mark" aria-hidden="true">
-              R
-            </span>{" "}
-            ROCKFOUNDRY
-          </button>
-          <button
-            className="rf-icon-button"
-            type="button"
-            aria-label="Search projects"
-          >
-            <Search className="size-4" />
-          </button>
-        </div>
-        <button
-          className="rf-new-project"
-          type="button"
-          onClick={() => router.push("/")}
-        >
-          <Plus className="size-4" /> New project
-        </button>
-        <div className="mt-7 px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-          Recent
-        </div>
-        <div className="mt-2 space-y-0.5">
-          {(recentProjects.length
+    <main className="rf-app isolate flex h-dvh min-h-dvh overflow-hidden bg-background text-foreground">
+      <WorkspaceSidebar
+        projects={
+          recentProjects.length
             ? recentProjects
             : [{ id: project.id, name: project.name }]
-          ).map((item) => (
-            <button
-              key={item.id}
-              className="rf-project-item w-full text-left"
-              type="button"
-              aria-current={item.id === project.id ? "page" : undefined}
-              onClick={() => {
-                if (item.id !== project.id) router.push(`/project/${item.id}`);
-              }}
-            >
-              <span className="block truncate">{item.name}</span>
-            </button>
-          ))}
-        </div>
-        <div className="mt-auto border-t border-border/70 pt-3">
-          <button
-            className="rf-sidebar-link"
-            type="button"
-            onClick={() => setDrawer("settings")}
-          >
-            <Settings2 className="size-4" /> Settings
-          </button>
-        </div>
-      </aside>
+        }
+        activeProjectId={project.id}
+        provider={provider}
+        mobileOpen={navOpen}
+        onCloseMobile={() => setNavOpen(false)}
+        onNewProject={() => router.push("/")}
+        onOpenProject={(id) => {
+          setNavOpen(false);
+          if (id !== project.id) router.push(`/project/${id}`);
+        }}
+        onOpenSettings={() => {
+          setNavOpen(false);
+          setDrawer("settings");
+        }}
+      />
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="rf-topbar flex h-14 items-center gap-3 border-b border-border/70 px-4 lg:px-7">
+        <header className="rf-topbar flex h-14 items-center gap-3 border-b border-border px-4 lg:px-6">
           <button
             className="rf-icon-button lg:hidden"
             type="button"
-            aria-label="Open project context"
-            onClick={() => setDrawer("context")}
+            aria-label="Open projects"
+            onClick={() => setNavOpen(true)}
           >
             <Menu className="size-4" />
           </button>
@@ -757,7 +741,7 @@ export default function ProjectWorkspace({
             ) : (
               <button
                 type="button"
-                className="rf-project-title truncate text-left text-sm font-semibold"
+                className="rf-project-title truncate text-left text-[16px] font-semibold"
                 onClick={() => {
                   setProjectNameDraft(project.name);
                   setRenaming(true);
@@ -773,53 +757,66 @@ export default function ProjectWorkspace({
               onClick={() => setDrawer("context")}
               title={`${readinessPlainLabel(state)}. Decision Debt is invention risk for coding agents (higher is worse).`}
             >
-              {projectStatus(state)}
-              {" · "}
-              Ready <span className="tabular-nums">{score}%</span>
+              Decision Debt:{" "}
               {debtScore !== null ? (
-                <>
-                  {" "}· Debt <span className="tabular-nums">{debtScore}</span>
-                </>
-              ) : null}{" "}
+                <span className="tabular-nums">{debtScore}</span>
+              ) : (
+                "—"
+              )}{" "}
               · {discoverySummary(state)}
             </button>
           </div>
           <button
             className="rf-header-action hidden sm:inline-flex"
             type="button"
+            onClick={() => setDrawer("context")}
+          >
+            Context
+          </button>
+          <button
+            className="rf-header-action inline-flex"
+            type="button"
             onClick={() => setDrawer("documents")}
           >
             <FileText className="size-3.5" /> Documents
-          </button>
-          <button
-            className="rf-icon-button"
-            type="button"
-            aria-label="Open project menu"
-          >
-            <MoreHorizontal className="size-4" />
           </button>
         </header>
 
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div
             ref={conversationRef}
-            className="rf-conversation mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-6 sm:px-8 sm:pt-8"
+            className="rf-conversation mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-5 sm:px-8 sm:pt-6"
           >
-            {visibleMessages.map((message) => (
-              <MessageRow
-                key={message.id}
-                message={message}
-                activityOpen={activityOpen}
-                onToggleActivity={() => setActivityOpen((current) => !current)}
-                onAnswer={(option) =>
-                  answerQuestion(option, message.questionId)
-                }
-              />
-            ))}
+            {visibleMessages.map((message, index) => {
+              const previous = visibleMessages[index - 1];
+              const hidesAnswer =
+                message.role === "user" &&
+                Boolean(previous?.questionId && previous.options?.length);
+              if (hidesAnswer) return null;
+              return (
+                <MessageRow
+                  key={message.id}
+                  message={message}
+                  nextUserText={
+                    visibleMessages
+                      .slice(index + 1)
+                      .find((item) => item.role === "user")?.text
+                  }
+                  activeQuestionId={question?.id}
+                  working={working}
+                  activityOpen={activityOpen}
+                  onToggleActivity={() =>
+                    setActivityOpen((current) => !current)
+                  }
+                  onAnswer={(option) =>
+                    answerQuestion(option, message.questionId)
+                  }
+                />
+              );
+            })}
             {working && (
               <div className="rf-typing" role="status">
-                <span className="rf-pulse-dot" /> RockFoundry is thinking
-                through the next useful step...
+                <span className="rf-pulse-dot" /> Saving decision...
               </div>
             )}
             {pageError && (
@@ -841,7 +838,7 @@ export default function ProjectWorkspace({
           <div className="rf-composer-dock">
             <form
               onSubmit={handleSubmit}
-              className="mx-auto w-full max-w-[820px] px-4 sm:px-8"
+              className="mx-auto w-full max-w-[820px] px-4 pb-2 sm:px-8"
             >
               <div className="relative">
                 <label className="sr-only" htmlFor="project-composer">
@@ -860,7 +857,13 @@ export default function ProjectWorkspace({
                       );
                     }
                   }}
-                  placeholder="Message RockFoundry..."
+                  placeholder={
+                    question
+                      ? "Answer naturally..."
+                      : project.description
+                        ? "Add context or a reference URL..."
+                        : "Describe your idea..."
+                  }
                   rows={1}
                   className="rf-composer min-h-[54px] w-full resize-none pr-14"
                   disabled={working}
@@ -881,14 +884,18 @@ export default function ProjectWorkspace({
               </div>
               <div className="flex items-center justify-between px-1 py-2 text-[11px] text-muted-foreground">
                 <span>Enter to send · Shift+Enter for a new line</span>
-                <span>{status}</span>
+                <span>{provider.label}</span>
               </div>
             </form>
           </div>
         </div>
       </section>
 
-      {drawer && (
+      <SettingsPanel
+        open={drawer === "settings"}
+        onClose={() => setDrawer(null)}
+      />
+      {drawer && drawer !== "settings" && (
         <DrawerPanel
           drawer={drawer}
           project={project}
@@ -911,11 +918,17 @@ export default function ProjectWorkspace({
 
 function MessageRow({
   message,
+  nextUserText,
+  activeQuestionId,
+  working,
   activityOpen,
   onToggleActivity,
   onAnswer,
 }: {
   message: Message;
+  nextUserText?: string;
+  activeQuestionId?: string;
+  working: boolean;
   activityOpen: boolean;
   onToggleActivity: () => void;
   onAnswer: (option: QuestionOption | string) => void;
@@ -952,6 +965,25 @@ function MessageRow({
       </div>
     );
   const isUser = message.role === "user";
+  const isQuestion = Boolean(message.questionId && message.options?.length);
+  const isActive =
+    isQuestion && message.questionId === activeQuestionId && !working;
+  const isResolvedQuestion =
+    isQuestion && message.questionId !== activeQuestionId;
+  if (isResolvedQuestion) {
+    return (
+      <div className="rf-message-row rf-message-agent">
+        <div className="rf-avatar rf-avatar-agent">R</div>
+        <div className="min-w-0 flex-1">
+          <div className="rf-topic">{humanTopicLabel(message.topic)}</div>
+          <div className="rf-resolved">
+            <span aria-hidden="true">✓</span>
+            <span>{nextUserText || message.text}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       className={`rf-message-row ${isUser ? "rf-message-user" : "rf-message-agent"}`}
@@ -959,16 +991,31 @@ function MessageRow({
       <div
         className={`rf-avatar ${isUser ? "rf-avatar-user" : "rf-avatar-agent"}`}
       >
-        {isUser ? "You" : "R"}
+        {isUser ? "Y" : "R"}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="mb-1 text-xs font-medium text-muted-foreground">
-          {isUser ? "You" : "RockFoundry"}
+        {isQuestion ? (
+          <div className="rf-topic">{humanTopicLabel(message.topic)}</div>
+        ) : isUser ? null : (
+          <div className="mb-1 text-[12px] font-medium text-muted-foreground">
+            RockFoundry
+          </div>
+        )}
+        <div className={isQuestion ? "rf-question-text" : "rf-message-text"}>
+          {message.text}
         </div>
-        <div className="rf-message-text">{message.text}</div>
         {message.detail && (
-          <div className="mt-2 text-xs leading-5 text-muted-foreground">
-            {message.detail}
+          <div className="mt-2 text-[13px] leading-5 text-muted-foreground">
+            {isQuestion ? (
+              <>
+                <span className="font-medium text-foreground/80">
+                  Why this matters
+                </span>
+                <span className="mt-0.5 block">{message.detail}</span>
+              </>
+            ) : (
+              message.detail
+            )}
           </div>
         )}
         {message.options && (
@@ -978,12 +1025,14 @@ function MessageRow({
                 key={option.id}
                 type="button"
                 className="rf-option"
+                disabled={!isActive}
+                aria-disabled={!isActive}
                 onClick={() => onAnswer(option)}
               >
                 <span>
                   <span className="font-medium">{option.label}</span>
                   {option.description && (
-                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                    <span className="mt-0.5 block text-[12px] leading-5 text-muted-foreground">
                       {option.description}
                     </span>
                   )}
@@ -992,11 +1041,6 @@ function MessageRow({
               </button>
             ))}
           </div>
-        )}
-        {message.recommendation && (
-          <p className="mt-3 text-xs italic text-muted-foreground">
-            Recommendation: {message.recommendation}
-          </p>
         )}
       </div>
     </div>
@@ -1028,12 +1072,14 @@ function DrawerPanel({
   onDownload: () => void;
   onReviseDecision: (topic: string) => void;
 }) {
-  const title =
-    drawer === "context"
-      ? "Project context"
-      : drawer === "documents"
-        ? "Documents"
-        : "AI Provider";
+  const title = drawer === "context" ? "Project context" : "Documents";
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
     <div className="rf-drawer-backdrop" role="presentation" onClick={onClose}>
       <aside
@@ -1074,7 +1120,6 @@ function DrawerPanel({
             onDownload={onDownload}
           />
         )}
-        {drawer === "settings" && <ProviderContent />}
       </aside>
     </div>
   );
@@ -1105,7 +1150,7 @@ function ContextContent({
   return (
     <div className="space-y-7 overflow-y-auto px-5 py-5">
       <section className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <h3 className="text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
           Decision Debt
         </h3>
         <p className="text-sm leading-5 text-muted-foreground">
@@ -1140,7 +1185,7 @@ function ContextContent({
         </div>
       </section>
       <section className="space-y-1">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <h3 className="text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
           Build readiness
         </h3>
         <p className="text-sm leading-5">{readinessPlainLabel(state)}</p>
@@ -1196,15 +1241,15 @@ function ContextContent({
         </div>
       </div>
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Decisions
+        <h3 className="mb-2 text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
+          Confirmed decisions
         </h3>
         {decisions.length ? (
           <ul className="space-y-2 text-sm leading-5">
             {decisions.slice(0, 8).map((item: any, index: number) => {
               const label =
                 item.topic && item.decision
-                  ? `${item.topic}: ${item.decision}`
+                  ? `${humanTopicLabel(item.topic)}: ${String(item.decision).replace(/[_-]+/g, " ")}`
                   : item.title || item.description || String(item);
               const canRevise = Boolean(item.topic);
               return (
@@ -1233,6 +1278,13 @@ function ContextContent({
           </p>
         )}
       </section>
+      <ContextList
+        title="Open decisions"
+        items={(state.discovery?.unresolvedTopics || []).map((topic: string) =>
+          humanTopicLabel(topic),
+        )}
+        empty="No high-impact decisions remain open."
+      />
       <ContextList
         title="Assumptions"
         items={assumptions.map((item: any) => item.statement || String(item))}
@@ -1265,7 +1317,7 @@ function ContextList({
 }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      <h3 className="mb-2 text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
         {title}
       </h3>
       {items.length ? (
@@ -1300,10 +1352,8 @@ function DocumentsContent({
   onDownload: () => void;
 }) {
   const status = state.readiness ? projectStatus(state) : "Draft";
-  const files = [
-    "BRD.md",
-    "PRD.md",
-    "ERD.md",
+  const primary = ["BRD.md", "PRD.md", "ERD.md"];
+  const advanced = [
     "DO_NOT_INVENT.md",
     "DECISIONS.md",
     "INVARIANTS.md",
@@ -1314,9 +1364,8 @@ function DocumentsContent({
   return (
     <div className="space-y-5 px-5 py-5">
       <p className="text-sm leading-6 text-muted-foreground">
-        Export the anti-invention package. Your coding agent should read{" "}
-        <span className="font-medium text-foreground">DO_NOT_INVENT.md</span>{" "}
-        first, then decisions and invariants.
+        Generate the working documents first. Advanced handoff files stay
+        available in the same export.
       </p>
       <p className="text-xs leading-5 text-muted-foreground">
         {readinessPlainLabel(state)}
@@ -1325,7 +1374,7 @@ function DocumentsContent({
           : ""}
       </p>
       <div className="space-y-2">
-        {files.map((doc) => (
+        {primary.map((doc) => (
           <div
             key={doc}
             className="flex items-center gap-3 border-b border-border/60 py-3"
@@ -1337,6 +1386,24 @@ function DocumentsContent({
             </span>
           </div>
         ))}
+      </div>
+      <div>
+        <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
+          Advanced handoff
+        </h3>
+        <div className="space-y-1">
+          {advanced.map((doc) => (
+            <div
+              key={doc}
+              className="flex items-center gap-3 py-1.5 text-[13px] text-muted-foreground"
+            >
+              <span className="flex-1">{doc}</span>
+              <span className="text-[11px]">
+                {exportReady ? "Ready" : status}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
       <button
         className="rf-primary-button w-full"
@@ -1363,38 +1430,6 @@ function DocumentsContent({
           Download project
         </button>
       )}
-    </div>
-  );
-}
-
-function ProviderContent() {
-  return (
-    <div className="space-y-5 px-5 py-5">
-      <p className="text-sm leading-6 text-muted-foreground">
-        RockFoundry is free. Bring your own key. Credentials stay in local env
-        vars and never enter project documents or exports.
-      </p>
-      <div className="rf-code-block">
-        <code>
-          AI_PROVIDER_MODE=&quot;mock&quot;
-          <br />
-          # or openai-compatible
-          <br />
-          OPENAI_COMPATIBLE_BASE_URL=&quot;https://api.openai.com/v1&quot;
-          <br />
-          OPENAI_COMPATIBLE_API_KEY=&quot;your-key&quot;
-          <br />
-          OPENAI_COMPATIBLE_MODEL=&quot;gpt-4o-mini&quot;
-        </code>
-      </div>
-      <p className="text-sm leading-6 text-muted-foreground">
-        Mock mode is enough for offline demos. Restart{" "}
-        <span className="text-foreground">pnpm dev</span> after changing env.
-        UI credential forms are intentionally not required in V1.
-      </p>
-      <p className="text-xs text-muted-foreground">
-        Details: docs/AI_PROVIDERS.md
-      </p>
     </div>
   );
 }

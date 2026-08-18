@@ -67,6 +67,7 @@ export function publicMessage(message: {
     text: message.content,
     questionId:
       typeof metadata.questionId === "string" ? metadata.questionId : undefined,
+    topic: typeof metadata.topic === "string" ? metadata.topic : undefined,
     options: Array.isArray(metadata.options) ? metadata.options : undefined,
     recommendation:
       typeof metadata.recommendation === "string"

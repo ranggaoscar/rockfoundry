@@ -17,6 +17,7 @@ export function questionMetadata(question: Question) {
   return {
     source: "AGENT",
     questionId: question.id,
+    topic: question.topic,
     category: question.category,
     options: question.options || [],
     recommendation: question.recommendation,

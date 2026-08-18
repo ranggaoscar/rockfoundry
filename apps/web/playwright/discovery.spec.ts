@@ -66,9 +66,9 @@ test.describe("Decision Debt discovery", () => {
 
     await page.reload();
     await expect(
-      page.getByText(
-        /customer yang sama masuk lewat dua brand|same customer contacts two brands/i,
-      ),
+      page
+        .getByText(/Satu customer lintas brand|One customer across brands/i)
+        .first(),
     ).toBeVisible({ timeout: 15_000 });
     await expect(
       page.getByText(
@@ -87,5 +87,21 @@ test.describe("Decision Debt discovery", () => {
     ).toContainText("Marble CRM discovery");
     await page.reload();
     await expect(page.getByText("Marble CRM discovery").first()).toBeVisible();
+  });
+
+  test("settings opens as a drawer and never 404s", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(
+      page.getByRole("dialog", { name: /AI provider|settings/i }),
+    ).toBeVisible();
+    await expect(page.getByText(/Current mode|Mock/i).first()).toBeVisible();
+    await expect(page).not.toHaveURL(/\/settings$/);
+
+    await page.goto("/settings");
+    await expect(page).not.toHaveURL(/\/settings$/);
+    await expect(
+      page.getByRole("dialog", { name: /AI provider|settings/i }),
+    ).toBeVisible();
   });
 });

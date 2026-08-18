@@ -1,4 +1,5 @@
 import type { Confidence, ProjectState, ProvenanceSource } from "../schema";
+import { detectConversationLanguage } from "./language";
 
 export type StructuralFact = {
   value: string;
@@ -35,9 +36,6 @@ export type StructuralContext = {
   evidence: string[];
   language: "id" | "en";
 };
-
-const INDONESIAN_MARKERS =
-  /\b(gua|gue|mau|bikin|buat|untuk|setiap|tapi|harus|bisa|pengen|pengin|dengan|punya|ada|dan|yang|kalau|apakah|sama|lintas|cabang|gudang)\b/i;
 
 function uniqueFacts(facts: StructuralFact[]) {
   const seen = new Set<string>();
@@ -182,10 +180,28 @@ function rawBoundaries(rawIdea: string) {
   );
 }
 
+function shortIdeaNouns(rawIdea: string) {
+  const words = rawIdea.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 12) return [];
+  const stop =
+    /^(?:i|want|to|a|an|the|for|with|and|or|of|my|our|build|create|make|web|website|app|application|system|platform|gua|gue|saya|aku|mau|ingin|bikin|buat|bangun|jualan|jual|beli|untuk|dari|yang|dan|ini|itu|sebuah|seorang|aplikasi|produk)$/i;
+  return uniqueFacts(
+    words
+      .map(cleanCandidate)
+      .filter((value) => value.length >= 4 && !stop.test(value))
+      .map((value) => ({
+        value,
+        confidence: "STRONGLY_INFERRED" as const,
+        source: "AGENT_INFERENCE" as const,
+        evidence: value,
+      })),
+  );
+}
+
 function rawRoles(rawIdea: string, listCandidates: StructuralFact[]) {
   const roles: StructuralFact[] = [];
   const rolePattern =
-    /\b(?:user|users|role|roles|actor|actors|staff|team|teams|owner|owners|manager|managers|operator|operators|admin|admins|people|person|customer|customers|client|clients)\b/gi;
+    /\b(?:user|users|role|roles|actor|actors|staff|team|teams|owner|owners|manager|managers|operator|operators|admin|admins|people|person|customer|customers|client|clients|pembeli|penjual|pelanggan|pemilik)\b/gi;
   for (const match of rawIdea.matchAll(rolePattern)) {
     roles.push({
       value: match[0],
@@ -308,6 +324,7 @@ export function extractStructuralContext(
   const entities = uniqueFacts([
     ...canonicalFacts(state, state.entities, "entity"),
     ...rawCandidates,
+    ...shortIdeaNouns(state.rawIdea),
   ]);
   const workflows = uniqueFacts([
     ...canonicalFacts(state, state.workflows, "workflow"),
@@ -339,9 +356,7 @@ export function extractStructuralContext(
       state.rawIdea,
       ...rawCandidates.map((item) => item.evidence || ""),
     ].filter(Boolean),
-    language: INDONESIAN_MARKERS.test(state.rawIdea)
-      ? ("id" as const)
-      : ("en" as const),
+    language: detectConversationLanguage(state.rawIdea),
   };
   context.signals = signalSet(state.rawIdea, context);
   return context;

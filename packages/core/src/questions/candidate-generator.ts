@@ -1,4 +1,9 @@
-import type { ProjectState, Question, RequirementNode } from "../schema";
+import type {
+  ProjectState,
+  Question,
+  QuestionOption,
+  RequirementNode,
+} from "../schema";
 import { buildGenericCandidates, type DecisionCandidate } from "./archetypes";
 import { detectArtifactGapSignals } from "./artifact-gap-signals";
 import {
@@ -197,9 +202,14 @@ function genericQuestionCopy(
       };
     case "WORKFLOW_ANCHOR":
       return {
-        text: id
-          ? `Untuk ${primaryWorkflow}, hasil pertama apa yang membuktikan produk ini berhasil dipakai, bukan hanya record yang berhasil dibuat?${followUp}`
-          : `For ${primaryWorkflow}, what first outcome proves the product was used successfully rather than merely creating a record?${followUp}`,
+        text:
+          entityFacts.length === 0
+            ? id
+              ? `Apa hasil utama yang ingin terjadi ketika seseorang menemukan produk yang mereka minati?${followUp}`
+              : `What is the main outcome when someone finds something they want in this product?${followUp}`
+            : id
+              ? `Ketika seseorang tertarik pada ${primaryEntity}, hasil pertama apa yang harus terjadi supaya produk ini berhasil dipakai?${followUp}`
+              : `When someone is interested in ${primaryEntity}, what first outcome should happen to prove the product was actually used?${followUp}`,
         recommendation: id
           ? "Outcome yang terlihat membantu membatasi scope dan acceptance criteria."
           : "An observable outcome keeps scope and acceptance criteria honest.",
@@ -262,6 +272,112 @@ export function genericRequirementNodes(
   }));
 }
 
+function genericOptions(
+  state: ProjectState,
+  candidate: DecisionCandidate,
+): QuestionOption[] {
+  const id = extractStructuralContext(state).language === "id";
+  const clarify: QuestionOption = {
+    id: "needs_clarification",
+    label: id ? "Perlu diklarifikasi dulu" : "Needs clarification",
+    description: id
+      ? "Ada pengecualian yang harus didefinisikan lebih dulu."
+      : "There are exceptions we should define first.",
+  };
+  const byArchetype: Record<string, QuestionOption[]> = {
+    IDENTITY: [
+      {
+        id: "shared_identity",
+        label: id ? "Satu record bersama" : "Shared identity",
+        description: id
+          ? "Identitas dan histori mengikuti orang atau benda yang sama."
+          : "The same identity and history follow them everywhere.",
+      },
+      {
+        id: "separate_records",
+        label: id ? "Record terpisah" : "Separate records",
+        description: id
+          ? "Setiap konteks menjaga record-nya sendiri."
+          : "Each context keeps its own record.",
+      },
+    ],
+    VISIBILITY: [
+      {
+        id: "owner_all_others_scoped",
+        label: id
+          ? "Owner melihat semua, role lain terbatas"
+          : "Owner sees all, others stay scoped",
+        description: id
+          ? "Akses penuh hanya untuk pemilik; role lain mengikuti tanggung jawabnya."
+          : "Full access stays with the owner; other roles stay scoped.",
+      },
+      {
+        id: "everyone_sees_all",
+        label: id ? "Semua role melihat semua" : "Everyone sees everything",
+        description: id
+          ? "Kolaborasi lebih mudah, batas data lebih longgar."
+          : "Easier collaboration, looser data boundaries.",
+      },
+    ],
+    OWNERSHIP: [
+      {
+        id: "creator_owns",
+        label: id ? "Pembuat menjadi pemilik" : "Creator owns it",
+        description: id
+          ? "Ownership dimulai dari yang membuat record."
+          : "Ownership starts with whoever created the record.",
+      },
+      {
+        id: "assigned_role_owns",
+        label: id ? "Role yang ditugaskan" : "Assigned role owns it",
+        description: id
+          ? "Pemilik bisa berubah tanpa menghapus histori."
+          : "Ownership can move without deleting history.",
+      },
+    ],
+    WORKFLOW_ANCHOR: [
+      {
+        id: "contact_first",
+        label: id ? "Menghubungi tim" : "Contact the team",
+        description: id
+          ? "Tindakan pertama adalah percakapan atau follow-up."
+          : "The first action is a conversation or follow-up.",
+      },
+      {
+        id: "booking_first",
+        label: id ? "Membuat janji atau booking" : "Book or schedule",
+        description: id
+          ? "Keberhasilan diukur dari jadwal yang terisi."
+          : "Success is a confirmed booking or appointment.",
+      },
+      {
+        id: "order_first",
+        label: id ? "Langsung memesan" : "Place an order",
+        description: id
+          ? "Tindakan utama adalah transaksi atau pemesanan."
+          : "The main action is an order or purchase.",
+      },
+    ],
+  };
+  const options = byArchetype[candidate.archetype] || [
+    {
+      id: "explicit_rule",
+      label: id ? "Tetapkan satu aturan tetap" : "Set one explicit rule",
+      description: id
+        ? "Satu kebijakan yang konsisten untuk semua kasus biasa."
+        : "One consistent policy for the usual cases.",
+    },
+    {
+      id: "case_by_case_with_rule",
+      label: id ? "Ada pengecualian terukur" : "Allow defined exceptions",
+      description: id
+        ? "Aturan utama tetap ada, plus pengecualian yang tertulis."
+        : "Keep a default rule plus written exceptions.",
+    },
+  ];
+  return [...options, clarify];
+}
+
 export function genericQuestionForTopic(
   state: ProjectState,
   topic: string,
@@ -279,11 +395,10 @@ export function genericQuestionForTopic(
     contextReferences: ["rawIdea", "roles", "entities", "workflows"],
     relatedRequirementIds: [candidate.topic],
     affects: candidate.affects,
-    answerType: "FREE_TEXT",
+    answerType: "SINGLE_CHOICE",
+    options: genericOptions(state, candidate),
     recommendation: copy.recommendation,
     priority: candidate.priority,
-    reasonAsked: `${candidate.description} Evidence: ${
-      candidate.evidence.slice(0, 4).join(", ") || "the current product context"
-    }.`,
+    reasonAsked: copy.recommendation,
   };
 }

@@ -73,7 +73,7 @@ const DOMAIN_SIGNALS: Record<ScoredDomain, DomainSignal[]> = {
   RENTAL: [
     { pattern: /\brental\b|\brent\b|\bsewa\b/, weight: 6 },
     { pattern: /car booking|booking mobil|rental car|rental mobil/, weight: 5 },
-    { pattern: /\bvehicle\b|\bkendaraan\b|\bmobil\b|\bcars?\b/, weight: 3 },
+    { pattern: /\bvehicle\b|\bkendaraan\b|\bcars?\b/, weight: 3 },
     { pattern: /\bpickup\b|\breturn\b|late return|damage/, weight: 2 },
     { pattern: /\bcabang\b|\bbranch\b/, weight: 1 },
     { pattern: /\bbooking\b/, weight: 1 },
@@ -140,7 +140,7 @@ export function detectDiscoveryDomain(
   }
 
   if (
-    state.rawIdea.trim().length >= 24 ||
+    state.rawIdea.trim().length >= 18 ||
     state.entities.length > 0 ||
     state.targetUsers.length > 0
   )

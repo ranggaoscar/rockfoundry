@@ -287,13 +287,18 @@ export class MockGatewayProvider implements AiGatewayProvider {
         ),
       );
     } else {
-      extraction.primaryUsers.push(
-        item(
-          "Primary user",
-          "WEAKLY_INFERRED",
-          "The idea does not name a user role yet",
-        ),
-      );
+      const stop =
+        /^(?:i|want|to|a|an|the|for|with|and|or|of|my|our|build|create|make|web|website|app|application|system|platform|gua|gue|saya|aku|mau|ingin|bikin|buat|bangun|jualan|jual|beli|untuk|dari|yang|dan|ini|itu|aplikasi|produk)$/i;
+      const nouns = rawIdea
+        .split(/\s+/)
+        .map((value) => value.replace(/[^\p{L}\p{N}-]+/gu, ""))
+        .filter((value) => value.length >= 4 && !stop.test(value))
+        .slice(0, 4);
+      for (const noun of nouns) {
+        extraction.coreEntities.push(
+          item(noun, "STRONGLY_INFERRED", "Named in the starting idea"),
+        );
+      }
       extraction.ambiguities.push(
         item(
           "The main user role is not explicit",

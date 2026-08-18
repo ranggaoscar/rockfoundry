@@ -24,7 +24,11 @@ const AnswerSchema = z
     value: z.union([z.string(), z.array(z.string())]).optional(),
   })
   .superRefine((body, ctx) => {
-    const isReviseStart = body.mode === "revise" && body.topic && body.answer === undefined && body.value === undefined;
+    const isReviseStart =
+      body.mode === "revise" &&
+      body.topic &&
+      body.answer === undefined &&
+      body.value === undefined;
     if (isReviseStart) return;
     if (body.answer === undefined && body.value === undefined) {
       ctx.addIssue({
@@ -127,6 +131,14 @@ export async function POST(
     }
 
     const answer = body.answer ?? body.value!;
+    if (
+      body.mode !== "revise" &&
+      body.questionId &&
+      current.discovery.activeQuestionId &&
+      body.questionId !== current.discovery.activeQuestionId
+    ) {
+      return jsonError("That discovery question is no longer active.", 409);
+    }
     let currentQuestion =
       (body.questionId
         ? engine.resolveQuestion(current, body.questionId)
@@ -172,7 +184,8 @@ export async function POST(
       .join(", ");
     await persistUserMessage(id, displayAnswer, {
       questionId: currentQuestion.id,
-      revised: body.mode === "revise" || Boolean(processed.decision?.supersedes),
+      revised:
+        body.mode === "revise" || Boolean(processed.decision?.supersedes),
     });
     if (nextQuestion) {
       await persistQuestionMessage(id, nextQuestion);
