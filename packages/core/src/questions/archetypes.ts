@@ -10,9 +10,24 @@ export type RiskDimensions = {
   contradiction: number;
 };
 
+export type SubjectType =
+  | "ACTOR"
+  | "ENTITY"
+  | "RESOURCE"
+  | "WORKFLOW"
+  | "ACTION"
+  | "OUTCOME"
+  | "CHANNEL"
+  | "BOUNDARY"
+  | "UNKNOWN";
+
 export type DecisionCandidate = {
   topic: string;
   archetype: string;
+  subject?: string;
+  subjectType?: SubjectType;
+  prerequisites: string[];
+  prerequisitesSatisfied: boolean;
   title: string;
   intent: string;
   description: string;
@@ -73,8 +88,46 @@ function candidate(
   context: StructuralContext,
   gaps: ArtifactGapSignal[],
 ): DecisionCandidate {
+  const lifecycleSubject = context.entities.find(
+    (item) => !/^(?:mencari|ingin|membantu|melihat|menggunakan)$/i.test(item.value),
+  );
+  const subject =
+    definition.archetype === "PRODUCT_IDENTITY"
+      ? "product boundary"
+      : lifecycleSubject?.value || context.workflows[0]?.value;
+  const subjectType =
+    definition.archetype === "PRODUCT_IDENTITY"
+      ? "OUTCOME"
+      : lifecycleSubject
+        ? /room|slot|resource|vehicle|dentist/i.test(lifecycleSubject.value)
+          ? "RESOURCE"
+          : "ENTITY"
+        : context.workflows[0]
+          ? "WORKFLOW"
+          : "UNKNOWN";
+  const prerequisites =
+    definition.archetype === "LIFECYCLE"
+      ? ["valid lifecycle-capable subject", "product identity resolved"]
+      : definition.archetype === "CONFLICT_CAPACITY"
+        ? ["limited resource or time-slot evidence"]
+        : definition.archetype === "CROSS_BOUNDARY"
+          ? ["multiple boundaries"]
+          : [];
+  const prerequisitesSatisfied =
+    definition.archetype === "LIFECYCLE"
+      ? Boolean(subject && ["ENTITY", "RESOURCE", "WORKFLOW"].includes(subjectType)) &&
+        !context.productIdentityAmbiguous
+      : definition.archetype === "CONFLICT_CAPACITY"
+        ? context.signals.resourceConstraint
+        : definition.archetype === "CROSS_BOUNDARY"
+          ? context.boundaries.length > 1
+          : true;
   return {
     ...definition,
+    subject,
+    subjectType,
+    prerequisites,
+    prerequisitesSatisfied,
     evidence: evidenceFor(context, definition, gaps),
     confidence: context.entities.some((item) => item.confidence === "EXPLICIT")
       ? "STRONGLY_INFERRED"

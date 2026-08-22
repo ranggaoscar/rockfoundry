@@ -26,6 +26,23 @@ describe("AgentRunner", () => {
 
     const result = await runner.run({
       project,
+      candidateTopics: ["product_identity"],
+      questionForAction: (action) =>
+        action.type === "ASK_USER"
+          ? {
+              id: "product-identity",
+              topic: "product_identity",
+              category: "PRODUCT",
+              text: "Aplikasi untuk mencari pekerjaan ini hanya untuk pencari kerja?",
+              contextReferences: ["rawIdea"],
+              relatedRequirementIds: ["product_identity"],
+              affects: ["actors"],
+              answerType: "SINGLE_CHOICE",
+              options: [{ id: "seekers", label: "Pencari kerja saja" }],
+              priority: 10,
+              reasonAsked: "Menentukan batas produk.",
+            }
+          : undefined,
       onToolRun: (activity) => {
         toolActivities.push(activity.action.type);
       },

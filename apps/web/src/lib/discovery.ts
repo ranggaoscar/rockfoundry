@@ -3,6 +3,8 @@ import {
   AgentRunner,
   createDefaultToolRegistry,
   deterministicDiscoveryPlanner,
+  generateGenericDecisionCandidates,
+  genericQuestionForTopic,
   detectContradictions,
   mergeExtraction,
   QuestionEngine,
@@ -10,6 +12,7 @@ import {
   type Question,
 } from "@rockfoundry/core";
 import { getAiGateway } from "./ai-provider";
+import { createModelDiscoveryPlanner } from "./agent-planner";
 import {
   getLocalProject,
   parseProjectState,
@@ -103,14 +106,30 @@ export async function runInitialDiscovery(
     );
     merged.state.generationMetadata.initialExtractionComplete = true;
     mergeDetectedContradictions(merged.state);
-    const candidateQuestion = nextQuestion(merged.state);
+    const candidates = generateGenericDecisionCandidates(merged.state).slice(0, 5);
+    const candidateQuestions = candidates
+      .map((candidate) => genericQuestionForTopic(merged.state, candidate.topic))
+      .filter((question): question is Question => Boolean(question));
+    const candidateQuestion = candidateQuestions[0] || nextQuestion(merged.state);
     if (!candidateQuestion) throw new Error("NO_DISCOVERY_QUESTION");
-    const runner = new AgentRunner(
-      deterministicDiscoveryPlanner(candidateQuestion),
-      createDefaultToolRegistry(),
-    );
+    const tools = createDefaultToolRegistry();
+    const planner =
+      createModelDiscoveryPlanner(candidates) ||
+      deterministicDiscoveryPlanner(candidateQuestion);
+    const runner = new AgentRunner(planner, tools);
     const agentResult = await runner.run({
       project: merged.state,
+      candidateTopics: candidateQuestions
+        .map((question) => question.topic)
+        .filter((topic): topic is string => Boolean(topic)),
+      questionForAction: (action) => {
+        if (action.type !== "ASK_USER") return undefined;
+        return (
+          candidateQuestions.find((question) => question.id === action.questionId) ||
+          candidateQuestions.find((question) => question.topic === action.questionId) ||
+          candidateQuestion
+        );
+      },
       onToolRun: async (activity) => {
         await prisma.toolRun.create({
           data: {

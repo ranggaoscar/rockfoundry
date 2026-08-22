@@ -342,6 +342,23 @@ export class AiGateway {
     private provider: AiGatewayProvider = new MockGatewayProvider(),
   ) {}
 
+  async runPlannerAction<T>(input: {
+    system: string;
+    user: string;
+    taskType?: string;
+  }) {
+    const result = await this.provider.complete<T>({
+      taskType: input.taskType || "contextual_question_enrichment",
+      messages: [
+        { role: "system", content: input.system },
+        { role: "user", content: input.user },
+      ],
+      temperature: 0.1,
+      responseFormat: "json",
+    });
+    return result;
+  }
+
   async runInitialExtraction(rawIdea: string) {
     const taskType = "initial_idea_extraction" as const;
     const promptInfo = PROMPT_VERSIONS[taskType];

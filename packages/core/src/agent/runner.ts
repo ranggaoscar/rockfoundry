@@ -6,6 +6,7 @@ import {
 } from "./actions";
 import type { ProjectState } from "../schema";
 import type { ToolRegistry } from "../tools/registry";
+import { validatePlannedAction } from "./policy";
 
 export const MAX_AGENT_ITERATIONS = 8;
 
@@ -45,6 +46,10 @@ export class AgentRunner {
   async run(input: {
     project: ProjectState;
     latestUserMessage?: string;
+    questionForAction?: (action: AgentAction) => import("../schema/question").Question | undefined;
+    candidateTopics?: string[];
+    explicitHumanDecision?: boolean;
+    humanApprovedArtifact?: boolean;
     onToolRun?: (activity: AgentActivity) => Promise<void> | void;
   }): Promise<AgentLoopResult> {
     const activities: AgentActivity[] = [];
@@ -59,6 +64,16 @@ export class AgentRunner {
         latestUserMessage: input.latestUserMessage,
       });
       const action = AgentActionSchema.parse(rawAction);
+      const policy = validatePlannedAction(action, {
+        project: input.project,
+        tools: this.tools,
+        questionForAction: input.questionForAction?.(action),
+        candidateTopics: input.candidateTopics,
+        explicitHumanDecision: input.explicitHumanDecision,
+        humanApprovedArtifact: input.humanApprovedArtifact,
+      });
+      if (!policy.allowed)
+        throw new Error(`Planned action rejected: ${policy.reasons.join(" ")}`);
       const startedAt = Date.now();
 
       if (action.type !== "CALL_TOOL") {

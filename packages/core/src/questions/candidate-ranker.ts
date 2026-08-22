@@ -77,6 +77,7 @@ export function rankDecisionCandidates(
   gaps: ArtifactGapSignal[],
 ): DecisionCandidate[] {
   return candidates
+    .filter((candidate) => candidate.prerequisitesSatisfied)
     .map((candidate, index) => ({
       candidate,
       score: scoreCandidate(state, candidate, context, gaps),
