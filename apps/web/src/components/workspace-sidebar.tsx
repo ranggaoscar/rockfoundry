@@ -40,7 +40,7 @@ export function WorkspaceSidebar({
           onClick={onGoHome || onNewProject}
         >
           <span className="rf-mark" aria-hidden="true">
-            R
+            <img src="/brand/rockfoundry-mark.svg" alt="" />
           </span>
           RockFoundry
         </button>

@@ -111,14 +111,15 @@
   }
   .rf-mark {
     display: inline-flex;
-    width: 1.35rem;
-    height: 1.35rem;
+    width: 1.45rem;
+    height: 1.45rem;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--border);
-    border-radius: 0.35rem;
-    font-size: 0.7rem;
-    font-weight: 700;
+    color: var(--foreground);
+  }
+  .rf-mark img {
+    width: 100%;
+    height: 100%;
   }
   .rf-icon-button {
     display: inline-flex;

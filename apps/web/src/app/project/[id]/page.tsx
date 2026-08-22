@@ -62,7 +62,21 @@ type Message = {
   createdAt?: string;
   collapsed?: boolean;
 };
+type Activity = {
+  id: string;
+  toolName: string;
+  status: string;
+  inputSummary?: string | null;
+  outputSummary?: string | null;
+  failureReason?: string | null;
+};
 type Drawer = "context" | "documents" | "settings" | null;
+
+function isIndonesianProject(state: any) {
+  return /\b(saya|mau|ingin|bikin|buat|dengan|untuk|dan|yang|aplikasi)\b/i.test(
+    String(state?.rawIdea || ""),
+  );
+}
 
 function initialMessages(project: ProjectData): Message[] {
   const idea = project.description?.trim();
@@ -135,6 +149,7 @@ export default function ProjectWorkspace({
   const [composer, setComposer] = useState("");
   const [question, setQuestion] = useState<Question | null>(null);
   const [references, setReferences] = useState<Reference[]>([]);
+  const [activity, setActivity] = useState<Activity[]>([]);
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -162,6 +177,7 @@ export default function ProjectWorkspace({
       );
     const data = await response.json();
     setProject(data.project);
+    setActivity(data.activity || []);
     setMessages(
       data.messages?.length
         ? (data.messages as Message[])
@@ -775,14 +791,14 @@ export default function ProjectWorkspace({
             type="button"
             onClick={() => setDrawer("context")}
           >
-            Context
+            Product Map
           </button>
           <button
             className="rf-header-action inline-flex"
             type="button"
             onClick={() => setDrawer("documents")}
           >
-            <FileText className="size-3.5" /> Documents
+            <FileText className="size-3.5" /> Handoff
           </button>
         </header>
 
@@ -905,6 +921,7 @@ export default function ProjectWorkspace({
           project={project}
           state={state}
           references={references}
+          activity={activity}
           exportReady={exportReady}
           exporting={exporting}
           working={working}
@@ -1013,7 +1030,7 @@ function MessageRow({
             {isQuestion ? (
               <>
                 <span className="font-medium text-foreground/80">
-                  Why this matters
+                  Kenapa ini penting
                 </span>
                 <span className="mt-0.5 block">{message.detail}</span>
               </>
@@ -1056,6 +1073,7 @@ function DrawerPanel({
   project,
   state,
   references,
+  activity,
   exportReady,
   exporting,
   working,
@@ -1068,6 +1086,7 @@ function DrawerPanel({
   project: ProjectData;
   state: any;
   references: Reference[];
+  activity: Activity[];
   exportReady: boolean;
   exporting: boolean;
   working: boolean;
@@ -1076,7 +1095,7 @@ function DrawerPanel({
   onDownload: () => void;
   onReviseDecision: (topic: string) => void;
 }) {
-  const title = drawer === "context" ? "Project context" : "Handoff";
+  const title = drawer === "context" ? "Product Map" : "Handoff";
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -1111,6 +1130,7 @@ function DrawerPanel({
           <ContextContent
             state={state}
             references={references}
+            activity={activity}
             working={working}
             onReviseDecision={onReviseDecision}
           />
@@ -1132,11 +1152,13 @@ function DrawerPanel({
 function ContextContent({
   state,
   references,
+  activity,
   working,
   onReviseDecision,
 }: {
   state: any;
   references: Reference[];
+  activity: Activity[];
   working: boolean;
   onReviseDecision: (topic: string) => void;
 }) {
@@ -1153,6 +1175,33 @@ function ContextContent({
       : null;
   return (
     <div className="space-y-7 overflow-y-auto px-5 py-5">
+      <section className="space-y-2">
+        <h3 className="text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
+          Overview
+        </h3>
+        <p className="text-sm leading-6">
+          {state.normalizedSummary ||
+            state.rawIdea ||
+            "RockFoundry is still learning about this product."}
+        </p>
+        <div className="grid gap-2 text-xs text-muted-foreground">
+          <p>
+            <span className="text-foreground">Actors:</span>{" "}
+            {(state.targetUsers || state.roles || []).slice(0, 4).join(", ") ||
+              "Not confirmed yet"}
+          </p>
+          <p>
+            <span className="text-foreground">Entities:</span>{" "}
+            {(state.entities || []).slice(0, 4).join(", ") ||
+              "Not confirmed yet"}
+          </p>
+          <p>
+            <span className="text-foreground">Core outcome:</span>{" "}
+            {(state.objectives || state.workflows || []).slice(0, 1).join("") ||
+              "Still open"}
+          </p>
+        </div>
+      </section>
       <section className="space-y-2">
         <h3 className="text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
           Decision Debt
@@ -1302,10 +1351,40 @@ function ContextContent({
         empty="No contradictions found."
       />
       <ContextList
-        title="References"
+        title="Evidence"
         items={references.map((item) => item.url)}
-        empty="No references yet."
+        empty="No reference evidence yet."
       />
+      <section>
+        <h3 className="mb-2 text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
+          Activity
+        </h3>
+        {activity.length ? (
+          <ul className="space-y-2 text-sm leading-5">
+            {activity
+              .slice(-6)
+              .reverse()
+              .map((item) => (
+                <li
+                  key={item.id}
+                  className="border-b border-border/50 pb-2 last:border-0"
+                >
+                  <span className="mr-2 text-emerald-500">✓</span>
+                  <span className="font-medium">
+                    {item.toolName.replace(/_/g, " ")}
+                  </span>
+                  <span className="block pl-5 text-xs text-muted-foreground">
+                    {item.status === "COMPLETED"
+                      ? item.outputSummary
+                      : item.failureReason || item.status}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No tool activity yet.</p>
+        )}
+      </section>
     </div>
   );
 }
