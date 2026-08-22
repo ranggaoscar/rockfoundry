@@ -8,6 +8,7 @@ import {
   publicProject,
   saveProjectState,
   getProjectMessages,
+  getProjectActivity,
 } from "@/lib/local-project";
 
 export async function GET(
@@ -18,8 +19,15 @@ export async function GET(
     const { id } = await params;
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
-    const messages = await getProjectMessages(id);
-    return Response.json({ project: publicProject(project), messages });
+    const [messages, activity] = await Promise.all([
+      getProjectMessages(id),
+      getProjectActivity(id),
+    ]);
+    return Response.json({
+      project: publicProject(project),
+      messages,
+      activity,
+    });
   } catch {
     return jsonError("RockFoundry couldn't load this project.");
   }

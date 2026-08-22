@@ -37,6 +37,24 @@ export async function getLocalProject(id: string) {
   return project;
 }
 
+export async function getProjectActivity(projectId: string) {
+  const runs = await prisma.toolRun.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "asc" },
+    take: 24,
+  });
+  return runs.map((run) => ({
+    id: run.id,
+    toolName: run.toolName,
+    status: run.status,
+    inputSummary: run.inputSummary,
+    outputSummary: run.outputSummary,
+    failureReason: run.failureReason,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+  }));
+}
+
 export async function getProjectMessages(projectId: string) {
   const messages = await prisma.conversationMessage.findMany({
     where: { projectId },
