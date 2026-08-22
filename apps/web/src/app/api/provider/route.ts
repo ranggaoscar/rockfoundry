@@ -8,6 +8,7 @@ import {
   resolveProviderSettings,
   saveProviderSettings,
 } from "@/lib/provider-config";
+import { isPublicDemo } from "@rockfoundry/ai";
 
 const ProviderSettingsSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("mock") }),
@@ -23,7 +24,15 @@ export async function GET() {
   return Response.json(publicProviderStatus());
 }
 
+function demoProviderLocked() {
+  return Response.json(
+    { error: "Provider settings are managed by this public demo." },
+    { status: 403 },
+  );
+}
+
 export async function PUT(request: Request) {
+  if (isPublicDemo()) return demoProviderLocked();
   const parsed = ProviderSettingsSchema.safeParse(await request.json());
   if (!parsed.success) {
     return Response.json(
@@ -57,6 +66,7 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE() {
+  if (isPublicDemo()) return demoProviderLocked();
   clearProviderSettings();
   return Response.json(publicProviderStatus());
 }

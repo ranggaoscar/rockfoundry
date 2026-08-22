@@ -201,6 +201,67 @@ export function SettingsPanel({
 
   if (!open) return null;
 
+  if (status.publicDemo) {
+    return (
+      <div className="rf-drawer-backdrop" role="presentation" onClick={onClose}>
+        <aside
+          className="rf-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between border-b border-border px-5 py-4">
+            <div>
+              <h2 id="settings-title" className="text-[15px] font-semibold">
+                AI provider
+              </h2>
+              <p className="mt-1 text-[12px] text-muted-foreground">
+                Managed by demo host
+              </p>
+            </div>
+            <button
+              ref={closeRef}
+              className="rf-icon-button"
+              type="button"
+              aria-label="Close settings"
+              onClick={onClose}
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="space-y-5 overflow-y-auto px-5 py-5 text-[14px] leading-6">
+            <div className="rounded-[10px] border border-border bg-surface px-3 py-3">
+              <div className="text-[11px] font-medium tracking-[0.04em] text-muted-foreground">
+                Status
+              </div>
+              <div className="mt-1 text-[15px] font-medium">
+                {status.configured ? "Managed provider" : "Offline fallback"}
+              </div>
+              <dl className="mt-3 space-y-2 text-[13px]">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Provider</dt>
+                  <dd>{status.label}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Model</dt>
+                  <dd className="font-mono text-right">
+                    {status.model || "Offline Mock"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+            <p className="text-[13px] leading-6 text-muted-foreground">
+              This shared demo uses a provider configured by the demo host. Run
+              RockFoundry locally to connect your own OpenAI, OpenRouter,
+              Ollama, or other compatible provider.
+            </p>
+          </div>
+        </aside>
+      </div>
+    );
+  }
+
   return (
     <div className="rf-drawer-backdrop" role="presentation" onClick={onClose}>
       <aside

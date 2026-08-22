@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { z } from "zod";
-import { testOpenAiCompatibleConnection } from "@rockfoundry/ai";
+import { isPublicDemo, testOpenAiCompatibleConnection } from "@rockfoundry/ai";
 import { requiresApiKey, resolveProviderSettings } from "@/lib/provider-config";
 
 const TestProviderSchema = z.object({
@@ -10,6 +10,12 @@ const TestProviderSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (isPublicDemo()) {
+    return Response.json(
+      { error: "Provider settings are managed by this public demo." },
+      { status: 403 },
+    );
+  }
   const parsed = TestProviderSchema.safeParse(
     await request.json().catch(() => ({})),
   );

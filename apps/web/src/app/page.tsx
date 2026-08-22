@@ -172,7 +172,13 @@ function HomeWorkspace() {
                 className="rf-revise-button"
                 onClick={() => setSettingsOpen(true)}
               >
-                {provider.mode === "mock" ? "Connect model" : "AI settings"}
+                {provider.publicDemo
+                  ? provider.model
+                    ? `Public demo · ${provider.model}`
+                    : "Public demo · Offline fallback"
+                  : provider.mode === "mock"
+                    ? "Connect model"
+                    : "AI settings"}
               </button>
             </div>
 

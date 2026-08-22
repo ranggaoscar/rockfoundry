@@ -12,6 +12,7 @@ export * from "./schema";
 export * from "./gateway";
 export * from "./prompts";
 export * from "./env";
+export * from "./public-demo";
 
 import {
   PROMPT_VERSIONS,

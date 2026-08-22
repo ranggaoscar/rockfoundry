@@ -1,9 +1,15 @@
 export const dynamic = "force-dynamic";
 
-import { discoverOpenAiCompatibleModels } from "@rockfoundry/ai";
+import { discoverOpenAiCompatibleModels, isPublicDemo } from "@rockfoundry/ai";
 import { requiresApiKey, resolveProviderSettings } from "@/lib/provider-config";
 
 export async function GET() {
+  if (isPublicDemo()) {
+    return Response.json(
+      { error: "Provider settings are managed by this public demo." },
+      { status: 403 },
+    );
+  }
   const settings = resolveProviderSettings();
   if (
     settings.mode !== "openai-compatible" ||

@@ -81,7 +81,7 @@ Start by describing the product. RockFoundry then finds important decisions a co
 
 ### Connect your model (BYOK)
 
-Mock mode works offline. On first use, open **Settings** in RockFoundry and choose a provider preset. **Offline Mock** is explicit and persists locally; select it whenever you want deterministic, network-free discovery. The active gateway is resolved for every request, so saved settings take effect without restarting.
+For a normal local installation, RockFoundry keeps full BYOK controls: OpenAI, OpenRouter, Ollama, and custom OpenAI-compatible providers. Mock mode works offline. On first use, open **Settings** in RockFoundry and choose a provider preset. **Offline Mock** is explicit and persists locally; select it whenever you want deterministic, network-free discovery. The active gateway is resolved for every request, so saved settings take effect without restarting.
 
 For a real provider, save its base URL, model, and API key. Ollama uses `http://localhost:11434/v1` by default and does not require an API key. Use **Clear saved provider** to remove the local profile and return to the default Offline Mock; environment variables still take priority when present.
 
@@ -95,6 +95,10 @@ OPENAI_COMPATIBLE_MODEL="gpt-4o-mini"
 ```
 
 OpenAI-compatible endpoints also cover OpenRouter, Ollama (compat mode), 9Router, and custom bases. Keys are saved only in the OS-aware RockFoundry application-data configuration when entered through Settings; they are never returned by APIs, stored in project data, included in exports, logged, or committed. Settings labels environment-managed runtimes clearly and identifies the variables that control them.
+
+### Shared public demo
+
+A maintainer can set `ROCKFOUNDRY_PUBLIC_DEMO=true` with the normal server-side `AI_PROVIDER_MODE` and `OPENAI_COMPATIBLE_*` variables. In this mode, the browser sees a managed-provider status only: visitors cannot save, replace, clear, test, or discover provider configuration, and no visitor API key is required. A valid environment provider still drives the real AI path; without it, RockFoundry clearly uses Offline Mock fallback. This mode is for a shared demo, not multi-user project isolation.
 
 ## What makes it different
 

@@ -3,6 +3,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { providerConfigDir } from "@rockfoundry/db";
+import { isPublicDemo } from "@rockfoundry/ai";
 
 export type ProviderMode = "mock" | "openai-compatible";
 export type ProviderSource = "environment" | "app-data" | "mock";
@@ -101,6 +102,22 @@ export function resolveProviderSettings(
   env: NodeJS.ProcessEnv = process.env,
 ): ProviderSettings {
   const environment = environmentSettings(env);
+  if (isPublicDemo(env)) {
+    const environmentIsUsable =
+      environment?.mode === "mock" ||
+      Boolean(
+        environment?.baseUrl &&
+        (!requiresApiKey(environment.baseUrl) || environment.apiKey),
+      );
+    if (environment && environmentIsUsable) return environment;
+    return {
+      mode: "mock",
+      baseUrl: null,
+      apiKey: null,
+      model: null,
+      source: "mock",
+    };
+  }
   if (environment) return environment;
   const persisted = readPersistedSettings();
   if (persisted) return { ...persisted, source: "app-data" };
@@ -171,6 +188,7 @@ export function clearProviderSettings() {
 }
 
 export function publicProviderStatus(settings = resolveProviderSettings()) {
+  const publicDemo = isPublicDemo();
   const configured =
     settings.mode === "openai-compatible" &&
     Boolean(
@@ -184,8 +202,11 @@ export function publicProviderStatus(settings = resolveProviderSettings()) {
         ? "Offline Mock"
         : providerLabel(settings.baseUrl),
     model: configured ? settings.model || "gpt-4o-mini" : null,
-    endpoint: configured ? hostnameOf(settings.baseUrl) : null,
+    endpoint: configured && !publicDemo ? hostnameOf(settings.baseUrl) : null,
     configured,
+    hasApiKey: Boolean(settings.apiKey),
+    publicDemo,
+    managed: publicDemo,
     missing:
       settings.mode === "openai-compatible"
         ? [

@@ -4,6 +4,9 @@ export type ProviderStatus = {
   model: string | null;
   endpoint: string | null;
   configured: boolean;
+  hasApiKey: boolean;
+  publicDemo: boolean;
+  managed: boolean;
   missing: string[];
   source: "environment" | "app-data" | "mock";
 };
@@ -15,6 +18,9 @@ export function emptyProviderStatus(): ProviderStatus {
     model: null,
     endpoint: null,
     configured: false,
+    hasApiKey: false,
+    publicDemo: false,
+    managed: false,
     missing: [],
     source: "mock",
   };
