@@ -696,6 +696,10 @@ export default function ProjectWorkspace({
         provider={provider}
         mobileOpen={navOpen}
         onCloseMobile={() => setNavOpen(false)}
+        onGoHome={() => {
+          setNavOpen(false);
+          router.push("/");
+        }}
         onNewProject={() => router.push("/")}
         onOpenProject={(id) => {
           setNavOpen(false);
@@ -1072,7 +1076,7 @@ function DrawerPanel({
   onDownload: () => void;
   onReviseDecision: (topic: string) => void;
 }) {
-  const title = drawer === "context" ? "Project context" : "Documents";
+  const title = drawer === "context" ? "Project context" : "Handoff";
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -1352,9 +1356,14 @@ function DocumentsContent({
   onDownload: () => void;
 }) {
   const status = state.readiness ? projectStatus(state) : "Draft";
-  const primary = ["BRD.md", "PRD.md", "ERD.md"];
-  const advanced = [
+  const core = [
+    "BRD.md",
+    "PRD.md",
+    "ERD.md",
     "DO_NOT_INVENT.md",
+    "AGENT_HANDOFF.md",
+  ];
+  const advanced = [
     "DECISIONS.md",
     "INVARIANTS.md",
     "READINESS.md",
@@ -1364,8 +1373,8 @@ function DocumentsContent({
   return (
     <div className="space-y-5 px-5 py-5">
       <p className="text-sm leading-6 text-muted-foreground">
-        Generate the working documents first. Advanced handoff files stay
-        available in the same export.
+        Generate the handoff, then download the core brief and its guardrails
+        for the coding agent.
       </p>
       <p className="text-xs leading-5 text-muted-foreground">
         {readinessPlainLabel(state)}
@@ -1373,8 +1382,11 @@ function DocumentsContent({
           ? ` · Decision Debt ${decisionDebtScore(state)}/100`
           : ""}
       </p>
-      <div className="space-y-2">
-        {primary.map((doc) => (
+      <section className="space-y-2">
+        <h3 className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
+          Handoff core
+        </h3>
+        {core.map((doc) => (
           <div
             key={doc}
             className="flex items-center gap-3 border-b border-border/60 py-3"
@@ -1386,8 +1398,8 @@ function DocumentsContent({
             </span>
           </div>
         ))}
-      </div>
-      <div>
+      </section>
+      <section>
         <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
           Advanced handoff
         </h3>
@@ -1404,7 +1416,7 @@ function DocumentsContent({
             </div>
           ))}
         </div>
-      </div>
+      </section>
       <button
         className="rf-primary-button w-full"
         type="button"
@@ -1417,7 +1429,7 @@ function DocumentsContent({
           </>
         ) : (
           <>
-            <FileText className="size-4" /> Generate handoff package
+            <FileText className="size-4" /> Generate build brief and handoff
           </>
         )}
       </button>

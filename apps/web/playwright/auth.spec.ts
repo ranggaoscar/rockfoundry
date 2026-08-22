@@ -1,6 +1,28 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Agentic V1 local flow", () => {
+  test("lists provider presets and never returns provider credentials", async ({
+    request,
+  }) => {
+    const presets = await request.get("/api/provider/presets");
+    expect(presets.status()).toBe(200);
+    const presetsPayload = await presets.json();
+    expect(presetsPayload.presets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "openai",
+          baseUrl: expect.stringContaining("/v1"),
+        }),
+      ]),
+    );
+
+    const status = await request.get("/api/provider");
+    expect(status.status()).toBe(200);
+    const payload = await status.json();
+    expect(JSON.stringify(payload).toLowerCase()).not.toContain("api_key");
+    expect(payload).not.toHaveProperty("apiKey");
+  });
+
   test("creates and reopens a project without an account", async ({
     request,
   }) => {

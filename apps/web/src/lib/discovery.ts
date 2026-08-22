@@ -6,7 +6,7 @@ import {
   type ProjectState,
   type Question,
 } from "@rockfoundry/core";
-import { aiGateway } from "./ai-provider";
+import { getAiGateway } from "./ai-provider";
 import {
   getLocalProject,
   parseProjectState,
@@ -90,7 +90,7 @@ export async function runInitialDiscovery(
   });
 
   try {
-    const aiResult = await aiGateway.runInitialExtraction(rawIdea);
+    const aiResult = await getAiGateway().runInitialExtraction(rawIdea);
     const project = await getLocalProject(projectId);
     if (!project) throw new Error("PROJECT_NOT_FOUND");
     const current = parseProjectState(project);

@@ -50,6 +50,7 @@ function HomeWorkspace() {
     () => idea.trim().length > 0 && !creating,
     [idea, creating],
   );
+  const returning = recent.length > 0;
 
   useEffect(() => {
     let active = true;
@@ -110,6 +111,11 @@ function HomeWorkspace() {
         provider={provider}
         mobileOpen={navOpen}
         onCloseMobile={() => setNavOpen(false)}
+        onGoHome={() => {
+          setIdea("");
+          setNavOpen(false);
+          document.getElementById("idea-composer")?.focus();
+        }}
         onNewProject={() => {
           setIdea("");
           setNavOpen(false);
@@ -143,12 +149,32 @@ function HomeWorkspace() {
               RockFoundry
             </p>
             <h1 className="max-w-[18ch] text-[1.75rem] font-semibold tracking-tight text-pretty sm:text-[2rem]">
-              What do you want to build?
+              {returning
+                ? "Start another product brief"
+                : "What do you want to build?"}
             </h1>
-            <p className="mt-2 max-w-[42ch] text-[14px] leading-6 text-muted-foreground">
-              Describe the idea. RockFoundry will ask the hidden decisions a
-              coding agent would otherwise invent.
+            <p className="mt-2 max-w-[46ch] text-[14px] leading-6 text-muted-foreground">
+              {returning
+                ? "Your recent projects stay in the sidebar. Describe a new idea when you are ready."
+                : "Describe what you want to build. RockFoundry surfaces hidden product decisions, records what you confirm, and prepares the handoff."}
             </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px]">
+              <span
+                className="rounded-full border border-border px-2.5 py-1 text-muted-foreground"
+                aria-live="polite"
+              >
+                {provider.model
+                  ? `${provider.label} · ${provider.model}`
+                  : "Offline Mock · deterministic local discovery"}
+              </span>
+              <button
+                type="button"
+                className="rf-revise-button"
+                onClick={() => setSettingsOpen(true)}
+              >
+                {provider.mode === "mock" ? "Connect model" : "AI settings"}
+              </button>
+            </div>
 
             <form
               onSubmit={(event) => void startProject(event)}
@@ -193,6 +219,63 @@ function HomeWorkspace() {
                 {error}
               </p>
             )}
+
+            {!returning ? (
+              <section
+                className="mt-7 grid gap-3 border-t border-border pt-5 text-[13px] sm:grid-cols-3"
+                aria-label="How RockFoundry works"
+              >
+                <div>
+                  <span className="font-medium">1. Describe</span>
+                  <p className="mt-1 text-muted-foreground">
+                    Start with the rough idea.
+                  </p>
+                </div>
+                <div>
+                  <span className="font-medium">2. Decide</span>
+                  <p className="mt-1 text-muted-foreground">
+                    Resolve rules an implementer would otherwise guess.
+                  </p>
+                </div>
+                <div>
+                  <span className="font-medium">3. Handoff</span>
+                  <p className="mt-1 text-muted-foreground">
+                    Generate BRD, PRD, ERD, and coding-agent constraints.
+                  </p>
+                </div>
+              </section>
+            ) : null}
+
+            {returning ? (
+              <section
+                className="mt-7 border-t border-border pt-5"
+                aria-labelledby="continue-project-title"
+              >
+                <h2
+                  id="continue-project-title"
+                  className="text-[13px] font-medium"
+                >
+                  Continue a recent project
+                </h2>
+                <div className="mt-3 space-y-1">
+                  {recent.slice(0, 3).map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      className="rf-project-item"
+                      onClick={() => router.push(`/project/${project.id}`)}
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {project.name}
+                      </span>
+                      <span className="text-[12px] text-muted-foreground">
+                        Open
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             <div className="mt-6 flex flex-wrap gap-2">
               {EXAMPLES.map((example) => (

@@ -6,6 +6,48 @@ import {
 } from "./schema";
 import { TASK_TIMEOUT, TASK_MAX_RETRIES } from "./prompts";
 
+/** Keep OpenAI-compatible roots canonical so callers can safely supply either
+ * `https://host` or `https://host/v1` without producing `/v1/v1/...`. */
+export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string) {
+  const parsed = new URL(baseUrl.trim());
+  parsed.pathname = `${parsed.pathname.replace(/\/+$/, "").replace(/(?:\/v1)+$/, "")}/v1`;
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.toString().replace(/\/$/, "");
+}
+
+export function openAiCompatibleUrl(baseUrl: string, path: string) {
+  return `${normalizeOpenAiCompatibleBaseUrl(baseUrl)}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export async function discoverOpenAiCompatibleModels(
+  baseUrl: string,
+  apiKey: string,
+) {
+  const response = await fetch(openAiCompatibleUrl(baseUrl, "/models"), {
+    headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+  });
+  if (!response.ok) {
+    throw new ApiError(
+      `Provider model discovery failed: ${response.status} ${response.statusText}`,
+      response.status,
+    );
+  }
+  const data = (await response.json()) as { data?: Array<{ id?: unknown }> };
+  return (data.data || [])
+    .map((model) => (typeof model.id === "string" ? model.id : null))
+    .filter((model): model is string => Boolean(model))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+export async function testOpenAiCompatibleConnection(
+  baseUrl: string,
+  apiKey: string,
+) {
+  const models = await discoverOpenAiCompatibleModels(baseUrl, apiKey);
+  return { models };
+}
+
 export class NineRouterGateway implements AiGatewayProvider {
   constructor(
     private readonly baseUrl: string,
@@ -66,29 +108,32 @@ export class NineRouterGateway implements AiGatewayProvider {
     if (req.modelTier === "strong") model = this.models.strong;
 
     try {
-      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
+      const response = await fetch(
+        openAiCompatibleUrl(this.baseUrl, "/chat/completions"),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model,
+            messages: req.messages,
+            temperature: req.temperature ?? 0.7,
+            response_format: req.responseSchema
+              ? {
+                  type: "json_schema",
+                  json_schema: {
+                    name: "output",
+                    schema: req.responseSchema,
+                    strict: true,
+                  },
+                }
+              : undefined,
+          }),
+          signal: controller.signal,
         },
-        body: JSON.stringify({
-          model,
-          messages: req.messages,
-          temperature: req.temperature ?? 0.7,
-          response_format: req.responseSchema
-            ? {
-                type: "json_schema",
-                json_schema: {
-                  name: "output",
-                  schema: req.responseSchema,
-                  strict: true,
-                },
-              }
-            : undefined,
-        }),
-        signal: controller.signal,
-      });
+      );
 
       const latency = Date.now() - startTime;
 

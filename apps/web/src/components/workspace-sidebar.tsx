@@ -16,6 +16,7 @@ export function WorkspaceSidebar({
   provider,
   mobileOpen = false,
   onCloseMobile,
+  onGoHome,
   onNewProject,
   onOpenProject,
   onOpenSettings,
@@ -25,6 +26,7 @@ export function WorkspaceSidebar({
   provider?: ProviderStatus;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
+  onGoHome?: () => void;
   onNewProject: () => void;
   onOpenProject: (id: string) => void;
   onOpenSettings: () => void;
@@ -35,7 +37,7 @@ export function WorkspaceSidebar({
         <button
           className="flex items-center gap-2 text-[15px] font-semibold tracking-tight"
           type="button"
-          onClick={onNewProject}
+          onClick={onGoHome || onNewProject}
         >
           <span className="rf-mark" aria-hidden="true">
             R

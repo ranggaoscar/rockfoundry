@@ -96,6 +96,13 @@ test.describe("Decision Debt discovery", () => {
       page.getByRole("dialog", { name: /AI provider|settings/i }),
     ).toBeVisible();
     await expect(page.getByText(/Current mode|Mock/i).first()).toBeVisible();
+    await expect(page.getByLabel("Base URL")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Test connection" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Discover models" }),
+    ).toBeVisible();
     await expect(page).not.toHaveURL(/\/settings$/);
 
     await page.goto("/settings");
@@ -103,5 +110,23 @@ test.describe("Decision Debt discovery", () => {
     await expect(
       page.getByRole("dialog", { name: /AI provider|settings/i }),
     ).toBeVisible();
+  });
+
+  test("keeps provider settings usable on a narrow viewport", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Open projects" }).click();
+    await page.getByRole("button", { name: "Settings" }).click();
+    const drawer = page.getByRole("dialog", { name: /AI provider|settings/i });
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByLabel("API key")).toBeVisible();
+    await expect(
+      drawer.getByRole("button", { name: "Save provider" }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: "test-results/provider-settings-mobile.png",
+    });
   });
 });

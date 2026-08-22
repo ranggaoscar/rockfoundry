@@ -1,47 +1,62 @@
 export const dynamic = "force-dynamic";
 
-import { shouldUseMockAi } from "@rockfoundry/ai";
+import { z } from "zod";
+import {
+  clearProviderSettings,
+  publicProviderStatus,
+  requiresApiKey,
+  resolveProviderSettings,
+  saveProviderSettings,
+} from "@/lib/provider-config";
 
-function hostnameOf(value?: string) {
-  if (!value) return null;
-  try {
-    return new URL(value).host;
-  } catch {
-    return null;
-  }
-}
-
-function providerLabel(
-  mode: "mock" | "openai-compatible",
-  host: string | null,
-) {
-  if (mode === "mock") return "Mock";
-  if (!host) return "OpenAI-compatible";
-  if (/11434|ollama/i.test(host)) return "Ollama";
-  if (/9router/i.test(host)) return "9Router";
-  if (/openrouter/i.test(host)) return "OpenRouter";
-  if (/openai\.com/i.test(host)) return "OpenAI";
-  return "OpenAI-compatible";
-}
+const ProviderSettingsSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("mock") }),
+  z.object({
+    mode: z.literal("openai-compatible"),
+    baseUrl: z.string().trim().url(),
+    apiKey: z.string().trim().max(2000).optional(),
+    model: z.string().trim().max(300).optional(),
+  }),
+]);
 
 export async function GET() {
-  const mock = shouldUseMockAi();
-  const mode = mock ? "mock" : "openai-compatible";
-  const host = hostnameOf(process.env.OPENAI_COMPATIBLE_BASE_URL);
-  const missing: string[] = [];
-  if (process.env.AI_PROVIDER_MODE === "openai-compatible") {
-    if (!process.env.OPENAI_COMPATIBLE_API_KEY)
-      missing.push("OPENAI_COMPATIBLE_API_KEY");
-    if (!process.env.OPENAI_COMPATIBLE_BASE_URL)
-      missing.push("OPENAI_COMPATIBLE_BASE_URL");
+  return Response.json(publicProviderStatus());
+}
+
+export async function PUT(request: Request) {
+  const parsed = ProviderSettingsSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return Response.json(
+      { error: "Enter a valid OpenAI-compatible base URL." },
+      { status: 400 },
+    );
   }
-  return Response.json({
-    mode,
-    label: providerLabel(mode, host),
-    model: mock ? null : process.env.OPENAI_COMPATIBLE_MODEL || "gpt-4o-mini",
-    endpoint: mock ? null : host,
-    configured: !mock,
-    missing,
-    source: "environment",
-  });
+  const current = resolveProviderSettings();
+  if (parsed.data.mode === "mock") {
+    saveProviderSettings(parsed.data);
+    return Response.json(publicProviderStatus());
+  }
+  const apiKey =
+    parsed.data.apiKey === undefined
+      ? current.source === "app-data"
+        ? current.apiKey
+        : null
+      : parsed.data.apiKey || null;
+  if (
+    parsed.data.mode === "openai-compatible" &&
+    requiresApiKey(parsed.data.baseUrl) &&
+    !apiKey
+  ) {
+    return Response.json(
+      { error: "An API key is required to save this provider." },
+      { status: 400 },
+    );
+  }
+  saveProviderSettings({ ...parsed.data, apiKey });
+  return Response.json(publicProviderStatus());
+}
+
+export async function DELETE() {
+  clearProviderSettings();
+  return Response.json(publicProviderStatus());
 }

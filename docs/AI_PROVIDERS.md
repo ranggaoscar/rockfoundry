@@ -17,7 +17,7 @@ RockFoundry is free and open source. Users bring their own provider key or choos
 
 V1 needs one active profile. The model and UI should not hardcode a single vendor. Multiple named profiles can be added later.
 
-The current Agentic V1 runtime reads the OpenAI-compatible configuration from local environment variables. The provider settings surface is a UI direction, not yet a persisted multi-provider configuration manager.
+The current Agentic V1 runtime supports one active OpenAI-compatible configuration. Resolve order is: explicit environment configuration, persisted OS-aware application-data configuration, then explicit Mock mode. The runtime resolves this configuration for each gateway request, so saving a profile in Settings does not require a restart. The Settings panel marks environment-managed runtimes and names the controlling `AI_PROVIDER_MODE` and `OPENAI_COMPATIBLE_*` variables.
 
 ## Provider contract
 
@@ -34,7 +34,7 @@ All structured agent output is validated against Zod action schemas before it ca
 
 ## Settings UX
 
-Provider setup is progressive. Do not block first launch with configuration. The settings sheet below is the intended product direction; the current Agentic V1 runtime reads the implemented OpenAI-compatible configuration from local environment variables rather than persisting a multi-provider profile from this UI. When AI is required, open a compact settings sheet:
+Provider setup is progressive. Do not block first launch with configuration. When AI is required, open the compact settings sheet, select a preset, save a local profile, test it, and optionally discover its models:
 
 ```text
 AI Provider
@@ -45,7 +45,7 @@ Model: [ ... ]
 [Test connection]
 ```
 
-The explicit Mock Provider is available for offline demo and test flows. A real provider failure shows a retry/settings action and never silently changes to mock mode.
+The explicit **Offline Mock** preset is available for offline demo and test flows and persists as the active local profile. **Ollama** may be saved and tested without an API key. Use **Clear saved provider** to delete the persisted local profile; an environment-managed profile remains active until its variables are removed. A real provider failure shows a retry/settings action and never silently changes to mock mode.
 
 ## Key storage
 

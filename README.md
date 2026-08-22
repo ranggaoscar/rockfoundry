@@ -59,26 +59,33 @@ my-project/
 
 ## Quick start
 
-**Requirements:** Git, Node.js 20+, pnpm
+**Requirements:** Node.js 20+ and pnpm (Corepack supplies pnpm with modern Node).
 
 ```bash
 git clone https://github.com/ranggaoscar/rockfoundry.git
 cd rockfoundry
+corepack enable
 pnpm install
-pnpm db:generate
-pnpm db:migrate
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). `pnpm dev` safely runs Prisma generate and the idempotent local migration before starting, so a normal first run does not require Prisma commands.
+
+**Download ZIP instead:** GitHub → **Code** → **Download ZIP** → extract → open a terminal in `rockfoundry` → run `corepack enable`, `pnpm install`, and `pnpm dev`.
 
 No account. No hosted backend. No Docker required for the default local run.
 
-5-minute walkthrough: [`DEMO.md`](DEMO.md)
+### First launch
 
-### Optional AI provider (BYOK)
+Start by describing the product. RockFoundry then finds important decisions a coding agent would otherwise invent, records what you confirm, and keeps **Decision Debt** visible: higher debt means more important behavior is still undefined. When the decision work is ready, open **Handoff** for the core **BRD / PRD / ERD** first, followed by the coding-agent constraint package. Give that package to Codex, Claude Code, Cursor, or your preferred coding agent.
 
-Mock mode works offline. For real models, set a local `.env`:
+### Connect your model (BYOK)
+
+Mock mode works offline. On first use, open **Settings** in RockFoundry and choose a provider preset. **Offline Mock** is explicit and persists locally; select it whenever you want deterministic, network-free discovery. The active gateway is resolved for every request, so saved settings take effect without restarting.
+
+For a real provider, save its base URL, model, and API key. Ollama uses `http://localhost:11434/v1` by default and does not require an API key. Use **Clear saved provider** to remove the local profile and return to the default Offline Mock; environment variables still take priority when present.
+
+For automation or a managed local setup, environment variables take priority over app-data settings:
 
 ```bash
 AI_PROVIDER_MODE="openai-compatible"
@@ -87,16 +94,16 @@ OPENAI_COMPATIBLE_API_KEY="your-key"
 OPENAI_COMPATIBLE_MODEL="gpt-4o-mini"
 ```
 
-OpenAI-compatible endpoints also cover OpenRouter, Ollama (compat mode), 9Router, and custom bases. Keys stay local. Never commit them.
+OpenAI-compatible endpoints also cover OpenRouter, Ollama (compat mode), 9Router, and custom bases. Keys are saved only in the OS-aware RockFoundry application-data configuration when entered through Settings; they are never returned by APIs, stored in project data, included in exports, logged, or committed. Settings labels environment-managed runtimes clearly and identifies the variables that control them.
 
 ## What makes it different
 
-| Tool | Job |
-| --- | --- |
-| ChatGPT / Claude | brainstorm and write |
-| Codex / Claude Code / Cursor | implement software |
-| PRD generators | produce documents |
-| **RockFoundry** | find missing decisions before implementation |
+| Tool                         | Job                                          |
+| ---------------------------- | -------------------------------------------- |
+| ChatGPT / Claude             | brainstorm and write                         |
+| Codex / Claude Code / Cursor | implement software                           |
+| PRD generators               | produce documents                            |
+| **RockFoundry**              | find missing decisions before implementation |
 
 RockFoundry keeps structured state behind the chat:
 
@@ -149,14 +156,14 @@ Use the 5-minute script in [`delivery/OSS_DEMO_LAUNCH_CHECKLIST.md`](delivery/OS
 
 ## Docs
 
-| Doc | Use |
-| --- | --- |
+| Doc                                            | Use                     |
+| ---------------------------------------------- | ----------------------- |
 | [`README_START_HERE.md`](README_START_HERE.md) | contributor entry point |
-| [`product/WIN_WEDGE.md`](product/WIN_WEDGE.md) | how we win |
-| [`PRD.md`](PRD.md) | product contract |
-| [`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md) | provider setup |
-| [`docs/PRIVACY.md`](docs/PRIVACY.md) | privacy model |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | how to contribute |
+| [`product/WIN_WEDGE.md`](product/WIN_WEDGE.md) | how we win              |
+| [`PRD.md`](PRD.md)                             | product contract        |
+| [`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md) | provider setup          |
+| [`docs/PRIVACY.md`](docs/PRIVACY.md)           | privacy model           |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)           | how to contribute       |
 
 ## License
 

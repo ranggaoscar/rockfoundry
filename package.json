@@ -24,7 +24,7 @@
     "agentic"
   ],
   "scripts": {
-    "dev": "pnpm --filter web dev",
+    "dev": "pnpm setup && pnpm --filter web dev",
     "predev": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter @rockfoundry/db build",
     "build": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter @rockfoundry/db build && pnpm --filter web build",
     "start": "pnpm --filter web start",
@@ -42,6 +42,7 @@
     "db:migrate": "pnpm --filter @rockfoundry/db exec prisma migrate deploy",
     "db:generate": "pnpm --filter @rockfoundry/db exec prisma generate",
     "db:studio": "pnpm --filter @rockfoundry/db exec prisma studio",
+    "setup": "pnpm db:generate && pnpm db:migrate",
     "clean": "pnpm -r exec rm -rf dist .next"
   },
   "engines": {
