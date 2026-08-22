@@ -199,7 +199,7 @@ export const TASK_TEMPERATURE: Record<string, number> = {
 
 // Task timeout mapping (in ms)
 export const TASK_TIMEOUT: Record<string, number> = {
-  initial_idea_extraction: 60000,
+  initial_idea_extraction: 120000,
   contextual_question_enrichment: 60000,
   ambiguity_analysis: 90000,
   contradiction_review: 90000,
