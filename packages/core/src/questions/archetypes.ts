@@ -90,6 +90,20 @@ function candidate(
  */
 export const GENERIC_DECISION_ARCHETYPES: CandidateDefinition[] = [
   {
+    topic: "product_identity",
+    archetype: "PRODUCT_IDENTITY",
+    title: "Product boundary",
+    category: "PRODUCT",
+    intent: "Decide whether the product is a job-search utility or also a two-sided employer marketplace.",
+    description: "The actor boundary determines the first workflow, permissions, and data model.",
+    affects: ["actors", "product scope", "job posting workflow", "candidate workflow"],
+    risk: { ...baseRisk, workflow: 10, data: 8, permissions: 8, contradiction: 8 },
+    priority: 10,
+    riskWeight: 10,
+    estimatedChangeCost: 10,
+    relevant: (context) => context.productIdentityAmbiguous,
+  },
+  {
     topic: "identity_boundary",
     archetype: "IDENTITY",
     title: "Identity boundary",

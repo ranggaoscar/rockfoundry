@@ -1,5 +1,8 @@
 import { prisma } from "@rockfoundry/db";
 import {
+  AgentRunner,
+  createDefaultToolRegistry,
+  deterministicDiscoveryPlanner,
   detectContradictions,
   mergeExtraction,
   QuestionEngine,
@@ -100,8 +103,38 @@ export async function runInitialDiscovery(
     );
     merged.state.generationMetadata.initialExtractionComplete = true;
     mergeDetectedContradictions(merged.state);
-    const question = nextQuestion(merged.state);
-    merged.state.discovery.activeQuestionId = question?.id;
+    const candidateQuestion = nextQuestion(merged.state);
+    if (!candidateQuestion) throw new Error("NO_DISCOVERY_QUESTION");
+    const runner = new AgentRunner(
+      deterministicDiscoveryPlanner(candidateQuestion),
+      createDefaultToolRegistry(),
+    );
+    const agentResult = await runner.run({
+      project: merged.state,
+      onToolRun: async (activity) => {
+        await prisma.toolRun.create({
+          data: {
+            projectId,
+            toolName: activity.action.type === "CALL_TOOL" ? activity.action.toolName : "agent",
+            status: "COMPLETED",
+            inputSummary: activity.action.rationale || "Agent requested a state check.",
+            outputSummary: activity.observation?.summary || "Tool completed.",
+            startedAt: new Date(Date.now() - activity.durationMs),
+            completedAt: new Date(),
+          },
+        });
+      },
+    });
+    if (agentResult.finalAction.type !== "ASK_USER")
+      throw new Error("AGENT_DID_NOT_SELECT_QUESTION");
+    const question: Question = {
+      ...candidateQuestion,
+      id: agentResult.finalAction.questionId || candidateQuestion.id,
+      text: agentResult.finalAction.question,
+      options: agentResult.finalAction.options,
+      relatedRequirementIds: agentResult.finalAction.relatedRequirementIds,
+    };
+    merged.state.discovery.activeQuestionId = question.id;
     const saved = await saveProjectState(
       projectId,
       merged.state,

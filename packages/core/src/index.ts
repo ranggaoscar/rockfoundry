@@ -13,6 +13,7 @@ export * from "./storage/provider";
 export * from "./jobs";
 export * from "./decision-graph";
 export * from "./agent/actions";
+export * from "./agent/runner";
 export * from "./tools/registry";
 export * from "./eval/invention-harness";
 export * from "./eval/generalization";

@@ -83,6 +83,15 @@ function genericQuestionCopy(
     : "";
 
   switch (candidate.archetype) {
+    case "PRODUCT_IDENTITY":
+      return {
+        text: id
+          ? "Aplikasi ini hanya membantu pencari kerja menemukan lowongan, atau perusahaan juga bisa membuat akun dan memasang lowongan?"
+          : "Does this product only help job seekers discover openings, or can employers also create accounts and post jobs?",
+        recommendation: id
+          ? "Batas aktor ini menentukan alur utama, data yang perlu disimpan, dan izin akses sejak awal."
+          : "This actor boundary determines the core workflow, data model, and permissions from the start.",
+      };
     case "IDENTITY":
       return {
         text: id
@@ -285,6 +294,29 @@ function genericOptions(
       : "There are exceptions we should define first.",
   };
   const byArchetype: Record<string, QuestionOption[]> = {
+    PRODUCT_IDENTITY: [
+      {
+        id: "job_seeker_only",
+        label: id ? "Pencari kerja saja" : "Job seekers only",
+        description: id
+          ? "Platform membantu user menemukan, menyimpan, dan melacak lowongan."
+          : "The product helps people discover, save, and track job openings.",
+      },
+      {
+        id: "two_sided_marketplace",
+        label: id ? "Pencari kerja + perusahaan" : "Job seekers + employers",
+        description: id
+          ? "Perusahaan dapat memasang lowongan dan mengelola kandidat."
+          : "Employers can post openings and manage candidates.",
+      },
+      {
+        id: "not_sure",
+        label: id ? "Belum ditentukan" : "Not decided yet",
+        description: id
+          ? "Bandingkan dua model produk sebelum mengunci scope."
+          : "Compare both product models before locking scope.",
+      },
+    ],
     IDENTITY: [
       {
         id: "shared_identity",

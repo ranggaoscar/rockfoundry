@@ -10,6 +10,7 @@ export type StructuralFact = {
 
 export type StructuralContext = {
   roles: StructuralFact[];
+  productIdentityAmbiguous: boolean;
   entities: StructuralFact[];
   workflows: StructuralFact[];
   channels: StructuralFact[];
@@ -344,8 +345,16 @@ export function extractStructuralContext(
     ...rawBoundaries(state.rawIdea),
     ...locations,
   ]);
+  const productIdentityAmbiguous =
+    /\b(?:mencari pekerjaan|cari kerja|job search|lowongan kerja|job marketplace)\b/i.test(
+      state.rawIdea,
+    ) &&
+    !/\b(?:employer|perusahaan|recruiter|perekrut|pasang lowongan|post jobs?)\b/i.test(
+      state.rawIdea,
+    );
   const context = {
     roles,
+    productIdentityAmbiguous,
     entities,
     workflows,
     channels,

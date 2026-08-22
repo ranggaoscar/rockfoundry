@@ -48,7 +48,13 @@ function scoreCandidate(
         ? 3
         : 0;
 
+  const prerequisiteBonus =
+    context.productIdentityAmbiguous && candidate.topic === "product_identity"
+      ? 10_000
+      : 0;
+
   return (
+    prerequisiteBonus +
     candidate.priority * candidate.riskWeight * 2 +
     riskDimensionScore +
     candidate.estimatedChangeCost * 1.5 +
