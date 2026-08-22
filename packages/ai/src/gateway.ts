@@ -154,10 +154,10 @@ export class NineRouterGateway implements AiGatewayProvider {
       }
 
       let parsed: T;
-      if (req.responseSchema) {
+      if (req.responseFormat === "json" || req.responseSchema) {
         try {
-          parsed = JSON.parse(content);
-        } catch (e) {
+          parsed = JSON.parse(content) as T;
+        } catch {
           throw new Error("Failed to parse JSON response from AI provider");
         }
       } else {

@@ -356,6 +356,7 @@ export class AiGateway {
         },
       ],
       temperature: TASK_TEMPERATURE[taskType],
+      responseFormat: "json",
     });
     const extraction = InitialIdeaExtractionSchema.parse(result.data);
     return {
