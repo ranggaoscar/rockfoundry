@@ -304,24 +304,37 @@
       0 0 0 3px color-mix(in oklch, var(--foreground) 10%, transparent),
       0 9px 28px color-mix(in oklch, var(--foreground) 8%, transparent);
   }
-  .rf-send-button {
+  .rf-send-button,
+  .rf-idea-button {
     display: inline-flex;
-    height: 2rem;
-    width: 2rem;
     align-items: center;
     justify-content: center;
-    border-radius: 0.55rem;
+    border-radius: 0.6rem;
     background: var(--foreground);
     color: var(--background);
     transition:
       opacity 0.16s ease,
-      transform 0.16s ease;
+      transform 0.16s ease,
+      background 0.16s ease;
   }
-  .rf-send-button:hover:not(:disabled) {
-    opacity: 0.82;
+  .rf-send-button {
+    height: 2.25rem;
+    width: 2.25rem;
+  }
+  .rf-idea-button {
+    height: 2.7rem;
+    gap: 0.5rem;
+    padding: 0 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+  .rf-send-button:hover:not(:disabled),
+  .rf-idea-button:hover:not(:disabled) {
+    opacity: 0.9;
     transform: translateY(-1px);
   }
-  .rf-send-button:disabled {
+  .rf-send-button:disabled,
+  .rf-idea-button:disabled {
     cursor: not-allowed;
     opacity: 0.28;
   }

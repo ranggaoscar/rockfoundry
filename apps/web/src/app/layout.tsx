@@ -12,6 +12,11 @@ export const metadata: Metadata = {
   title: "RockFoundry | Product discovery for coding agents",
   description:
     "A local-first agentic product architect that turns rough ideas into BRD, PRD, and ERD documents.",
+  icons: {
+    icon: "/brand/rockfoundry-icon.svg",
+    shortcut: "/brand/rockfoundry-icon.svg",
+    apple: "/brand/rockfoundry-icon.svg",
+  },
 };
 
 export default function RootLayout({

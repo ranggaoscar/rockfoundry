@@ -2,7 +2,7 @@
 
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowUp, Menu } from "lucide-react";
+import { Lightbulb, Menu } from "lucide-react";
 import { SettingsPanel, useProviderStatus } from "@/components/settings-panel";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 
@@ -202,16 +202,17 @@ function HomeWorkspace() {
                 }}
                 placeholder="Describe your idea..."
                 rows={4}
-                className="rf-composer min-h-[132px] w-full resize-none pr-14"
+                className="rf-composer min-h-[132px] w-full resize-none pb-16"
                 disabled={creating}
               />
               <button
-                className="rf-send-button absolute right-3 bottom-3"
+                className="rf-idea-button absolute right-3 bottom-3"
                 type="submit"
                 disabled={!canSubmit}
-                aria-label="Start project"
+                aria-label="Mulai discovery"
               >
-                <ArrowUp className="size-4" />
+                <Lightbulb className="size-[19px]" strokeWidth={2.2} />
+                <span>Mulai discovery</span>
               </button>
               <div className="mt-2 px-1 text-[12px] text-muted-foreground">
                 {creating
