@@ -1311,6 +1311,7 @@ function ContextContent({
                   className="flex items-start justify-between gap-3 border-b border-border/50 pb-2 last:border-0"
                 >
                   <span className="min-w-0 flex-1">{label}</span>
+                  <ProvenanceChip provenance={String(item.source || "USER")} />
                   {canRevise ? (
                     <button
                       type="button"
@@ -1339,21 +1340,39 @@ function ContextContent({
         empty="No high-impact decisions remain open."
       />
       <ContextList
-        title="Assumptions"
-        items={assumptions.map((item: any) => item.statement || String(item))}
-        empty="No assumptions yet."
+        title="Evidence"
+        items={references.map((item) => item.url)}
+        empty="No reference evidence yet."
+        provenance="RESEARCH"
       />
+      <section>
+        <h3 className="mb-2 text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
+          Assumptions (not yet confirmed)
+        </h3>
+        {assumptions.length ? (
+          <ul className="space-y-2 text-sm leading-5">
+            {assumptions.slice(0, 6).map((item: any, index: number) => (
+              <li
+                key={`${item.id || index}`}
+                className="flex items-start justify-between gap-3 border-b border-border/50 pb-2 last:border-0"
+              >
+                <span className="min-w-0 flex-1">
+                  {item.statement || String(item)}
+                </span>
+                <ProvenanceChip provenance="INFERRED" />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No assumptions yet.</p>
+        )}
+      </section>
       <ContextList
         title="Contradictions"
         items={contradictions.map(
           (item: any) => item.explanation || String(item),
         )}
         empty="No contradictions found."
-      />
-      <ContextList
-        title="Evidence"
-        items={references.map((item) => item.url)}
-        empty="No reference evidence yet."
       />
       <section>
         <h3 className="mb-2 text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
@@ -1389,20 +1408,49 @@ function ContextContent({
   );
 }
 
+function ProvenanceChip({ provenance }: { provenance: string }) {
+  const known = ["USER", "RESEARCH", "INFERRED", "SYSTEM"] as const;
+  type Chip = (typeof known)[number];
+  const label = (known as readonly string[]).includes(provenance)
+    ? (provenance as Chip)
+    : provenance.replace(/^REFERENCE_/, "");
+  return (
+    <span
+      className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-medium tracking-[0.05em] text-muted-foreground"
+      title={
+        label === "USER"
+          ? "Dikonfirmasi langsung oleh kamu"
+          : label === "RESEARCH"
+            ? "Bukti dari referensi publik — bukan keputusan"
+            : label === "INFERRED"
+              ? "Kesimpulan sementara — belum dikonfirmasi"
+              : "Dihasilkan sistem RockFoundry"
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
 function ContextList({
   title,
   items,
   empty,
+  provenance,
 }: {
   title: string;
   items: string[];
   empty: string;
+  provenance?: "USER" | "RESEARCH" | "INFERRED" | "SYSTEM";
 }) {
   return (
     <section>
-      <h3 className="mb-2 text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
-        {title}
-      </h3>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
+          {title}
+        </h3>
+        {provenance ? <ProvenanceChip provenance={provenance} /> : null}
+      </div>
       {items.length ? (
         <ul className="space-y-2 text-sm leading-5">
           {items.slice(0, 6).map((item, index) => (
@@ -1436,18 +1484,41 @@ function DocumentsContent({
 }) {
   const status = state.readiness ? projectStatus(state) : "Draft";
   const core = [
-    "BRD.md",
-    "PRD.md",
-    "ERD.md",
-    "DO_NOT_INVENT.md",
-    "AGENT_HANDOFF.md",
+    {
+      file: "BRD.md",
+      description: "Business model, actors, goals, scope, and rules.",
+    },
+    {
+      file: "PRD.md",
+      description: "Product behavior and accepted decisions.",
+    },
+    {
+      file: "ERD.md",
+      description: "Confirmed entities and relationships only.",
+    },
   ];
   const advanced = [
-    "DECISIONS.md",
-    "INVARIANTS.md",
-    "READINESS.md",
-    "AGENT_HANDOFF.md",
-    "decisions.json",
+    {
+      file: "DO_NOT_INVENT.md",
+      description: "Rules the coding agent must not invent.",
+    },
+    {
+      file: "DECISIONS.md",
+      description: "Every confirmed decision with provenance.",
+    },
+    {
+      file: "INVARIANTS.md",
+      description: "Constraints that stay true across the build.",
+    },
+    {
+      file: "READINESS.md",
+      description: "Coverage, Decision Debt, and artifact gaps.",
+    },
+    {
+      file: "AGENT_HANDOFF.md",
+      description: "Start-here brief for the coding agent.",
+    },
+    { file: "decisions.json", description: "Machine-readable decision log." },
   ];
   return (
     <div className="space-y-5 px-5 py-5">
@@ -1463,16 +1534,21 @@ function DocumentsContent({
       </p>
       <section className="space-y-2">
         <h3 className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
-          Handoff core
+          Primary build documents
         </h3>
         {core.map((doc) => (
           <div
-            key={doc}
-            className="flex items-center gap-3 border-b border-border/60 py-3"
+            key={doc.file}
+            className="flex items-start gap-3 border-b border-border/60 py-3"
           >
-            <FileText className="size-4 text-muted-foreground" />
-            <span className="flex-1 text-sm font-medium">{doc}</span>
-            <span className="text-xs text-muted-foreground">
+            <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">{doc.file}</span>
+              <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                {doc.description}
+              </span>
+            </div>
+            <span className="shrink-0 text-xs text-muted-foreground">
               {exportReady ? "Ready" : status}
             </span>
           </div>
@@ -1480,15 +1556,15 @@ function DocumentsContent({
       </section>
       <section>
         <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
-          Advanced handoff
+          Advanced coding-agent package
         </h3>
         <div className="space-y-1">
           {advanced.map((doc) => (
             <div
-              key={doc}
+              key={doc.file}
               className="flex items-center gap-3 py-1.5 text-[13px] text-muted-foreground"
             >
-              <span className="flex-1">{doc}</span>
+              <span className="flex-1 truncate">{doc.file}</span>
               <span className="text-[11px]">
                 {exportReady ? "Ready" : status}
               </span>
