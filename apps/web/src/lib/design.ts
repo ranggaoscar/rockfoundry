@@ -60,6 +60,24 @@ export function logDesignGenerationFailure(error: unknown) {
   console.error(
     `[design-generation] ${failure.task} failed: ${category}${detail ? ` (${detail})` : ""}`,
   );
+  if (cause instanceof z.ZodError) {
+    const safeCause = cause as z.ZodError & { topLevelKeys?: string[] };
+    console.error(
+      `[design-generation] issues: ${safeCause.issues
+        .map((issue) => {
+          const path = issue.path.join(".") || "<root>";
+          const expected =
+            "expected" in issue && typeof issue.expected === "string"
+              ? ` (${issue.expected})`
+              : "";
+          return `${path}: ${issue.code}${expected}`;
+        })
+        .join(", ")}`,
+    );
+    console.error(
+      `[design-generation] topLevelKeys: ${(safeCause.topLevelKeys || []).join(",")}`,
+    );
+  }
 }
 
 const ARTIFACT_TYPES = [

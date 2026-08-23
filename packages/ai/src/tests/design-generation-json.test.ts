@@ -115,6 +115,123 @@ describe("Design generation JSON transport", () => {
     vi.unstubAllGlobals();
   });
 
+  it("repairs one malformed architecture response with the same strict schema and model", async () => {
+    const malformed = { designSpec: { productName: "Job Platform" } };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(JSON.stringify(malformed)))
+      .mockResolvedValueOnce(response(JSON.stringify(architecture)));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+      ),
+    );
+
+    await expect(
+      gateway.runDesignArchitecture({
+        product: { name: "Job Platform" },
+        screenMap: [],
+      }),
+    ).resolves.toMatchObject({
+      architecture: { summary: architecture.summary },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(JSON.parse(call[1].body)).toMatchObject({
+        model: "design-model",
+        response_format: { type: "json_schema", json_schema: { strict: true } },
+      });
+    }
+    const repairPayload = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(repairPayload.messages.at(-1).content).toContain(
+      "Correct the previous JSON",
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("fails after exactly one invalid architecture repair", async () => {
+    const malformed = { designSpec: { productName: "Job Platform" } };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(response(JSON.stringify(malformed)));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+      ),
+    );
+
+    await expect(
+      gateway.runDesignArchitecture({ product: {}, screenMap: [] }),
+    ).rejects.toBeInstanceOf(Error);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
+  it("repairs one malformed prototype response with the same strict schema and model", async () => {
+    const malformed = { files: [{ path: "index.html", content: "<main />" }] };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(JSON.stringify(malformed)))
+      .mockResolvedValueOnce(response(JSON.stringify(prototype)));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+      ),
+    );
+
+    await expect(
+      gateway.runPrototypeGeneration({
+        product: { name: "Job Platform" },
+        architecture,
+        screenMap: [],
+      }),
+    ).resolves.toMatchObject({ prototype: { summary: prototype.summary } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(JSON.parse(call[1].body)).toMatchObject({
+        model: "design-model",
+        response_format: { type: "json_schema", json_schema: { strict: true } },
+      });
+    }
+    vi.unstubAllGlobals();
+  });
+
+  it("does not repair provider 4xx responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      text: async () => '{"error":"schema rejected"}',
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+      ),
+    );
+
+    await expect(
+      gateway.runPrototypeGeneration({
+        product: {},
+        architecture: {},
+        screenMap: [],
+      }),
+    ).rejects.toThrow("422");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   it("surfaces strict-schema provider 4xx without a json_object downgrade", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

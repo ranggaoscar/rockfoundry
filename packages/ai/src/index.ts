@@ -347,10 +347,58 @@ const PrototypeGenerationResponseSchema = z.toJSONSchema(
   PrototypeGenerationOutputSchema,
 );
 
+type SafeZodError = z.ZodError & { topLevelKeys?: string[] };
+
+function annotateZodError(error: z.ZodError, data: unknown): SafeZodError {
+  const topLevelKeys =
+    data && typeof data === "object" && !Array.isArray(data)
+      ? Object.keys(data as Record<string, unknown>).sort()
+      : [];
+  return Object.assign(error, { topLevelKeys });
+}
+
 export class AiGateway {
   constructor(
     private provider: AiGatewayProvider = new MockGatewayProvider(),
   ) {}
+
+  private async completeWithSchemaRepair<T>(
+    request: InferenceRequest<unknown>,
+    schema: z.ZodType<T>,
+  ): Promise<InferenceResponse<unknown>> {
+    const initial = await this.provider.complete<unknown>(request);
+    const initialValidation = schema.safeParse(initial.data);
+    if (initialValidation.success) return initial;
+
+    const issues = initialValidation.error.issues.map((issue) => ({
+      path: issue.path.join("."),
+      code: issue.code,
+      expected:
+        "expected" in issue && typeof issue.expected === "string"
+          ? issue.expected
+          : undefined,
+      message: issue.message,
+    }));
+    const repaired = await this.provider.complete<unknown>({
+      ...request,
+      messages: [
+        ...request.messages,
+        {
+          role: "user",
+          content: JSON.stringify({
+            instruction:
+              "Correct the previous JSON so it conforms exactly to the supplied structured-output schema. Preserve valid content. Do not add product behavior, actors, workflows, or routes.",
+            previousJson: initial.data,
+            zodIssues: issues,
+          }),
+        },
+      ],
+    });
+    const repairedValidation = schema.safeParse(repaired.data);
+    if (!repairedValidation.success)
+      throw annotateZodError(repairedValidation.error, repaired.data);
+    return repaired;
+  }
 
   async runPlannerAction<T>(input: {
     system: string;
@@ -373,27 +421,30 @@ export class AiGateway {
     product: Record<string, unknown>;
     screenMap: unknown[];
   }) {
-    const result = await this.provider.complete<unknown>({
-      taskType: "design_architecture",
-      modelTier: "strong",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Return JSON only. You are a product design architect. Product truth and Screen Map are authoritative. Do not add product behavior, actors, routes, or workflows. Produce a designSpec with visual direction, hierarchy, responsive behavior, interaction notes, and explicit assumptions.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            product: input.product,
-            screenMap: input.screenMap,
-          }),
-        },
-      ],
-      temperature: 0.25,
-      responseFormat: "json",
-      responseSchema: DesignArchitectureResponseSchema,
-    });
+    const result = await this.completeWithSchemaRepair(
+      {
+        taskType: "design_architecture",
+        modelTier: "strong",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Return JSON only. You are a product design architect. Product truth and Screen Map are authoritative. Do not add product behavior, actors, routes, or workflows. Produce a designSpec with visual direction, hierarchy, responsive behavior, interaction notes, and explicit assumptions.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              product: input.product,
+              screenMap: input.screenMap,
+            }),
+          },
+        ],
+        temperature: 0.25,
+        responseFormat: "json",
+        responseSchema: DesignArchitectureResponseSchema,
+      },
+      DesignArchitectureOutputSchema,
+    );
     const architecture = DesignArchitectureOutputSchema.parse(result.data);
     return {
       architecture,
@@ -410,30 +461,33 @@ export class AiGateway {
     revisionRequest?: string;
     existingFiles?: Array<{ path: string; content: string }>;
   }) {
-    const result = await this.provider.complete<unknown>({
-      taskType: "prototype_generation",
-      modelTier: "strong",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Return JSON only. Produce exactly index.html, styles.css, and app.js. Use only local files: no CDN, no external scripts/styles, no fetch/XHR/WebSocket/iframe/object/embed, no top/parent navigation. The Screen Map is authoritative: preserve every route exactly and do not add routes. HTML must include main and nav. CSS must include an @media responsive rule. JavaScript may only handle local hash routing and parent postMessage component selection. If revising, modify the existing prototype visibly while retaining all declared routes.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            product: input.product,
-            architecture: input.architecture,
-            screenMap: input.screenMap,
-            revisionRequest: input.revisionRequest || null,
-            existingFiles: input.existingFiles || null,
-          }),
-        },
-      ],
-      temperature: 0.35,
-      responseFormat: "json",
-      responseSchema: PrototypeGenerationResponseSchema,
-    });
+    const result = await this.completeWithSchemaRepair(
+      {
+        taskType: "prototype_generation",
+        modelTier: "strong",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Return JSON only. Produce exactly index.html, styles.css, and app.js. Use only local files: no CDN, no external scripts/styles, no fetch/XHR/WebSocket/iframe/object/embed, no top/parent navigation. The Screen Map is authoritative: preserve every route exactly and do not add routes. HTML must include main and nav. CSS must include an @media responsive rule. JavaScript may only handle local hash routing and parent postMessage component selection. If revising, modify the existing prototype visibly while retaining all declared routes.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              product: input.product,
+              architecture: input.architecture,
+              screenMap: input.screenMap,
+              revisionRequest: input.revisionRequest || null,
+              existingFiles: input.existingFiles || null,
+            }),
+          },
+        ],
+        temperature: 0.35,
+        responseFormat: "json",
+        responseSchema: PrototypeGenerationResponseSchema,
+      },
+      PrototypeGenerationOutputSchema,
+    );
     const prototype = PrototypeGenerationOutputSchema.parse(result.data);
     return {
       prototype,
