@@ -38,7 +38,20 @@ describe("AgentRunner", () => {
               relatedRequirementIds: ["product_identity"],
               affects: ["actors"],
               answerType: "SINGLE_CHOICE",
-              options: [{ id: "seekers", label: "Pencari kerja saja" }],
+              options: [
+                {
+                  id: "job_seeker_only",
+                  label: "Pencari kerja saja",
+                  description:
+                    "Platform membantu user menemukan dan melacak lowongan.",
+                },
+                {
+                  id: "two_sided_marketplace",
+                  label: "Pencari kerja + perusahaan",
+                  description:
+                    "Perusahaan dapat memasang lowongan dan mengelola kandidat.",
+                },
+              ],
               priority: 10,
               reasonAsked: "Menentukan batas produk.",
             }
@@ -58,12 +71,24 @@ describe("AgentRunner", () => {
   });
 
   it("stops safely for an unknown tool instead of fabricating an observation", async () => {
-    const project = createInitialProjectState({ id: "unknown", name: "Unknown" });
+    const project = createInitialProjectState({
+      id: "unknown",
+      name: "Unknown",
+    });
     const runner = new AgentRunner(
-      { nextAction: () => ({ id: "bad", type: "CALL_TOOL", toolName: "missing", input: {} }) },
+      {
+        nextAction: () => ({
+          id: "bad",
+          type: "CALL_TOOL",
+          toolName: "missing",
+          input: {},
+        }),
+      },
       createDefaultToolRegistry(),
     );
 
-    await expect(runner.run({ project })).rejects.toThrow("Unknown tool: missing");
+    await expect(runner.run({ project })).rejects.toThrow(
+      "Unknown tool: missing",
+    );
   });
 });

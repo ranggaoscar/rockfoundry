@@ -202,17 +202,25 @@ function HomeWorkspace() {
                 }}
                 placeholder="Describe your idea..."
                 rows={4}
-                className="rf-composer min-h-[132px] w-full resize-none pb-16"
+                className="rf-composer min-h-[132px] w-full resize-none pb-14"
                 disabled={creating}
               />
               <button
                 className="rf-idea-button absolute right-3 bottom-3"
                 type="submit"
                 disabled={!canSubmit}
-                aria-label="Mulai discovery"
+                aria-label={
+                  /\b(saya|mau|ingin|bikin|buat)\b/i.test(idea)
+                    ? "Mulai discovery"
+                    : "Start discovery"
+                }
               >
-                <Lightbulb className="size-[19px]" strokeWidth={2.2} />
-                <span>Mulai discovery</span>
+                <Lightbulb className="size-4" strokeWidth={2.2} />
+                <span>
+                  {/\b(saya|mau|ingin|bikin|buat)\b/i.test(idea)
+                    ? "Mulai discovery"
+                    : "Start discovery"}
+                </span>
               </button>
               <div className="mt-2 px-1 text-[12px] text-muted-foreground">
                 {creating

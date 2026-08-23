@@ -20,6 +20,12 @@ const genericPatterns = [
 const technicalPattern =
   /\b(postgres|postgresql|sqlite|mysql|database|orm|rest|graphql|uuid|integer id|server actions|api design|tech stack)\b/i;
 
+const genericOptionPattern =
+  /^(?:tetapkan satu aturan tetap|ada pengecualian terukur|set one explicit rule|allow defined exceptions)$/i;
+
+const avoidableIndonesianJargon =
+  /\b(?:record|role|acceptance criteria|visibility boundary|ownership)\b/i;
+
 function knownContextTerms(state: ProjectState) {
   const context = extractStructuralContext(state);
   return [
@@ -61,6 +67,33 @@ export function validateQuestionQuality(
     );
   if (question.relatedRequirementIds.length === 0)
     reasons.push("The question is not mapped to an unresolved requirement.");
+  if (
+    question.topic &&
+    state.decisions.some(
+      (decision) =>
+        decision.topic === question.topic && decision.status === "ACCEPTED",
+    )
+  )
+    reasons.push("This decision is already confirmed by the user.");
+  if (
+    (question.options || []).length > 0 &&
+    (question.options || []).length < 2
+  )
+    reasons.push("A choice question needs at least two meaningful options.");
+  if (
+    (question.options || []).some((option) =>
+      genericOptionPattern.test(option.label.trim()),
+    )
+  )
+    reasons.push(
+      "Options use a generic policy placeholder instead of answering the decision.",
+    );
+  if (
+    (question.options || []).some(
+      (option) => !option.description || option.description.trim().length < 8,
+    )
+  )
+    reasons.push("Each option needs a useful trade-off description.");
   if (question.contextReferences.length === 0)
     reasons.push("The question does not point to known project context.");
 
