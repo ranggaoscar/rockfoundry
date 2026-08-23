@@ -13,6 +13,7 @@ import {
   saveProjectState,
 } from "@/lib/local-project";
 import { persistQuestionMessage, persistUserMessage } from "@/lib/discovery";
+import { mapNaturalAnswer } from "@/lib/conversation";
 import { z } from "zod";
 
 const AnswerSchema = z
@@ -130,7 +131,7 @@ export async function POST(
       });
     }
 
-    const answer = body.answer ?? body.value!;
+    const answerRaw = body.answer ?? body.value!;
     if (
       body.mode !== "revise" &&
       body.questionId &&
@@ -139,7 +140,7 @@ export async function POST(
     ) {
       return jsonError("That discovery question is no longer active.", 409);
     }
-    let currentQuestion =
+    let currentQuestion: ReturnType<QuestionEngine["resolveQuestion"]> | null =
       (body.questionId
         ? engine.resolveQuestion(current, body.questionId)
         : null) ||
@@ -157,6 +158,11 @@ export async function POST(
 
     if (!currentQuestion)
       return jsonError("That discovery question is no longer active.", 409);
+
+    const answer =
+      typeof answerRaw === "string"
+        ? (mapNaturalAnswer(answerRaw, currentQuestion) ?? answerRaw)
+        : answerRaw;
 
     const processed = engine.processAnswer(
       current,

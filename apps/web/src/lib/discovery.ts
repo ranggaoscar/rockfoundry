@@ -1,7 +1,6 @@
 import { prisma } from "@rockfoundry/db";
 import {
   AgentRunner,
-  createDefaultToolRegistry,
   deterministicDiscoveryPlanner,
   generateGenericDecisionCandidates,
   genericQuestionForTopic,
@@ -13,6 +12,7 @@ import {
 } from "@rockfoundry/core";
 import { getAiGateway } from "./ai-provider";
 import { createModelDiscoveryPlanner } from "./agent-planner";
+import { createServerToolRegistry } from "./server-tools";
 import {
   getLocalProject,
   parseProjectState,
@@ -106,13 +106,19 @@ export async function runInitialDiscovery(
     );
     merged.state.generationMetadata.initialExtractionComplete = true;
     mergeDetectedContradictions(merged.state);
-    const candidates = generateGenericDecisionCandidates(merged.state).slice(0, 5);
+    const candidates = generateGenericDecisionCandidates(merged.state).slice(
+      0,
+      5,
+    );
     const candidateQuestions = candidates
-      .map((candidate) => genericQuestionForTopic(merged.state, candidate.topic))
+      .map((candidate) =>
+        genericQuestionForTopic(merged.state, candidate.topic),
+      )
       .filter((question): question is Question => Boolean(question));
-    const candidateQuestion = candidateQuestions[0] || nextQuestion(merged.state);
+    const candidateQuestion =
+      candidateQuestions[0] || nextQuestion(merged.state);
     if (!candidateQuestion) throw new Error("NO_DISCOVERY_QUESTION");
-    const tools = createDefaultToolRegistry();
+    const tools = createServerToolRegistry();
     const planner =
       createModelDiscoveryPlanner(candidates) ||
       deterministicDiscoveryPlanner(candidateQuestion);
@@ -125,8 +131,12 @@ export async function runInitialDiscovery(
       questionForAction: (action) => {
         if (action.type !== "ASK_USER") return undefined;
         return (
-          candidateQuestions.find((question) => question.id === action.questionId) ||
-          candidateQuestions.find((question) => question.topic === action.questionId) ||
+          candidateQuestions.find(
+            (question) => question.id === action.questionId,
+          ) ||
+          candidateQuestions.find(
+            (question) => question.topic === action.questionId,
+          ) ||
           candidateQuestion
         );
       },
@@ -134,9 +144,13 @@ export async function runInitialDiscovery(
         await prisma.toolRun.create({
           data: {
             projectId,
-            toolName: activity.action.type === "CALL_TOOL" ? activity.action.toolName : "agent",
+            toolName:
+              activity.action.type === "CALL_TOOL"
+                ? activity.action.toolName
+                : "agent",
             status: "COMPLETED",
-            inputSummary: activity.action.rationale || "Agent requested a state check.",
+            inputSummary:
+              activity.action.rationale || "Agent requested a state check.",
             outputSummary: activity.observation?.summary || "Tool completed.",
             startedAt: new Date(Date.now() - activity.durationMs),
             completedAt: new Date(),
