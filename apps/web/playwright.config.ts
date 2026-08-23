@@ -8,11 +8,52 @@ const managedProvider = process.env.PLAYWRIGHT_MANAGED_PROVIDER === "true";
 // Playwright's spawned local server; production runtime never sets it.
 const mockSearch = process.env.PLAYWRIGHT_MOCK_SEARCH !== "false";
 const plannerFailure = process.env.PLAYWRIGHT_PLANNER_FAILURE === "true";
-const providerEnvironment = managedProvider
-  ? "set AI_PROVIDER_MODE=openai-compatible&& set OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1&& set OPENAI_COMPATIBLE_API_KEY=test-demo-key&& set OPENAI_COMPATIBLE_MODEL=demo-test-model&& "
-  : plannerFailure
-    ? "set AI_PROVIDER_MODE=openai-compatible&& set OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:1/v1&& set OPENAI_COMPATIBLE_API_KEY=fake-compatible-key&& set OPENAI_COMPATIBLE_MODEL=fake-compatible-model&& "
-    : "set AI_PROVIDER_MODE=mock&& set OPENAI_COMPATIBLE_BASE_URL=&& set OPENAI_COMPATIBLE_API_KEY=&& set OPENAI_COMPATIBLE_MODEL=&& ";
+type PlaywrightEnvironment = Record<string, string | undefined>;
+
+export function resolvePlaywrightProviderEnvironment(
+  env: PlaywrightEnvironment = process.env,
+) {
+  if (env.PLAYWRIGHT_MANAGED_PROVIDER === "true")
+    return {
+      AI_PROVIDER_MODE: "openai-compatible",
+      OPENAI_COMPATIBLE_BASE_URL: "https://api.openai.com/v1",
+      OPENAI_COMPATIBLE_API_KEY: "test-demo-key",
+      OPENAI_COMPATIBLE_MODEL: "demo-test-model",
+    };
+  if (env.PLAYWRIGHT_PLANNER_FAILURE === "true")
+    return {
+      AI_PROVIDER_MODE: "openai-compatible",
+      OPENAI_COMPATIBLE_BASE_URL: "http://127.0.0.1:1/v1",
+      OPENAI_COMPATIBLE_API_KEY: "fake-compatible-key",
+      OPENAI_COMPATIBLE_MODEL: "fake-compatible-model",
+    };
+  return {
+    AI_PROVIDER_MODE: "mock",
+    OPENAI_COMPATIBLE_BASE_URL: "",
+    OPENAI_COMPATIBLE_API_KEY: "",
+    OPENAI_COMPATIBLE_MODEL: "",
+  };
+}
+
+export function createPlaywrightWebServer(
+  env: PlaywrightEnvironment = process.env,
+) {
+  const port = Number(env.PLAYWRIGHT_PORT || 3100);
+  const publicDemo = env.PLAYWRIGHT_PUBLIC_DEMO === "true";
+  const mockSearch = env.PLAYWRIGHT_MOCK_SEARCH !== "false";
+  return {
+    command: `pnpm exec next dev --hostname 127.0.0.1 --port ${port}`,
+    url: env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`,
+    reuseExistingServer: false,
+    timeout: 120_000,
+    env: {
+      ...process.env,
+      ROCKFOUNDRY_PUBLIC_DEMO: publicDemo ? "true" : "false",
+      PLAYWRIGHT_MOCK_SEARCH: mockSearch ? "true" : "false",
+      ...resolvePlaywrightProviderEnvironment(env),
+    },
+  };
+}
 
 export default defineConfig({
   testDir: "./playwright",
@@ -29,12 +70,7 @@ export default defineConfig({
   },
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
-    : {
-        command: `cmd.exe /c "set ROCKFOUNDRY_PUBLIC_DEMO=${publicDemo ? "true" : "false"}&& set PLAYWRIGHT_MOCK_SEARCH=${mockSearch ? "true" : "false"}&& ${providerEnvironment}pnpm exec next dev --hostname 127.0.0.1 --port ${port}"`,
-        url: baseURL,
-        reuseExistingServer: false,
-        timeout: 120_000,
-      },
+    : createPlaywrightWebServer(),
   projects: [
     {
       name: "chromium",
