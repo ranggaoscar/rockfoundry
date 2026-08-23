@@ -952,7 +952,13 @@ export class QuestionEngine {
   ): Question | null {
     const candidate = topicQuestion(state, topic);
     if (!candidate) return null;
-    if (!validateQuestionQuality(candidate, state).accepted) return null;
+    // A revision legitimately re-opens a confirmed decision (supersede flow),
+    // so the "already answered" rejection does not apply here.
+    if (
+      !validateQuestionQuality(candidate, state, { allowDecidedTopic: true })
+        .accepted
+    )
+      return null;
     return {
       ...candidate,
       reasonAsked: `${candidate.reasonAsked} You can revise the previous answer; the prior decision will be marked superseded.`,

@@ -54,6 +54,7 @@ function knownContextTerms(state: ProjectState) {
 export function validateQuestionQuality(
   question: Question,
   state: ProjectState,
+  options: { allowDecidedTopic?: boolean } = {},
 ): QuestionQualityResult {
   const reasons: string[] = [];
   const text = question.text.trim();
@@ -68,6 +69,7 @@ export function validateQuestionQuality(
   if (question.relatedRequirementIds.length === 0)
     reasons.push("The question is not mapped to an unresolved requirement.");
   if (
+    !options.allowDecidedTopic &&
     question.topic &&
     state.decisions.some(
       (decision) =>

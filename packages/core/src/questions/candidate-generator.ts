@@ -367,6 +367,236 @@ function genericOptions(
           : "Ownership can move without deleting history.",
       },
     ],
+    ROLE_BOUNDARIES: [
+      {
+        id: "role_scoped_access",
+        label: id
+          ? "Tiap role melihat bagian tugasnya"
+          : "Each role sees its own scope",
+        description: id
+          ? "Akses mengikuti tanggung jawab nyata tiap peran."
+          : "Access follows each role's real responsibility.",
+      },
+      {
+        id: "shared_full_access",
+        label: id ? "Semua role melihat semua" : "All roles see everything",
+        description: id
+          ? "Kolaborasi mudah, batas data lebih longgar."
+          : "Easy collaboration, looser data boundaries.",
+      },
+    ],
+    LIFECYCLE: [
+      {
+        id: "simple_lifecycle",
+        label: id
+          ? "Sederhana: dibuat lalu selesai"
+          : "Simple: created then done",
+        description: id
+          ? "Cukup dua status utama tanpa tahap antara."
+          : "Two main states without intermediate steps.",
+      },
+      {
+        id: "rich_lifecycle",
+        label: id
+          ? "Ada tahap menunggu, dibatalkan, dan ditunda"
+          : "Includes pending, cancelled, deferred",
+        description: id
+          ? "Proses nyata sering butuh status antara ini."
+          : "Real processes usually need these intermediate states.",
+      },
+    ],
+    CONFLICT_CAPACITY: [
+      {
+        id: "reject_conflict",
+        label: id ? "Tolak permintaan bentrok" : "Reject conflicting requests",
+        description: id
+          ? "Slot/resource hanya boleh dipakai satu peminjaman."
+          : "A slot or resource serves only one request.",
+      },
+      {
+        id: "queue_with_approval",
+        label: id
+          ? "Antrikan atau override dengan persetujuan"
+          : "Queue or override with approval",
+        description: id
+          ? "Konflik tidak hilang, tapi bisa lewat jalur persetujuan."
+          : "Conflicts route through an explicit approval path.",
+      },
+    ],
+    ASSIGNMENT: [
+      {
+        id: "creator_handles",
+        label: id
+          ? "Pembuat record menangani sendiri"
+          : "Creator handles it directly",
+        description: id
+          ? "Tanggung jawab jelas sejak record dibuat."
+          : "Responsibility is clear from creation.",
+      },
+      {
+        id: "reassignable_with_history",
+        label: id
+          ? "Bisa dipindah dengan histori"
+          : "Reassignable with history",
+        description: id
+          ? "Perpindahan tanggung jawab tetap tercatat."
+          : "Ownership changes stay fully recorded.",
+      },
+    ],
+    CROSS_BOUNDARY: [
+      {
+        id: "rules_follow_record",
+        label: id
+          ? "Aturan ikut record saat pindah"
+          : "Rules move with the record",
+        description: id
+          ? "Akses dan histori konsisten lintas unit."
+          : "Access and history stay consistent across units.",
+      },
+      {
+        id: "origin_keeps_rules",
+        label: id
+          ? "Unit asal tetap pemilik aturan"
+          : "Origin keeps ownership rules",
+        description: id
+          ? "Record baru mengikuti aturan unit tujuan."
+          : "The new location applies its own rules.",
+      },
+    ],
+    DUPLICATE: [
+      {
+        id: "merge_with_review",
+        label: id
+          ? "Gabungkan dengan langkah review"
+          : "Merge with a review step",
+        description: id
+          ? "Data ganda disatukan setelah diperiksa."
+          : "Duplicates combine after human review.",
+      },
+      {
+        id: "flag_for_review",
+        label: id
+          ? "Tandai dulu, jangan digabung otomatis"
+          : "Flag first, never auto-merge",
+        description: id
+          ? "Penggabungan hanya lewat keputusan manusia."
+          : "Merging only happens by explicit decision.",
+      },
+    ],
+    HISTORY: [
+      {
+        id: "full_change_history",
+        label: id ? "Semua perubahan tercatat" : "Every change is recorded",
+        description: id
+          ? "Audit penuh untuk koreksi dan kepercayaan data."
+          : "Full audit trail for corrections and trust.",
+      },
+      {
+        id: "key_changes_only",
+        label: id ? "Hanya perubahan penting" : "Only key changes",
+        description: id
+          ? "Histori ringkas, fokus pada perubahan material."
+          : "Compact history focused on material changes.",
+      },
+    ],
+    COMPLETION: [
+      {
+        id: "explicit_completion_evidence",
+        label: id
+          ? "Harus ada bukti eksplisit selesai"
+          : "Requires explicit completion evidence",
+        description: id
+          ? "Status selesai hanya lewat konfirmasi nyata."
+          : "Completion requires an explicit confirmation.",
+      },
+      {
+        id: "auto_complete_last_step",
+        label: id
+          ? "Selesai otomatis di langkah terakhir"
+          : "Auto-completes on the last step",
+        description: id
+          ? "Lebih cepat, tapi risiko salah tandai selesai."
+          : "Faster, but risks premature completion.",
+      },
+    ],
+    APPROVAL: [
+      {
+        id: "dedicated_approver",
+        label: id ? "Role khusus yang menyetujui" : "A dedicated approver role",
+        description: id
+          ? "Persetujuan terpisah dari pembuat record."
+          : "Approval stays separate from creation.",
+      },
+      {
+        id: "creator_self_approves",
+        label: id
+          ? "Pembuat boleh menyetujui sendiri"
+          : "Creator may self-approve",
+        description: id
+          ? "Lebih cepat untuk tim kecil, kontrol lebih longgar."
+          : "Faster for small teams, weaker control.",
+      },
+    ],
+    MONEY: [
+      {
+        id: "separate_money_state",
+        label: id
+          ? "Status uang terpisah dari status proses"
+          : "Money state separate from workflow state",
+        description: id
+          ? "Refund dan gagal bayar tidak merusak status kerja."
+          : "Refunds and failures never corrupt workflow state.",
+      },
+      {
+        id: "money_follows_workflow",
+        label: id
+          ? "Status uang mengikuti proses utama"
+          : "Money follows the main process",
+        description: id
+          ? "Sederhana, tapi pembatalan jadi ambigu."
+          : "Simpler, but cancellation becomes ambiguous.",
+      },
+    ],
+    RETENTION: [
+      {
+        id: "manual_deletion",
+        label: id
+          ? "Disimpan sampai dihapus manual"
+          : "Kept until manually deleted",
+        description: id
+          ? "Kontrol penuh di tangan pengguna."
+          : "Users keep full control of retention.",
+      },
+      {
+        id: "archival_policy",
+        label: id
+          ? "Diarsipkan otomatis setelah periode"
+          : "Auto-archived after a period",
+        description: id
+          ? "Data lama tidak menumpuk tanpa aturan."
+          : "Old data does not accumulate indefinitely.",
+      },
+    ],
+    RELATIONSHIPS: [
+      {
+        id: "required_core_links",
+        label: id
+          ? "Data utama wajib saling terhubung"
+          : "Core records must stay linked",
+        description: id
+          ? "Histori dan konteks selalu bisa dilacak bersama."
+          : "History and context stay traceable together.",
+      },
+      {
+        id: "loose_optional_links",
+        label: id
+          ? "Relasi longgar dan opsional"
+          : "Loose optional relationships",
+        description: id
+          ? "Fleksibel, risiko konteks terpisah lebih tinggi."
+          : "Flexible, higher risk of orphaned context.",
+      },
+    ],
     WORKFLOW_ANCHOR: [
       {
         id: "contact_first",
