@@ -132,6 +132,24 @@ export const DesignSpecSchema = z.object({
 });
 export type DesignSpec = z.infer<typeof DesignSpecSchema>;
 
+export const DesignArchitectureOutputSchema = z.object({
+  designSpec: DesignSpecSchema,
+  summary: z.string(),
+  assumptions: z.array(z.string()).default([]),
+});
+export type DesignArchitectureOutput = z.infer<
+  typeof DesignArchitectureOutputSchema
+>;
+
+export const PrototypeGenerationOutputSchema = z.object({
+  files: z.array(PrototypeFileSchema).min(3).max(3),
+  summary: z.string(),
+  assumptions: z.array(z.string()).default([]),
+});
+export type PrototypeGenerationOutput = z.infer<
+  typeof PrototypeGenerationOutputSchema
+>;
+
 export const DesignGenerationResultSchema = z.object({
   designSpec: DesignSpecSchema,
   screenMap: z.array(DesignScreenSchema),

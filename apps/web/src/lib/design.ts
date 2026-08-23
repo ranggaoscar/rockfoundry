@@ -8,10 +8,13 @@ import {
   generateMockPrototype,
   markDesignStale,
   validatePrototypeFiles,
+  DesignGenerationResultSchema,
+  deriveScreenMap,
   type DesignGenerationResult,
   type ProjectState,
 } from "@rockfoundry/core";
 import { resolveProviderSettings } from "./provider-config";
+import { getAiGateway } from "./ai-provider";
 import { saveProjectState } from "./local-project";
 import { createServerToolRegistry } from "./server-tools";
 import { AgentRunner } from "@rockfoundry/core";
@@ -77,6 +80,57 @@ export function designSnapshot(state: ProjectState) {
   };
 }
 
+function designProductContext(state: ProjectState) {
+  return {
+    name: state.name,
+    summary: state.normalizedSummary || state.rawIdea,
+    productType: state.productType || null,
+    targetUsers: state.targetUsers,
+    roles: state.roles,
+    entities: state.entities,
+    workflows: state.workflows,
+    features: state.features,
+    decisions: state.decisions
+      .filter((decision) => decision.status === "ACCEPTED")
+      .map(({ topic, decision, affects }) => ({ topic, decision, affects })),
+    assumptions: state.assumptions
+      .filter((assumption) => !assumption.resolved)
+      .map((assumption) => assumption.statement),
+  };
+}
+
+async function generateWithRealProvider(
+  state: ProjectState,
+  input: { request?: string; existing?: DesignGenerationResult } = {},
+): Promise<DesignGenerationResult> {
+  const gateway = getAiGateway();
+  const product = designProductContext(state);
+  const screenMap = state.studio.screenMap.length
+    ? state.studio.screenMap
+    : deriveScreenMap(state);
+  const architecture = await gateway.runDesignArchitecture({
+    product,
+    screenMap,
+  });
+  const prototype = await gateway.runPrototypeGeneration({
+    product,
+    architecture: architecture.architecture,
+    screenMap,
+    revisionRequest: input.request,
+    existingFiles: input.existing?.files,
+  });
+  return DesignGenerationResultSchema.parse({
+    designSpec: architecture.architecture.designSpec,
+    screenMap,
+    files: prototype.prototype.files,
+    summary: prototype.prototype.summary || architecture.architecture.summary,
+    assumptions: [
+      ...architecture.architecture.assumptions,
+      ...prototype.prototype.assumptions,
+    ],
+  });
+}
+
 export async function generateProjectDesign(
   projectId: string,
   state: ProjectState,
@@ -85,7 +139,11 @@ export async function generateProjectDesign(
 ) {
   const readiness = evaluateDesignReadiness(state);
   if (readiness.level === "BLOCKED") throw new Error("DESIGN_BLOCKED");
-  const generated = generateMockPrototype(state, { request });
+  const settings = resolveProviderSettings();
+  const generated =
+    settings.mode === "openai-compatible"
+      ? await generateWithRealProvider(state, { request })
+      : generateMockPrototype(state, { request });
   const validation = validatePrototypeFiles(
     generated.files,
     generated.screenMap,
@@ -137,10 +195,16 @@ export async function reviseProjectDesign(
     summary: pack.summary || "",
     assumptions: state.studio.assumptions,
   };
+  const settings = resolveProviderSettings();
   const generated =
-    impact === "VISUAL_ONLY" || /compact/i.test(text)
-      ? applyVisualRevision(current, text)
-      : generateMockPrototype(state, { request: text });
+    settings.mode === "openai-compatible"
+      ? await generateWithRealProvider(state, {
+          request: text,
+          existing: current,
+        })
+      : impact === "VISUAL_ONLY" || /compact/i.test(text)
+        ? applyVisualRevision(current, text)
+        : generateMockPrototype(state, { request: text });
   const validation = validatePrototypeFiles(
     generated.files,
     generated.screenMap,

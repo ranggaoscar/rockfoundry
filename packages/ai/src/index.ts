@@ -1,6 +1,8 @@
 import {
+  DesignArchitectureOutputSchema,
   InitialIdeaExtraction,
   InitialIdeaExtractionSchema,
+  PrototypeGenerationOutputSchema,
 } from "@rockfoundry/core";
 import {
   AiGatewayProvider,
@@ -357,6 +359,78 @@ export class AiGateway {
       responseFormat: "json",
     });
     return result;
+  }
+
+  async runDesignArchitecture(input: {
+    product: Record<string, unknown>;
+    screenMap: unknown[];
+  }) {
+    const result = await this.provider.complete<unknown>({
+      taskType: "design_architecture",
+      modelTier: "strong",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return JSON only. You are a product design architect. Product truth and Screen Map are authoritative. Do not add product behavior, actors, routes, or workflows. Produce a designSpec with visual direction, hierarchy, responsive behavior, interaction notes, and explicit assumptions.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            product: input.product,
+            screenMap: input.screenMap,
+          }),
+        },
+      ],
+      temperature: 0.25,
+      responseFormat: "json",
+    });
+    const architecture = DesignArchitectureOutputSchema.parse(result.data);
+    return {
+      architecture,
+      model: result.metadata?.model || "unknown",
+      latency: result.metadata?.latency || 0,
+      tokenUsage: result.usage?.totalTokens || 0,
+    };
+  }
+
+  async runPrototypeGeneration(input: {
+    product: Record<string, unknown>;
+    architecture: unknown;
+    screenMap: unknown[];
+    revisionRequest?: string;
+    existingFiles?: Array<{ path: string; content: string }>;
+  }) {
+    const result = await this.provider.complete<unknown>({
+      taskType: "prototype_generation",
+      modelTier: "strong",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return JSON only. Produce exactly index.html, styles.css, and app.js. Use only local files: no CDN, no external scripts/styles, no fetch/XHR/WebSocket/iframe/object/embed, no top/parent navigation. The Screen Map is authoritative: preserve every route exactly and do not add routes. HTML must include main and nav. CSS must include an @media responsive rule. JavaScript may only handle local hash routing and parent postMessage component selection. If revising, modify the existing prototype visibly while retaining all declared routes.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            product: input.product,
+            architecture: input.architecture,
+            screenMap: input.screenMap,
+            revisionRequest: input.revisionRequest || null,
+            existingFiles: input.existingFiles || null,
+          }),
+        },
+      ],
+      temperature: 0.35,
+      responseFormat: "json",
+    });
+    const prototype = PrototypeGenerationOutputSchema.parse(result.data);
+    return {
+      prototype,
+      model: result.metadata?.model || "unknown",
+      latency: result.metadata?.latency || 0,
+      tokenUsage: result.usage?.totalTokens || 0,
+    };
   }
 
   async runInitialExtraction(rawIdea: string) {

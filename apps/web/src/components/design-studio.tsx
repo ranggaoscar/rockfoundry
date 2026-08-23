@@ -53,41 +53,23 @@ export function DesignStudio({
   const [composer, setComposer] = useState("");
   const [impactNote, setImpactNote] = useState("");
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [live, setLive] = useState<Studio | undefined>(studio);
-  const previewUrl = `/api/projects/${projectId}/design/preview?v=${live?.currentVersion || 0}`;
-  const hasDesign = Boolean(live && live.currentVersion > 0);
-
-  useEffect(() => {
-    setLive(studio);
-  }, [studio]);
+  const [remoteReadiness, setRemoteReadiness] = useState<Studio["readiness"]>();
+  const readiness = remoteReadiness || studio?.readiness;
+  const previewUrl = `/api/projects/${projectId}/design/preview?v=${studio?.currentVersion || 0}`;
+  const hasDesign = Boolean(studio && studio.currentVersion > 0);
 
   useEffect(() => {
     let cancelled = false;
     void fetch(`/api/projects/${projectId}/design`)
       .then((response) => response.json())
       .then((data) => {
-        if (cancelled || !data.readiness) return;
-        setLive((current) => ({
-          ...(current || studio || {
-            status: "NOT_STARTED",
-            readiness: data.readiness,
-            screenMap: data.studio?.screenMap || [],
-            currentVersion: data.studio?.currentVersion || 0,
-            approvedVersion: data.studio?.approvedVersion || null,
-            stale: false,
-            staleScreens: [],
-            revisions: data.studio?.revisions || [],
-            assumptions: data.studio?.assumptions || [],
-            debt: data.studio?.debt || { count: 0 },
-          }),
-          readiness: data.readiness,
-        }));
+        if (!cancelled && data.readiness) setRemoteReadiness(data.readiness);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [projectId, studio]);
+  }, [projectId]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -255,28 +237,23 @@ export function DesignStudio({
           <div className="rf-studio-empty">
             <p className="rf-studio-kicker">Design Readiness</p>
             <p className="rf-studio-score">
-              {live?.readiness.score ?? studio?.readiness.score ?? 0}% ·{" "}
-              {live?.readiness.level || studio?.readiness.level || "BLOCKED"}
+              {readiness?.score ?? 0}% · {readiness?.level || "BLOCKED"}
             </p>
             <p>
               {(studio?.screenMap.length || 0) > 0
                 ? `${studio?.screenMap.length} screens identified`
                 : "Screen map appears after generation"}
             </p>
-            {(live?.readiness.unresolved.length ||
-              studio?.readiness.unresolved.length ||
-              0) > 0 && (
+            {(readiness?.unresolved.length || 0) > 0 && (
               <p>
-                Prototype can use{" "}
-                {live?.readiness.unresolved.length ||
-                  studio?.readiness.unresolved.length}{" "}
-                unresolved assumptions.
+                Prototype can use {readiness?.unresolved.length} unresolved
+                assumptions.
               </p>
             )}
             <button
               type="button"
               className="rf-studio-primary"
-              disabled={working || live?.readiness.level === "BLOCKED"}
+              disabled={working || readiness?.level === "BLOCKED"}
               onClick={() => void generate()}
             >
               Generate Product Design
