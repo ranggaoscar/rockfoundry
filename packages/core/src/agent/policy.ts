@@ -36,11 +36,18 @@ export function validatePlannedAction(
     if (!context.questionForAction)
       reasons.push("ASK_USER must resolve to a canonical question.");
     if (
+      context.questionForAction &&
+      action.questionId !== context.questionForAction.id
+    )
+      reasons.push("ASK_USER must use the canonical question id.");
+    if (
       topic &&
       context.candidateTopics &&
       !context.candidateTopics.includes(topic)
     )
-      reasons.push("ASK_USER must select a topic from the candidate shortlist.");
+      reasons.push(
+        "ASK_USER must select a topic from the candidate shortlist.",
+      );
     if (context.questionForAction) {
       const quality = validateQuestionQuality(
         context.questionForAction,

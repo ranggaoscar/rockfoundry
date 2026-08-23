@@ -394,19 +394,67 @@ export default function ProjectWorkspace({
     const text = composer.trim();
     if (!text || working) return;
     setComposer("");
-    if (question) {
-      await answerQuestion(text);
-      return;
-    }
     if (!project?.description) {
       await runExtraction(text);
       return;
     }
-    setMessages((current) => [
-      ...current,
-      { id: `user-${Date.now()}`, role: "user", text },
-    ]);
-    await fetchQuestion();
+    setWorking(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/conversation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          data.error || "RockFoundry couldn't process that message.",
+        );
+      if (
+        data.intent === "ACTIVE_DECISION_ANSWER" &&
+        data.answer &&
+        data.questionId
+      ) {
+        setWorking(false);
+        await answerQuestion(data.answer, data.questionId);
+        return;
+      }
+      setProject((current) =>
+        current
+          ? { ...current, canonicalState: data.state, version: data.version }
+          : current,
+      );
+      const nextQuestion = data.question || null;
+      setQuestion(nextQuestion);
+      setMessages((current) => [
+        ...current,
+        { id: `user-${Date.now()}`, role: "user", text },
+        ...(nextQuestion
+          ? [
+              {
+                id: `question-${nextQuestion.id}-${Date.now()}`,
+                role: "assistant" as const,
+                text: nextQuestion.text,
+                detail: nextQuestion.reasonAsked,
+                options: nextQuestion.options,
+                recommendation: nextQuestion.recommendation,
+                questionId: nextQuestion.id,
+                topic: nextQuestion.topic,
+                category: nextQuestion.category,
+              },
+            ]
+          : []),
+      ]);
+      await fetchReferences();
+    } catch (cause) {
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't process that message.",
+      );
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function reviseDecision(topic: string) {
@@ -619,11 +667,6 @@ export default function ProjectWorkspace({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = composer.trim();
-    if (text && /https?:\/\//.test(text)) {
-      const handled = await addReferenceFromMessage(text);
-      if (handled) setComposer("");
-      return;
-    }
     await sendMessage();
   }
 
@@ -1007,6 +1050,7 @@ function MessageRow({
   }
   return (
     <div
+      data-question-id={isQuestion ? message.questionId : undefined}
       className={`rf-message-row ${isUser ? "rf-message-user" : "rf-message-agent"}`}
     >
       <div

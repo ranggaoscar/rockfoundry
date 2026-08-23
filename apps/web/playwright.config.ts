@@ -4,6 +4,9 @@ const port = Number(process.env.PLAYWRIGHT_PORT || 3100);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`;
 const publicDemo = process.env.PLAYWRIGHT_PUBLIC_DEMO === "true";
 const managedProvider = process.env.PLAYWRIGHT_MANAGED_PROVIDER === "true";
+// Default on for deterministic agentic E2E. This flag is consumed only by
+// Playwright's spawned local server; production runtime never sets it.
+const mockSearch = process.env.PLAYWRIGHT_MOCK_SEARCH !== "false";
 const providerEnvironment = managedProvider
   ? "set AI_PROVIDER_MODE=openai-compatible&& set OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1&& set OPENAI_COMPATIBLE_API_KEY=test-demo-key&& set OPENAI_COMPATIBLE_MODEL=demo-test-model&& "
   : "set AI_PROVIDER_MODE=mock&& set OPENAI_COMPATIBLE_BASE_URL=&& set OPENAI_COMPATIBLE_API_KEY=&& set OPENAI_COMPATIBLE_MODEL=&& ";
@@ -24,7 +27,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: `cmd.exe /c "set ROCKFOUNDRY_PUBLIC_DEMO=${publicDemo ? "true" : "false"}&& ${providerEnvironment}pnpm exec next dev --hostname 127.0.0.1 --port ${port}"`,
+        command: `cmd.exe /c "set ROCKFOUNDRY_PUBLIC_DEMO=${publicDemo ? "true" : "false"}&& set PLAYWRIGHT_MOCK_SEARCH=${mockSearch ? "true" : "false"}&& ${providerEnvironment}pnpm exec next dev --hostname 127.0.0.1 --port ${port}"`,
         url: baseURL,
         reuseExistingServer: false,
         timeout: 120_000,

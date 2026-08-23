@@ -46,11 +46,15 @@ export class AgentRunner {
   async run(input: {
     project: ProjectState;
     latestUserMessage?: string;
-    questionForAction?: (action: AgentAction) => import("../schema/question").Question | undefined;
+    questionForAction?: (
+      action: AgentAction,
+    ) => import("../schema/question").Question | undefined;
     candidateTopics?: string[];
     explicitHumanDecision?: boolean;
     humanApprovedArtifact?: boolean;
+    onToolStart?: (action: AgentAction) => Promise<void> | void;
     onToolRun?: (activity: AgentActivity) => Promise<void> | void;
+    onToolFailure?: (action: AgentAction, error: Error) => Promise<void> | void;
   }): Promise<AgentLoopResult> {
     const activities: AgentActivity[] = [];
     const observations: AgentObservation[] = [];
@@ -80,11 +84,15 @@ export class AgentRunner {
         return { activities, finalAction: action, iterationCount: iteration };
       }
 
-      const output = await this.tools.execute(
-        action.toolName,
-        { project: input.project },
-        action.input,
-      );
+      await input.onToolStart?.(action);
+      const output = await this.tools
+        .execute(action.toolName, { project: input.project }, action.input)
+        .catch(async (cause) => {
+          const error =
+            cause instanceof Error ? cause : new Error("Tool execution failed");
+          await input.onToolFailure?.(action, error);
+          throw error;
+        });
       const observation = AgentObservationSchema.parse({
         type: `TOOL:${action.toolName}`,
         summary: `Completed ${action.toolName}.`,
@@ -103,7 +111,8 @@ export class AgentRunner {
     const finalAction = AgentActionSchema.parse({
       id: "agent-iteration-limit",
       type: "WAIT_FOR_USER",
-      reason: "Agent reached its safe iteration limit before selecting a question.",
+      reason:
+        "Agent reached its safe iteration limit before selecting a question.",
     });
     return {
       activities,
@@ -127,7 +136,8 @@ export function deterministicDiscoveryPlanner(question: {
           type: "CALL_TOOL",
           toolName: "project_state_read",
           input: {},
-          rationale: "Read the canonical product state before selecting a decision.",
+          rationale:
+            "Read the canonical product state before selecting a decision.",
         };
       return {
         id: `ask-${question.id}`,

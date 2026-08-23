@@ -8,3 +8,4 @@ export * from "./artifact-gap-signals";
 export * from "./archetypes";
 export * from "./candidate-generator";
 export * from "./candidate-ranker";
+export * from "./natural-answer";

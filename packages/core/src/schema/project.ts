@@ -13,6 +13,7 @@ export const ProvenanceSourceSchema = z.enum([
   "AGENT_INFERENCE",
   "REFERENCE_WEBSITE",
   "REFERENCE_GITHUB",
+  "RESEARCH",
   "TOOL",
   "SYSTEM",
 ]);
@@ -130,9 +131,7 @@ export type DecisionDebtRisk = z.infer<typeof DecisionDebtRiskSchema>;
 
 export const DecisionDebtSchema = z.object({
   score: z.number().min(0).max(100).default(0),
-  inventionRisk: z
-    .enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"])
-    .default("HIGH"),
+  inventionRisk: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).default("HIGH"),
   unresolvedHighRiskCount: z.number().int().min(0).default(0),
   unresolvedArtifactSectionCount: z.number().int().min(0).default(0),
   openContradictionCount: z.number().int().min(0).default(0),

@@ -159,7 +159,6 @@ export async function POST(
 
     if (!currentQuestion)
       return jsonError("That discovery question is no longer active.", 409);
-
     const answer =
       typeof answerRaw === "string"
         ? (mapNaturalAnswer(answerRaw, currentQuestion) ?? answerRaw)
@@ -171,6 +170,7 @@ export async function POST(
       answer,
       currentQuestion,
     );
+
     const answerValues = Array.isArray(answer) ? answer : [answer];
     const displayAnswer = answerValues
       .map(
@@ -188,6 +188,7 @@ export async function POST(
       state: processed.updatedState,
       preferredTopic: currentQuestion.topic,
     });
+
     let nextQuestion: Question | null = null;
     if (conversation.result.finalAction.type === "ASK_USER") {
       nextQuestion =

@@ -13,6 +13,18 @@ const SearchInput = z.object({
   maxResults: z.number().int().min(1).max(10).optional(),
 });
 
+function playwrightSearchFixture() {
+  return [
+    {
+      title: "LinkedIn Talent Solutions — company and candidate profiles",
+      url: "https://example.test/linkedin-profile-boundaries",
+      snippet:
+        "Deterministic test evidence: company and candidate profiles remain separate entities.",
+      sourceDomain: "example.test",
+    },
+  ];
+}
+
 export function createServerToolRegistry() {
   const registry = createDefaultToolRegistry();
   return registry
@@ -33,6 +45,8 @@ export function createServerToolRegistry() {
         ),
       }),
       async execute(_context, input) {
+        if (process.env.PLAYWRIGHT_MOCK_SEARCH === "true")
+          return { query: input.query, results: playwrightSearchFixture() };
         if (!isSearchConfigured())
           return {
             query: input.query,
@@ -86,6 +100,7 @@ export function createServerToolRegistry() {
         "Safely analyze a public GitHub repository's metadata, languages, tree, and key files. Does not execute repository code.",
       inputSchema: z.object({ url: z.string().url() }),
       outputSchema: z.object({
+        url: z.string(),
         owner: z.string(),
         repo: z.string(),
         success: z.boolean(),
@@ -96,6 +111,7 @@ export function createServerToolRegistry() {
         const parsed = parseGitHubUrl(input.url);
         if (!parsed)
           return {
+            url: input.url,
             owner: "",
             repo: "",
             success: false,
@@ -105,6 +121,7 @@ export function createServerToolRegistry() {
         const analysis = await analyzeGitHubRepo(parsed);
         if (!analysis.success || !analysis.data)
           return {
+            url: input.url,
             owner: parsed.owner,
             repo: parsed.repo,
             success: false,
@@ -112,6 +129,7 @@ export function createServerToolRegistry() {
             error: analysis.error || "Repository inspection failed",
           };
         return {
+          url: input.url,
           owner: parsed.owner,
           repo: parsed.repo,
           success: true,

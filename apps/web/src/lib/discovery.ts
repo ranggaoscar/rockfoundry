@@ -128,8 +128,14 @@ export async function runInitialDiscovery(
         all.findIndex((candidate) => candidate.id === question.id) === index,
     );
     const tools = createServerToolRegistry();
-    const planner = deterministicDiscoveryPlanner(candidateQuestion);
+    const planner =
+      createModelDiscoveryPlanner(
+        candidates,
+        candidateQuestion,
+        "INITIAL_DISCOVERY",
+      ) || deterministicDiscoveryPlanner(candidateQuestion);
     const runner = new AgentRunner(planner, tools);
+    const toolRunByAction = new Map<string, string>();
     const agentResult = await runner.run({
       project: merged.state,
       candidateTopics: candidateQuestions
@@ -137,29 +143,43 @@ export async function runInitialDiscovery(
         .filter((topic): topic is string => Boolean(topic)),
       questionForAction: (action) => {
         if (action.type !== "ASK_USER") return undefined;
-        return (
-          candidateQuestions.find(
-            (question) => question.id === action.questionId,
-          ) ||
-          candidateQuestions.find(
-            (question) => question.topic === action.questionId,
-          ) ||
-          candidateQuestion
-        );
+        return action.questionId === candidateQuestion.id
+          ? candidateQuestion
+          : undefined;
       },
-      onToolRun: async (activity) => {
-        await prisma.toolRun.create({
+      onToolStart: async (action) => {
+        if (action.type !== "CALL_TOOL") return;
+        const row = await prisma.toolRun.create({
           data: {
             projectId,
-            toolName:
-              activity.action.type === "CALL_TOOL"
-                ? activity.action.toolName
-                : "agent",
+            toolName: action.toolName,
+            status: "RUNNING",
+            inputSummary: action.rationale || action.toolName,
+            startedAt: new Date(),
+          },
+        });
+        toolRunByAction.set(action.id, row.id);
+      },
+      onToolRun: async (activity) => {
+        const rowId = toolRunByAction.get(activity.action.id);
+        if (!rowId) return;
+        await prisma.toolRun.update({
+          where: { id: rowId },
+          data: {
             status: "COMPLETED",
-            inputSummary:
-              activity.action.rationale || "Agent requested a state check.",
             outputSummary: activity.observation?.summary || "Tool completed.",
-            startedAt: new Date(Date.now() - activity.durationMs),
+            completedAt: new Date(),
+          },
+        });
+      },
+      onToolFailure: async (action, error) => {
+        const rowId = toolRunByAction.get(action.id);
+        if (!rowId) return;
+        await prisma.toolRun.update({
+          where: { id: rowId },
+          data: {
+            status: "FAILED",
+            failureReason: error.message.slice(0, 500),
             completedAt: new Date(),
           },
         });
