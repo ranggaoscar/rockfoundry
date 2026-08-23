@@ -53,6 +53,7 @@ export class NineRouterGateway implements AiGatewayProvider {
     private readonly baseUrl: string,
     private readonly apiKey: string,
     private readonly models: { default: string; cheap: string; strong: string },
+    private readonly reasoningEffort?: string,
   ) {}
 
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
@@ -120,6 +121,11 @@ export class NineRouterGateway implements AiGatewayProvider {
             model,
             messages: req.messages,
             temperature: req.temperature ?? 0.7,
+            ...(req.reasoningEffort || this.reasoningEffort
+              ? {
+                  reasoning_effort: req.reasoningEffort || this.reasoningEffort,
+                }
+              : {}),
             response_format: req.responseSchema
               ? {
                   type: "json_schema",
@@ -193,8 +199,18 @@ export class NineRouterGateway implements AiGatewayProvider {
 }
 
 export class OpenAICompatibleGateway extends NineRouterGateway {
-  constructor(baseUrl: string, apiKey: string, model: string) {
-    super(baseUrl, apiKey, { default: model, cheap: model, strong: model });
+  constructor(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    reasoningEffort?: string,
+  ) {
+    super(
+      baseUrl,
+      apiKey,
+      { default: model, cheap: model, strong: model },
+      reasoningEffort,
+    );
   }
 }
 

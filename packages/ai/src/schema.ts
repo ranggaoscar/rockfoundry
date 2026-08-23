@@ -7,6 +7,7 @@ export interface InferenceRequest<T> {
   /** Transport intent. JSON responses are requested with json_object mode and parsed before domain validation. */
   responseFormat?: "text" | "json";
   responseSchema?: Record<string, any>;
+  reasoningEffort?: string;
   taskType?: string;
   maxRetries?: number;
 }

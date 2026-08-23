@@ -47,6 +47,41 @@ describe("OpenAI-compatible gateway URLs", () => {
     vi.unstubAllGlobals();
   });
 
+  it("sends configured reasoning effort and omits it when absent", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleGateway(
+      "https://example.test/v1",
+      "test-key",
+      "test-model",
+      "max",
+    ).complete({
+      messages: [{ role: "user", content: "reason" }],
+      maxRetries: 0,
+    });
+    await new OpenAICompatibleGateway(
+      "https://example.test/v1",
+      "test-key",
+      "test-model",
+    ).complete({
+      messages: [{ role: "user", content: "no reason" }],
+      maxRetries: 0,
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      model: "test-model",
+      reasoning_effort: "max",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty(
+      "reasoning_effort",
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("requests json_object mode for JSON transport without a schema", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

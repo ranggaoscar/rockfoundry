@@ -21,6 +21,7 @@ export function getAiGateway() {
         settings.baseUrl,
         settings.apiKey || "",
         settings.model || "gpt-4o-mini",
+        settings.reasoningEffort || undefined,
       ),
     );
   }

@@ -13,6 +13,7 @@ export type ProviderSettings = {
   baseUrl: string | null;
   apiKey: string | null;
   model: string | null;
+  reasoningEffort?: string | null;
   source: ProviderSource;
 };
 
@@ -94,6 +95,7 @@ function environmentSettings(
     baseUrl: optionalText(env.OPENAI_COMPATIBLE_BASE_URL),
     apiKey: optionalText(env.OPENAI_COMPATIBLE_API_KEY),
     model: optionalText(env.OPENAI_COMPATIBLE_MODEL),
+    reasoningEffort: optionalText(env.OPENAI_COMPATIBLE_REASONING_EFFORT),
     source: "environment",
   };
 }
