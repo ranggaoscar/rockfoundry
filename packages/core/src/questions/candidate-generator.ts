@@ -58,14 +58,20 @@ function genericQuestionCopy(
   const entities = displayContextLabel(
     entityFacts,
     id ? "data utama" : "the main records",
+    2,
+    id ? "id" : "en",
   );
   const roles = displayContextLabel(
     context.roles,
     id ? "orang yang terlibat" : "the roles involved",
+    2,
+    id ? "id" : "en",
   );
   const workflows = displayContextLabel(
     context.workflows,
     id ? "alur utama" : "the main workflow",
+    2,
+    id ? "id" : "en",
   );
   const primaryEntity = primaryContextNoun(entityFacts, id ? "data" : "record");
   const primaryWorkflow =
@@ -117,7 +123,7 @@ function genericQuestionCopy(
     case "VISIBILITY":
       return {
         text: id
-          ? `Kalau ${entities} ditangani beberapa orang, siapa yang boleh melihat seluruh riwayatnya? Siapa yang hanya boleh melihat bagian tugasnya?${followUp}`
+          ? `Kalau ${primaryEntity} ditangani beberapa orang, siapa yang boleh melihat seluruh riwayatnya? Siapa yang hanya boleh melihat bagian tugasnya?${followUp}`
           : `You mentioned ${roles} and ${entities}. If more than one role handles the same record, who can see the full history and who is limited to the part assigned to them?${followUp}`,
         recommendation: id
           ? "Supaya data penting tidak terlihat oleh orang yang tidak berwenang."
@@ -135,7 +141,7 @@ function genericQuestionCopy(
     case "CONFLICT_CAPACITY":
       return {
         text: id
-          ? `Kalau dua permintaan memakai ${primaryEntity} yang sama di waktu yang sama, sistem harus menolak, mengantri, atau tetap mengizinkan setelah ada persetujuan?${followUp}`
+          ? `Untuk ${primaryEntity}, kalau dua permintaan bentrok pada waktu atau fasilitas yang sama, apa yang harus dilakukan sistem: menolak salah satunya, membuat antrean, atau tetap mengizinkan setelah ada persetujuan?${followUp}`
           : `Because ${entities} involve time or constrained resources, when two requests target the same slot or resource, should the system reject, queue, or allow an approved override?${followUp}`,
         recommendation: id
           ? "Supaya janji ke pelanggan tidak tabrakan."
@@ -144,7 +150,7 @@ function genericQuestionCopy(
     case "ASSIGNMENT":
       return {
         text: id
-          ? `Kalau ${entities} perlu ditangani, siapa yang menanganinya? Bolehkah dipindah ke orang lain tanpa menghapus riwayatnya?${followUp}`
+          ? `Siapa yang bertanggung jawab menangani ${primaryEntity}? Kalau perlu, apakah tanggung jawabnya boleh dialihkan ke orang lain tanpa menghapus riwayatnya?${followUp}`
           : `When ${entities} need to be handled by ${roles}, how is assignment decided, and can a record move to another role without losing history?${followUp}`,
         recommendation: id
           ? "Supaya selalu jelas siapa yang sedang mengerjakan dan siapa yang pernah mengerjakannya."
@@ -180,7 +186,7 @@ function genericQuestionCopy(
     case "COMPLETION":
       return {
         text: id
-          ? `Untuk proses ${primaryEntity}, kapan dianggap selesai? Kalau sudah selesai, boleh dibuka lagi?${followUp}`
+          ? `Kapan ${primaryEntity} dianggap selesai? Kalau sudah selesai, apakah boleh dibuka lagi?${followUp}`
           : `For ${primaryWorkflow}, what evidence makes the workflow complete, and can a completed record be reopened?${followUp}`,
         recommendation: id
           ? "Supaya sistem tahu dengan jelas kapan sebuah proses benar-benar selesai."
@@ -298,7 +304,7 @@ function genericOptions(
     id: "needs_clarification",
     label: id ? "Perlu diklarifikasi dulu" : "Needs clarification",
     description: id
-      ? "Ada pengecualian yang harus didefinisikan lebih dulu."
+      ? "Ada kondisi khusus yang perlu dibahas dulu."
       : "There are exceptions we should define first.",
   };
   const byArchetype: Record<string, QuestionOption[]> = {
@@ -509,7 +515,7 @@ function genericOptions(
       {
         id: "explicit_completion_evidence",
         label: id
-          ? "Harus ada bukti eksplisit selesai"
+          ? "Harus ada tanda jelas bahwa proses selesai"
           : "Requires explicit completion evidence",
         description: id
           ? "Status selesai hanya lewat konfirmasi nyata."

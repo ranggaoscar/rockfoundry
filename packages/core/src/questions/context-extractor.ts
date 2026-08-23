@@ -409,13 +409,27 @@ export function contextLabel(facts: StructuralFact[], fallback: string) {
   return values.length ? values.join(", ") : fallback;
 }
 
+export function formatNaturalList(
+  values: string[],
+  language: "id" | "en" = "en",
+) {
+  if (values.length === 0) return "";
+  if (values.length === 1) return values[0];
+  if (language === "id") {
+    if (values.length === 2) return `${values[0]} dan ${values[1]}`;
+    return `${values.slice(0, -1).join(", ")}, dan ${values[values.length - 1]}`;
+  }
+  return values.join(", ");
+}
+
 export function displayContextLabel(
   facts: StructuralFact[],
   fallback: string,
   limit = 2,
+  language: "id" | "en" = "en",
 ) {
   const values = contextValues(facts, limit);
-  return values.length ? values.join(", ") : fallback;
+  return values.length ? formatNaturalList(values, language) : fallback;
 }
 
 export function primaryContextNoun(facts: StructuralFact[], fallback: string) {

@@ -145,7 +145,7 @@ describe("workspace language and question presentation", () => {
       id: "plain-id",
       name: "Kasir Warteg",
       rawIdea:
-        "Saya mau membuat aplikasi kasir untuk warteg supaya pesanan dan pembayaran lebih mudah dicatat. Ada kasir dan pemilik. Pesanan ditangani kasir. Meja terbatas jadi jadwal bisa bentrok. Pelanggan yang sama kadang muncul dua kali. Perlu riwayat perubahan, nota, dan aturan hapus data lama.",
+        "Saya mau membuat aplikasi kasir untuk warteg supaya pesanan dan pembayaran lebih mudah dicatat sampai pesanan selesai. Ada kasir dan pemilik. Pesanan ditangani kasir. Meja terbatas jadi jadwal bisa bentrok. Pelanggan yang sama kadang muncul dua kali. Perlu riwayat perubahan, nota, dan aturan hapus data lama.",
     });
     state.entities = ["pesanan", "pembayaran", "pelanggan"];
     state.roles = ["kasir", "pemilik"];
@@ -161,6 +161,7 @@ describe("workspace language and question presentation", () => {
       "approval_responsibility",
       "money_responsibility",
       "retention_deletion",
+      "completion_semantics",
     ] as const;
 
     const examples: Record<string, string> = {};
@@ -204,6 +205,27 @@ describe("workspace language and question presentation", () => {
       ),
     );
     expect(examples.visibility_boundary).toMatch(/siapa yang boleh melihat/i);
+    expect(examples.visibility_boundary).toMatch(
+      /Kalau pesanan ditangani beberapa orang/,
+    );
+    expect(examples.visibility_boundary).not.toMatch(
+      /pesanan, pembayaran ditangani/,
+    );
+    expect(examples.assignment_behavior).toMatch(
+      /Siapa yang bertanggung jawab menangani pesanan/,
+    );
+    expect(examples.assignment_behavior).not.toMatch(
+      /pesanan, pembayaran perlu/,
+    );
+    expect(examples.resource_conflict_policy).toMatch(
+      /dua permintaan bentrok pada waktu atau fasilitas yang sama/,
+    );
+    expect(examples.resource_conflict_policy).not.toMatch(
+      /memakai pesanan yang sama di waktu yang sama/,
+    );
+    expect(examples.completion_semantics || "").toMatch(
+      /Kapan pesanan dianggap selesai/,
+    );
     expect(examples.approval_responsibility).toMatch(/menyetujui|menolak/i);
     expect(examples.retention_deletion).toMatch(/berapa lama|dihapus/i);
   });
