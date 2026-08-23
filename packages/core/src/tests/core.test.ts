@@ -92,7 +92,7 @@ describe("Agentic core state", () => {
         entities: ["Customer", "Quotation"],
       }),
     );
-    expect(result.metadata.fileCount).toBe(9);
+    expect(result.metadata.fileCount).toBe(10);
     expect(result.documents.BRD).toContain("# Business Requirements Document");
     expect(result.documents.PRD).toContain("## 22. Open Decisions");
     expect(result.documents.ERD).toContain("```mermaid");

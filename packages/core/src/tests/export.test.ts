@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { createInitialProjectState } from "../schema";
+import {
+  applyGeneratedDesign,
+  approveDesign,
+  generateMockPrototype,
+} from "../design";
 import { generateExport, renderArtifacts } from "../export/generator";
 import { recordDecision } from "../decision-graph";
 import { evaluateDecisionDebt } from "../graph/decision-debt";
 
 describe("Agentic artifact export", () => {
-  it("creates the anti-invention handoff package at the export root", async () => {
+  it("creates one coding-agent handoff package with product, decisions, and design folders", async () => {
     const state = createInitialProjectState({
       id: "1",
       name: "Test Project",
@@ -14,16 +19,47 @@ describe("Agentic artifact export", () => {
     });
     const result = await generateExport(state);
     const zip = await JSZip.loadAsync(result.buffer);
-    expect(zip.file("BRD.md")).toBeTruthy();
-    expect(zip.file("PRD.md")).toBeTruthy();
-    expect(zip.file("ERD.md")).toBeTruthy();
-    expect(zip.file("DO_NOT_INVENT.md")).toBeTruthy();
-    expect(zip.file("DECISIONS.md")).toBeTruthy();
-    expect(zip.file("INVARIANTS.md")).toBeTruthy();
-    expect(zip.file("READINESS.md")).toBeTruthy();
+    expect(zip.file("README.md")).toBeTruthy();
+    expect(zip.file("product/BRD.md")).toBeTruthy();
+    expect(zip.file("product/PRD.md")).toBeTruthy();
+    expect(zip.file("product/ERD.md")).toBeTruthy();
+    expect(zip.file("decisions/decisions.json")).toBeTruthy();
+    expect(zip.file("decisions/DECISIONS.md")).toBeTruthy();
+    expect(zip.file("decisions/DO_NOT_INVENT.md")).toBeTruthy();
+    expect(zip.file("decisions/INVARIANTS.md")).toBeTruthy();
+    expect(zip.file("decisions/READINESS.md")).toBeTruthy();
     expect(zip.file("AGENT_HANDOFF.md")).toBeTruthy();
-    expect(zip.file("decisions.json")).toBeTruthy();
-    expect(result.metadata.fileCount).toBe(9);
+    expect(await zip.file("README.md")?.async("string")).toContain(
+      "Start with AGENT_HANDOFF.md",
+    );
+  });
+
+  it("includes an approved design and clear agent guidance", async () => {
+    let state = createInitialProjectState({
+      id: "design-export",
+      name: "Job Platform",
+      rawIdea: "Build a job platform for candidates.",
+    });
+    const generated = generateMockPrototype(state);
+    state = approveDesign(
+      applyGeneratedDesign(state, generated, {
+        summary: generated.summary,
+      }),
+    );
+    const result = await generateExport(state);
+    const zip = await JSZip.loadAsync(result.buffer);
+    expect(zip.file("design/DESIGN_SPEC.json")).toBeTruthy();
+    expect(zip.file("design/SCREEN_MAP.json")).toBeTruthy();
+    expect(zip.file("design/DESIGN_DECISIONS.md")).toBeTruthy();
+    expect(zip.file("design/prototype/index.html")).toBeTruthy();
+    expect(zip.file("design/prototype/styles.css")).toBeTruthy();
+    expect(zip.file("design/prototype/app.js")).toBeTruthy();
+    expect(await zip.file("AGENT_HANDOFF.md")?.async("string")).toContain(
+      "authoritative",
+    );
+    expect(await zip.file("AGENT_HANDOFF.md")?.async("string")).toContain(
+      "target implementation stack may differ",
+    );
   });
 
   it("puts unresolved high-risk decisions into DO_NOT_INVENT", () => {

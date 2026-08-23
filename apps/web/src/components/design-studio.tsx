@@ -40,10 +40,12 @@ export function DesignStudio({
   projectId,
   studio,
   onState,
+  onDownloadHandoff,
 }: {
   projectId: string;
   studio?: Studio;
   onState: (state: unknown, version: number) => void;
+  onDownloadHandoff: () => void;
 }) {
   const [stage, setStage] = useState("");
   const [working, setWorking] = useState(false);
@@ -313,6 +315,11 @@ export function DesignStudio({
             >
               Approve Design
             </button>
+            {studio?.status === "APPROVED" && (
+              <button type="button" onClick={onDownloadHandoff}>
+                Download Handoff
+              </button>
+            )}
           </div>
         </form>
       </aside>

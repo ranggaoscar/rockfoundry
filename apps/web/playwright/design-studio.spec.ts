@@ -39,7 +39,7 @@ test.describe("Design Studio", () => {
     });
     await page.getByRole("button", { name: "Approve Design" }).click();
     await expect(page.getByText(/APPROVED/i)).toBeVisible({ timeout: 15_000 });
-    await page.getByRole("button", { name: /Handoff/i }).click();
+    await page.getByRole("button", { name: "Handoff", exact: true }).click();
     await expect(page.getByText("BRD.md")).toBeVisible();
     await expect(page.getByText("design/DESIGN_SPEC.json")).toBeVisible();
   });

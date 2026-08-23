@@ -16,7 +16,6 @@ import {
   ChevronRight,
   FileText,
   Menu,
-  RefreshCw,
   Square,
   X,
 } from "lucide-react";
@@ -157,7 +156,6 @@ export default function ProjectWorkspace({
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [pageError, setPageError] = useState("");
-  const [exporting, setExporting] = useState(false);
   const [exportReady, setExportReady] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -289,6 +287,15 @@ export default function ProjectWorkspace({
 
   const state = project?.canonicalState || {};
   const debtScore = decisionDebtScore(state);
+  const acceptedDecisionCount = Array.isArray(state.decisions)
+    ? state.decisions.filter((decision: any) => decision.status === "ACCEPTED")
+        .length
+    : 0;
+  const canBuildPackage =
+    Boolean(project?.description) &&
+    (state.discovery?.importantDecisionsRemaining === 0 ||
+      state.decisionDebt?.unresolvedHighRiskCount === 0 ||
+      acceptedDecisionCount >= 5);
 
   const visibleMessages = useMemo(() => {
     if (
@@ -673,37 +680,45 @@ export default function ProjectWorkspace({
     await sendMessage();
   }
 
-  async function exportProject() {
-    if (!projectId || exporting) return;
-    setExporting(true);
+  async function buildProductPackage() {
+    if (!projectId || !project || working) return;
+    setWorking(true);
+    setPageError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/export`, {
+      const response = await fetch(`/api/projects/${projectId}/package`, {
         method: "POST",
       });
       const data = await response.json();
       if (!response.ok)
         throw new Error(
-          data.error || "RockFoundry couldn't generate the documents.",
+          data.error || "RockFoundry couldn't build the product package.",
         );
+      setProject((current) =>
+        current
+          ? { ...current, canonicalState: data.state, version: data.version }
+          : current,
+      );
+      setQuestion(null);
       setExportReady(Boolean(data.downloadUrl));
       setMessages((current) => [
         ...current,
         {
-          id: `artifact-${Date.now()}`,
-          role: "tool",
-          text: "Handoff package generated",
-          detail:
-            "BRD, PRD, ERD, DO_NOT_INVENT, decisions, invariants, readiness, and agent handoff are ready.",
+          id: `package-${Date.now()}`,
+          role: "assistant",
+          text: "Product package is ready. Review the live design, revise it in plain language, then approve and download one handoff.",
+          detail: `${data.documents.length} product documents · ${data.design.screenCount} screens · live prototype ready`,
         },
       ]);
+      setSurface("design");
+      setDrawer(null);
     } catch (cause) {
       setPageError(
         cause instanceof Error
           ? cause.message
-          : "RockFoundry couldn't generate the documents.",
+          : "RockFoundry couldn't build the product package.",
       );
     } finally {
-      setExporting(false);
+      setWorking(false);
     }
   }
 
@@ -869,6 +884,9 @@ export default function ProjectWorkspace({
             <DesignStudio
               projectId={project.id}
               studio={state.studio}
+              onDownloadHandoff={() =>
+                window.location.assign(`/api/projects/${projectId}/export`)
+              }
               onState={(nextState, version) =>
                 setProject((current) =>
                   current
@@ -883,111 +901,129 @@ export default function ProjectWorkspace({
             />
           ) : (
             <>
-          <div
-            ref={conversationRef}
-            className="rf-conversation mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-5 sm:px-8 sm:pt-6"
-          >
-            {visibleMessages.map((message, index) => {
-              const previous = visibleMessages[index - 1];
-              const hidesAnswer =
-                message.role === "user" &&
-                Boolean(previous?.questionId && previous.options?.length);
-              if (hidesAnswer) return null;
-              return (
-                <MessageRow
-                  key={message.id}
-                  message={message}
-                  nextUserText={
-                    visibleMessages
-                      .slice(index + 1)
-                      .find((item) => item.role === "user")?.text
-                  }
-                  activeQuestionId={question?.id}
-                  working={working}
-                  activityOpen={activityOpen}
-                  onToggleActivity={() =>
-                    setActivityOpen((current) => !current)
-                  }
-                  onAnswer={(option) =>
-                    answerQuestion(option, message.questionId)
-                  }
-                />
-              );
-            })}
-            {working && (
-              <div className="rf-typing" role="status">
-                <span className="rf-pulse-dot" /> Saving decision...
-              </div>
-            )}
-            {pageError && (
-              <div className="rf-error" role="alert">
-                <span>{pageError}</span>
-                <button type="button" onClick={() => setPageError("")}>
-                  <X className="size-4" />
-                </button>
-              </div>
-            )}
-            {!question && !working && messages.length > 2 && (
-              <div className="mx-auto mt-10 max-w-md text-center text-xs text-muted-foreground">
-                Keep describing the product, paste a reference URL, or open
-                Documents when you want a draft.
-              </div>
-            )}
-          </div>
-
-          <div className="rf-composer-dock">
-            <form
-              onSubmit={handleSubmit}
-              className="mx-auto w-full max-w-[820px] px-4 pb-2 sm:px-8"
-            >
-              <div className="relative">
-                <label className="sr-only" htmlFor="project-composer">
-                  Message RockFoundry
-                </label>
-                <textarea
-                  id="project-composer"
-                  name="message"
-                  value={composer}
-                  onChange={(event) => setComposer(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      void handleSubmit(
-                        event as unknown as FormEvent<HTMLFormElement>,
-                      );
-                    }
-                  }}
-                  placeholder={
-                    question
-                      ? "Answer naturally..."
-                      : project.description
-                        ? "Add context or a reference URL..."
-                        : "Describe your idea..."
-                  }
-                  rows={1}
-                  className="rf-composer min-h-[54px] w-full resize-none pr-14"
-                  disabled={working}
-                />
-                <button
-                  className="rf-send-button absolute bottom-2.5 right-3"
-                  type={working ? "button" : "submit"}
-                  disabled={working ? false : !composer.trim()}
-                  onClick={working ? () => setWorking(false) : undefined}
-                  aria-label={working ? "Stop generation" : "Send message"}
-                >
-                  {working ? (
-                    <Square className="size-3.5 fill-current" />
-                  ) : (
-                    <ArrowUp className="size-4" />
+              <div
+                ref={conversationRef}
+                className="rf-conversation mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-5 sm:px-8 sm:pt-6"
+              >
+                {visibleMessages.map((message, index) => {
+                  const previous = visibleMessages[index - 1];
+                  const hidesAnswer =
+                    message.role === "user" &&
+                    Boolean(previous?.questionId && previous.options?.length);
+                  if (hidesAnswer) return null;
+                  return (
+                    <MessageRow
+                      key={message.id}
+                      message={message}
+                      nextUserText={
+                        visibleMessages
+                          .slice(index + 1)
+                          .find((item) => item.role === "user")?.text
+                      }
+                      activeQuestionId={question?.id}
+                      working={working}
+                      activityOpen={activityOpen}
+                      onToggleActivity={() =>
+                        setActivityOpen((current) => !current)
+                      }
+                      onAnswer={(option) =>
+                        answerQuestion(option, message.questionId)
+                      }
+                    />
+                  );
+                })}
+                {working && (
+                  <div className="rf-typing" role="status">
+                    <span className="rf-pulse-dot" /> Saving decision...
+                  </div>
+                )}
+                {pageError && (
+                  <div className="rf-error" role="alert">
+                    <span>{pageError}</span>
+                    <button type="button" onClick={() => setPageError("")}>
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                )}
+                {canBuildPackage && !working && (
+                  <div className="mx-auto mt-10 max-w-md text-center">
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Your key product decisions are ready. Build one package
+                      with documents, a Screen Map, and a live prototype.
+                    </p>
+                    <button
+                      className="rf-primary-button mt-4"
+                      type="button"
+                      onClick={() => void buildProductPackage()}
+                    >
+                      Build product package
+                    </button>
+                  </div>
+                )}
+                {!question &&
+                  !working &&
+                  messages.length > 2 &&
+                  !canBuildPackage && (
+                    <div className="mx-auto mt-10 max-w-md text-center text-xs text-muted-foreground">
+                      Keep describing the product or answer the remaining
+                      decisions.
+                    </div>
                   )}
-                </button>
               </div>
-              <div className="flex items-center justify-between px-1 py-2 text-[11px] text-muted-foreground">
-                <span>Enter to send · Shift+Enter for a new line</span>
-                <span>{provider.label}</span>
+
+              <div className="rf-composer-dock">
+                <form
+                  onSubmit={handleSubmit}
+                  className="mx-auto w-full max-w-[820px] px-4 pb-2 sm:px-8"
+                >
+                  <div className="relative">
+                    <label className="sr-only" htmlFor="project-composer">
+                      Message RockFoundry
+                    </label>
+                    <textarea
+                      id="project-composer"
+                      name="message"
+                      value={composer}
+                      onChange={(event) => setComposer(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          void handleSubmit(
+                            event as unknown as FormEvent<HTMLFormElement>,
+                          );
+                        }
+                      }}
+                      placeholder={
+                        question
+                          ? "Answer naturally..."
+                          : project.description
+                            ? "Add context or a reference URL..."
+                            : "Describe your idea..."
+                      }
+                      rows={1}
+                      className="rf-composer min-h-[54px] w-full resize-none pr-14"
+                      disabled={working}
+                    />
+                    <button
+                      className="rf-send-button absolute bottom-2.5 right-3"
+                      type={working ? "button" : "submit"}
+                      disabled={working ? false : !composer.trim()}
+                      onClick={working ? () => setWorking(false) : undefined}
+                      aria-label={working ? "Stop generation" : "Send message"}
+                    >
+                      {working ? (
+                        <Square className="size-3.5 fill-current" />
+                      ) : (
+                        <ArrowUp className="size-4" />
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between px-1 py-2 text-[11px] text-muted-foreground">
+                    <span>Enter to send · Shift+Enter for a new line</span>
+                    <span>{provider.label}</span>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
             </>
           )}
         </div>
@@ -1005,10 +1041,8 @@ export default function ProjectWorkspace({
           references={references}
           activity={activity}
           exportReady={exportReady}
-          exporting={exporting}
           working={working}
           onClose={() => setDrawer(null)}
-          onExport={exportProject}
           onDownload={() =>
             window.location.assign(`/api/projects/${projectId}/export`)
           }
@@ -1158,10 +1192,8 @@ function DrawerPanel({
   references,
   activity,
   exportReady,
-  exporting,
   working,
   onClose,
-  onExport,
   onDownload,
   onReviseDecision,
 }: {
@@ -1171,10 +1203,8 @@ function DrawerPanel({
   references: Reference[];
   activity: Activity[];
   exportReady: boolean;
-  exporting: boolean;
   working: boolean;
   onClose: () => void;
-  onExport: () => void;
   onDownload: () => void;
   onReviseDecision: (topic: string) => void;
 }) {
@@ -1222,8 +1252,6 @@ function DrawerPanel({
           <DocumentsContent
             state={state}
             exportReady={exportReady}
-            exporting={exporting}
-            onExport={onExport}
             onDownload={onDownload}
           />
         )}
@@ -1555,14 +1583,10 @@ function ContextList({
 function DocumentsContent({
   state,
   exportReady,
-  exporting,
-  onExport,
   onDownload,
 }: {
   state: any;
   exportReady: boolean;
-  exporting: boolean;
-  onExport: () => void;
   onDownload: () => void;
 }) {
   const status = state.readiness ? projectStatus(state) : "Draft";
@@ -1671,30 +1695,18 @@ function DocumentsContent({
           </div>
         </section>
       )}
-      <button
-        className="rf-primary-button w-full"
-        type="button"
-        onClick={onExport}
-        disabled={exporting}
-      >
-        {exporting ? (
-          <>
-            <RefreshCw className="size-4 animate-spin" /> Generating
-          </>
-        ) : (
-          <>
-            <FileText className="size-4" /> Generate build brief and handoff
-          </>
-        )}
-      </button>
-      {exportReady && (
+      {exportReady ? (
         <button
-          className="rf-secondary-button w-full"
+          className="rf-primary-button w-full"
           type="button"
           onClick={onDownload}
         >
-          Download project
+          <FileText className="size-4" /> Download Handoff
         </button>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Build the product package from Discovery to generate this handoff.
+        </p>
       )}
     </div>
   );

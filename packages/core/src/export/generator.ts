@@ -319,7 +319,10 @@ function renderAgentHandoff(state: ProjectState) {
     .join("\n");
   return `# Agent Handoff
 
-Use this package as the source of product truth before writing code.
+Use this package as the authoritative confirmed product truth before writing code.
+
+Confirmed product decisions are authoritative. Do not infer, overwrite, or add unresolved behavior.
+The approved prototype, when included, is the visual and interaction reference. The target implementation stack may differ from the prototype; translate intent rather than copying it blindly.
 
 ## Package contents
 
@@ -754,21 +757,47 @@ ${list(debt.topRisks.map((item) => `${item.title}: ${item.reason}`))}
   };
 }
 
+function renderHandoffReadme(state: ProjectState) {
+  const design = state.studio.approvedVersion
+    ? "The approved prototype under design/prototype/ is the visual and interaction reference."
+    : state.studio.currentVersion
+      ? "A draft prototype is included under design/prototype/. Review and approve it before treating it as visual reference."
+      : "No product design is included yet.";
+  return `# ${state.name} — Coding Agent Start Here
+
+Start with AGENT_HANDOFF.md. It defines product truth, the do-not-invent boundary, and the required read order.
+
+## Read in this order
+
+1. AGENT_HANDOFF.md
+2. decisions/DO_NOT_INVENT.md
+3. decisions/DECISIONS.md and decisions/decisions.json
+4. decisions/INVARIANTS.md
+5. product/PRD.md and product/ERD.md
+6. product/BRD.md
+
+${design}
+
+The target implementation stack may differ from this prototype. Translate the approved visual and interaction intent into the target stack; do not copy prototype code blindly and do not invent unresolved product behavior.
+`;
+}
+
 export async function generateExport(
   state: ProjectState,
 ): Promise<ExportPackage> {
   const documents = renderArtifacts(state);
   const zip = new JSZip();
-  zip.file("BRD.md", documents.BRD);
-  zip.file("PRD.md", documents.PRD);
-  zip.file("ERD.md", documents.ERD);
-  zip.file("DO_NOT_INVENT.md", documents.DO_NOT_INVENT);
-  zip.file("DECISIONS.md", documents.DECISIONS);
-  zip.file("INVARIANTS.md", documents.INVARIANTS);
-  zip.file("READINESS.md", documents.READINESS);
+  zip.file("README.md", renderHandoffReadme(state));
+  zip.file("product/BRD.md", documents.BRD);
+  zip.file("product/PRD.md", documents.PRD);
+  zip.file("product/ERD.md", documents.ERD);
+  zip.file("decisions/DO_NOT_INVENT.md", documents.DO_NOT_INVENT);
+  zip.file("decisions/DECISIONS.md", documents.DECISIONS);
+  zip.file("decisions/INVARIANTS.md", documents.INVARIANTS);
+  zip.file("decisions/READINESS.md", documents.READINESS);
+  zip.file("decisions/decisions.json", documents.DECISIONS_JSON);
   zip.file("AGENT_HANDOFF.md", documents.AGENT_HANDOFF);
-  zip.file("decisions.json", documents.DECISIONS_JSON);
-  let fileCount = 9;
+  let fileCount = 10;
   const pack = state.generationMetadata.designPackage as
     | {
         spec?: unknown;
