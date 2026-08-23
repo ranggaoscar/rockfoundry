@@ -38,22 +38,29 @@ export async function POST(
       ? engine.resolveQuestion(state, state.discovery.activeQuestionId)
       : null;
     const classified = classifyMessage(body.text);
+    if (
+      body.explicitQuestionId &&
+      body.explicitQuestionId !== state.discovery.activeQuestionId
+    ) {
+      return jsonError("That discovery question is no longer active.", 409);
+    }
+
     const mappedOption =
       body.explicitOptionId ||
       (classified === "NEW_PRODUCT_CONTEXT"
         ? mapNaturalAnswer(body.text, active)
         : null);
+    const explicitActiveAnswer =
+      active && body.explicitQuestionId === active.id
+        ? body.explicitOptionId || mappedOption || body.text.trim()
+        : null;
 
-    // Only structured button input or an unambiguous natural mapping may answer.
-    if (
-      active &&
-      mappedOption &&
-      (body.explicitQuestionId ||
-        active.id === state.discovery.activeQuestionId)
-    ) {
+    // An explicitly targeted active question accepts a selected option, a
+    // natural option mapping, or the raw free-form text without AI planning.
+    if (active && (explicitActiveAnswer || mappedOption)) {
       return Response.json({
         intent: "ACTIVE_DECISION_ANSWER",
-        answer: mappedOption,
+        answer: explicitActiveAnswer || mappedOption,
         questionId: active.id,
         handoff: "/api/projects/" + id + "/questions",
       });
