@@ -3,12 +3,13 @@ import {
   deterministicDiscoveryPlanner,
   generateGenericDecisionCandidates,
   genericQuestionForTopic,
+  QuestionEngine,
   type AgentAction,
   type ProjectState,
   type Question,
 } from "@rockfoundry/core";
 import { prisma } from "@rockfoundry/db";
-import { createModelDiscoveryPlanner } from "./agent-planner";
+
 import { createServerToolRegistry } from "./server-tools";
 import { parseProjectState } from "./local-project";
 
@@ -82,30 +83,47 @@ export async function runConversationTurn(input: {
   text: string;
   intent: MessageIntent;
   answer?: string | string[] | null;
+  /** Updated canonical state after the human decision, so candidates reflect it. */
+  state?: ProjectState;
+  /** Topic just answered, used to pick the domain queue successor deterministically. */
+  preferredTopic?: string;
 }) {
   const project = await prisma.project.findUnique({
     where: { id: input.projectId },
   });
   if (!project) throw new Error("PROJECT_NOT_FOUND");
-  const state = parseProjectState(project);
+  const state = input.state || parseProjectState(project);
+  const engine = new QuestionEngine();
+  const domainNext = input.preferredTopic
+    ? engine
+        .generateQuestions(state, [], 12)
+        .find((question) => question.topic !== input.preferredTopic) || null
+    : null;
   const candidates = generateGenericDecisionCandidates(state).slice(0, 5);
-  const questions = candidates
+  const genericQuestions = candidates
     .map((candidate) => genericQuestionForTopic(state, candidate.topic))
     .filter((question): question is Question => Boolean(question));
-  const fallbackQuestion = questions[0] || null;
-  const planner =
-    createModelDiscoveryPlanner(candidates) ||
-    deterministicDiscoveryPlanner(
-      fallbackQuestion || {
-        id: "no-question",
-        text: "Describe the product a bit more so RockFoundry can find the next important decision.",
-        relatedRequirementIds: [],
-        options: [],
-      },
+  const questions = [domainNext, ...genericQuestions]
+    .filter((question): question is Question => Boolean(question))
+    .filter(
+      (question, index, all) =>
+        all.findIndex((candidate) => candidate.id === question.id) === index,
     );
+  const fallbackQuestion = questions[0] || null;
+  // Answer turns advance a deterministic product queue. The model may enrich
+  // language elsewhere, but must not replace the canonical next decision.
+  const planner = deterministicDiscoveryPlanner(
+    fallbackQuestion || {
+      id: "no-question",
+      text: "Describe the product a bit more so RockFoundry can find the next important decision.",
+      relatedRequirementIds: [],
+      options: [],
+    },
+  );
   const tools = createServerToolRegistry();
   const runner = new AgentRunner(planner, tools);
 
+  let resolvedQuestion: Question | null = null;
   const result = await runner.run({
     project: state,
     latestUserMessage: input.text,
@@ -114,12 +132,13 @@ export async function runConversationTurn(input: {
       .filter((topic): topic is string => Boolean(topic)),
     questionForAction: (action: AgentAction) => {
       if (action.type !== "ASK_USER") return undefined;
-      return (
+      const question =
         questions.find((question) => question.id === action.questionId) ||
         questions.find((question) => question.topic === action.questionId) ||
         fallbackQuestion ||
-        undefined
-      );
+        undefined;
+      resolvedQuestion = question || null;
+      return question;
     },
     onToolRun: async (activity) => {
       await prisma.toolRun.create({
@@ -144,6 +163,6 @@ export async function runConversationTurn(input: {
     candidates,
     questions,
     fallbackQuestion,
-    questionForAction: fallbackQuestion,
+    questionForAction: resolvedQuestion,
   };
 }

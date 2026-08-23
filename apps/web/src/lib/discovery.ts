@@ -110,18 +110,25 @@ export async function runInitialDiscovery(
       0,
       5,
     );
-    const candidateQuestions = candidates
+    const genericCandidateQuestions = candidates
       .map((candidate) =>
         genericQuestionForTopic(merged.state, candidate.topic),
       )
       .filter((question): question is Question => Boolean(question));
+    // Product intelligence owns the active question identity. A model can
+    // reason about wording/context, but cannot replace this canonical queue.
     const candidateQuestion =
-      candidateQuestions[0] || nextQuestion(merged.state);
+      nextQuestion(merged.state) || genericCandidateQuestions[0];
     if (!candidateQuestion) throw new Error("NO_DISCOVERY_QUESTION");
+    const candidateQuestions = [
+      candidateQuestion,
+      ...genericCandidateQuestions,
+    ].filter(
+      (question, index, all) =>
+        all.findIndex((candidate) => candidate.id === question.id) === index,
+    );
     const tools = createServerToolRegistry();
-    const planner =
-      createModelDiscoveryPlanner(candidates) ||
-      deterministicDiscoveryPlanner(candidateQuestion);
+    const planner = deterministicDiscoveryPlanner(candidateQuestion);
     const runner = new AgentRunner(planner, tools);
     const agentResult = await runner.run({
       project: merged.state,
@@ -160,13 +167,10 @@ export async function runInitialDiscovery(
     });
     if (agentResult.finalAction.type !== "ASK_USER")
       throw new Error("AGENT_DID_NOT_SELECT_QUESTION");
-    const question: Question = {
-      ...candidateQuestion,
-      id: agentResult.finalAction.questionId || candidateQuestion.id,
-      text: agentResult.finalAction.question,
-      options: agentResult.finalAction.options,
-      relatedRequirementIds: agentResult.finalAction.relatedRequirementIds,
-    };
+    // Keep the exact canonical question (including its ID) in the persisted
+    // state and returned response. Mixing a model action ID with a different
+    // question object creates stale-question 409s on the first answer.
+    const question: Question = candidateQuestion;
     merged.state.discovery.activeQuestionId = question.id;
     const saved = await saveProjectState(
       projectId,

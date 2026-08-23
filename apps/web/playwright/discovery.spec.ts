@@ -9,7 +9,11 @@ test.describe("Decision Debt discovery", () => {
 
     await page.goto("/");
     await page.locator("#idea-composer").fill(idea);
-    await page.getByRole("button", { name: "Start project" }).click();
+    // The composer action is language-aware: "Mulai discovery" for Indonesian
+    // ideas, "Start discovery" otherwise. Pressing Enter also submits.
+    await page
+      .getByRole("button", { name: /Mulai discovery|Start discovery/i })
+      .click();
     await expect(page).toHaveURL(/\/project\//, { timeout: 30_000 });
     await expect(page.getByText("5-Brand Marble CRM").first()).toBeVisible({
       timeout: 15_000,
@@ -22,9 +26,22 @@ test.describe("Decision Debt discovery", () => {
     ).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(/I have the starting idea/i)).toHaveCount(0);
 
+    const answerResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/questions") &&
+        response.request().method() === "POST",
+    );
     await page
       .getByRole("button", { name: /Satu customer lintas brand/i })
       .click();
+    const response = await answerResponse;
+    const answerPayload = await response.json();
+    expect(response.status()).toBe(200);
+    expect(answerPayload).toEqual(
+      expect.objectContaining({
+        question: expect.objectContaining({ topic: "sales_visibility" }),
+      }),
+    );
 
     await expect(
       page.getByRole("button", {

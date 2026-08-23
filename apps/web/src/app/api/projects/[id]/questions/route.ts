@@ -185,6 +185,8 @@ export async function POST(
       text: displayAnswer,
       intent: "ACTIVE_DECISION_ANSWER",
       answer: answer,
+      state: processed.updatedState,
+      preferredTopic: currentQuestion.topic,
     });
     let nextQuestion: Question | null = null;
     if (conversation.result.finalAction.type === "ASK_USER") {
