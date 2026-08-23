@@ -158,6 +158,7 @@ export default function ProjectWorkspace({
   const [surface, setSurface] = useState<WorkspaceSurface>("discover");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [thinkingElapsedSec, setThinkingElapsedSec] = useState(0);
   const [pageError, setPageError] = useState("");
   const [exportReady, setExportReady] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
@@ -287,6 +288,30 @@ export default function ProjectWorkspace({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [fetchReferences]);
+
+  useEffect(() => {
+    if (!working) return;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const tick = () => {
+      if (cancelled) return;
+      setThinkingElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
+    };
+    const kickoff = window.setTimeout(tick, 0);
+    const interval = window.setInterval(tick, 1000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(kickoff);
+      window.clearInterval(interval);
+    };
+  }, [working]);
+
+  const thinkingStatus =
+    !working || thinkingElapsedSec < 10
+      ? "Agent is thinking..."
+      : thinkingElapsedSec < 30
+        ? "This is a big idea. I need to think a little deeper — please wait..."
+        : "Still thinking through the important decisions...";
 
   const state = project?.canonicalState || {};
   const indo = isIndonesianProject(state);
@@ -942,8 +967,8 @@ export default function ProjectWorkspace({
                   );
                 })}
                 {working && (
-                  <div className="rf-typing" role="status">
-                    <span className="rf-pulse-dot" /> Updating your product...
+                  <div className="rf-typing" role="status" aria-live="polite">
+                    <span className="rf-pulse-dot" /> {thinkingStatus}
                   </div>
                 )}
                 {pageError && (
