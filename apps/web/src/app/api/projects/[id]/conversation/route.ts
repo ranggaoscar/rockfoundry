@@ -19,8 +19,8 @@ import { z } from "zod";
 
 const Input = z.object({
   text: z.string().trim().min(1).max(5000),
-  explicitQuestionId: z.string().min(1).optional(),
-  explicitOptionId: z.string().min(1).optional(),
+  explicitQuestionId: z.string().min(1).nullable().optional(),
+  explicitOptionId: z.string().min(1).nullable().optional(),
 });
 
 export async function POST(

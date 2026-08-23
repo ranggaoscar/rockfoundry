@@ -36,6 +36,7 @@ type QuestionOption = { id: string; label: string; description?: string };
 type Question = {
   id: string;
   text: string;
+  answerType?: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "FREE_TEXT" | "BOOLEAN";
   options?: QuestionOption[];
   recommendation?: string;
   reasonAsked: string;
@@ -413,7 +414,11 @@ export default function ProjectWorkspace({
       const response = await fetch(`/api/projects/${projectId}/conversation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(
+          question?.answerType === "FREE_TEXT"
+            ? { text, explicitQuestionId: question.id }
+            : { text },
+        ),
       });
       const data = await response.json();
       if (!response.ok)
