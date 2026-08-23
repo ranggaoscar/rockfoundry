@@ -116,6 +116,89 @@ describe("Design generation JSON transport", () => {
     vi.unstubAllGlobals();
   });
 
+  it("accepts an architecture missing only summary without a repair request", async () => {
+    const { summary: _summary, ...architectureWithoutSummary } = architecture;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(response(JSON.stringify(architectureWithoutSummary)));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+        "max",
+      ),
+    );
+
+    await expect(
+      gateway.runDesignArchitecture({ product: {}, screenMap: [] }),
+    ).resolves.toMatchObject({
+      architecture: {
+        summary:
+          "Generated design architecture from confirmed product decisions.",
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("accepts a prototype missing only summary without a repair request", async () => {
+    const { summary: _summary, ...prototypeWithoutSummary } = prototype;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(response(JSON.stringify(prototypeWithoutSummary)));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+        "max",
+      ),
+    );
+
+    await expect(
+      gateway.runPrototypeGeneration({
+        product: {},
+        architecture,
+        screenMap: [],
+      }),
+    ).resolves.toMatchObject({
+      prototype: {
+        summary:
+          "Generated interactive prototype from the approved design architecture.",
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("does not coerce a wrong-type architecture summary", async () => {
+    const wrongSummary = { ...architecture, summary: null };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(JSON.stringify(wrongSummary)))
+      .mockResolvedValueOnce(response(JSON.stringify(architecture)));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+        "max",
+      ),
+    );
+
+    await expect(
+      gateway.runDesignArchitecture({ product: {}, screenMap: [] }),
+    ).resolves.toMatchObject({
+      architecture: { summary: architecture.summary },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
   it("repairs one malformed architecture response with the same strict schema and model", async () => {
     const malformed = { designSpec: { productName: "Job Platform" } };
     const fetchMock = vi

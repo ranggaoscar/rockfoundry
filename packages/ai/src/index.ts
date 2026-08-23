@@ -357,6 +357,22 @@ function annotateZodError(error: z.ZodError, data: unknown): SafeZodError {
   return Object.assign(error, { topLevelKeys });
 }
 
+function normalizeMissingDesignSummary(
+  data: unknown,
+  requiredKey: "designSpec" | "files",
+  summary: string,
+) {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data) ||
+    !(requiredKey in data) ||
+    "summary" in data
+  )
+    return data;
+  return { ...data, summary };
+}
+
 export class AiGateway {
   constructor(
     private provider: AiGatewayProvider = new MockGatewayProvider(),
@@ -365,10 +381,12 @@ export class AiGateway {
   private async completeWithSchemaRepair<T>(
     request: InferenceRequest<unknown>,
     schema: z.ZodType<T>,
+    normalize: (data: unknown) => unknown = (data) => data,
   ): Promise<InferenceResponse<unknown>> {
     const initial = await this.provider.complete<unknown>(request);
-    const initialValidation = schema.safeParse(initial.data);
-    if (initialValidation.success) return initial;
+    const normalizedInitial = { ...initial, data: normalize(initial.data) };
+    const initialValidation = schema.safeParse(normalizedInitial.data);
+    if (initialValidation.success) return normalizedInitial;
 
     const issues = initialValidation.error.issues.map((issue) => ({
       path: issue.path.join("."),
@@ -394,10 +412,11 @@ export class AiGateway {
         },
       ],
     });
-    const repairedValidation = schema.safeParse(repaired.data);
+    const normalizedRepaired = { ...repaired, data: normalize(repaired.data) };
+    const repairedValidation = schema.safeParse(normalizedRepaired.data);
     if (!repairedValidation.success)
-      throw annotateZodError(repairedValidation.error, repaired.data);
-    return repaired;
+      throw annotateZodError(repairedValidation.error, normalizedRepaired.data);
+    return normalizedRepaired;
   }
 
   async runPlannerAction<T>(input: {
@@ -444,6 +463,12 @@ export class AiGateway {
         responseSchema: DesignArchitectureResponseSchema,
       },
       DesignArchitectureOutputSchema,
+      (data) =>
+        normalizeMissingDesignSummary(
+          data,
+          "designSpec",
+          "Generated design architecture from confirmed product decisions.",
+        ),
     );
     const architecture = DesignArchitectureOutputSchema.parse(result.data);
     return {
@@ -487,6 +512,12 @@ export class AiGateway {
         responseSchema: PrototypeGenerationResponseSchema,
       },
       PrototypeGenerationOutputSchema,
+      (data) =>
+        normalizeMissingDesignSummary(
+          data,
+          "files",
+          "Generated interactive prototype from the approved design architecture.",
+        ),
     );
     const prototype = PrototypeGenerationOutputSchema.parse(result.data);
     return {
