@@ -93,16 +93,16 @@ function genericQuestionCopy(
           ? "Aplikasi ini hanya membantu pencari kerja menemukan lowongan, atau perusahaan juga bisa membuat akun dan memasang lowongan?"
           : "Does this product only help job seekers discover openings, or can employers also create accounts and post jobs?",
         recommendation: id
-          ? "Batas aktor ini menentukan alur utama, data yang perlu disimpan, dan izin akses sejak awal."
+          ? "Ini menentukan siapa yang memakai aplikasi dan data apa yang perlu disimpan dari awal."
           : "This actor boundary determines the core workflow, data model, and permissions from the start.",
       };
     case "IDENTITY":
       return {
         text: id
-          ? `Anda menyebut ${entities}. Kalau hal yang sama muncul lewat konteks atau peran berbeda, apakah harus menjadi satu record dengan histori bersama, atau record terpisah?${followUp}`
+          ? `Kamu menyebut ${entities}. Kalau data yang sama muncul dari sisi berbeda, apakah tetap satu data dengan riwayat bersama, atau dipisah?${followUp}`
           : `You mentioned ${entities}. If the same real-world thing appears through different contexts or roles, should it remain one record with shared history or become separate records?${followUp}`,
         recommendation: id
-          ? "Tentukan batas identitas sebelum histori, duplicate handling, dan relasi data dibangun."
+          ? "Supaya data orang atau barang yang sama tidak tercatat dobel."
           : "Set the identity boundary before history, duplicate handling, and data relationships are built.",
       };
     case "OWNERSHIP":
@@ -111,106 +111,106 @@ function genericQuestionCopy(
           ? `Setelah ${primaryEntity} dibuat, siapa yang bertanggung jawab menanganinya? Jika tanggung jawab berpindah ke orang lain, apakah riwayatnya perlu tetap disimpan?${followUp}`
           : `For ${entities} in ${workflows}, who owns the record after creation, and what happens when responsibility changes?${followUp}`,
         recommendation: id
-          ? "Supaya setiap data selalu punya penanggung jawab yang jelas dan riwayat perubahannya tetap tercatat."
+          ? "Supaya setiap data selalu punya penanggung jawab yang jelas dan riwayatnya tetap tercatat."
           : "Explicit ownership prevents orphaned work and preserves reassignment history.",
       };
     case "VISIBILITY":
       return {
         text: id
-          ? `Anda menyebut ${roles} dan ${entities}. Jika lebih dari satu role menangani record yang sama, siapa yang boleh melihat histori lengkap dan siapa yang hanya melihat bagian yang ditugaskan?${followUp}`
+          ? `Kalau ${entities} ditangani beberapa orang, siapa yang boleh melihat seluruh riwayatnya? Siapa yang hanya boleh melihat bagian tugasnya?${followUp}`
           : `You mentioned ${roles} and ${entities}. If more than one role handles the same record, who can see the full history and who is limited to the part assigned to them?${followUp}`,
         recommendation: id
-          ? "Batas visibility sebaiknya mengikuti risiko data dan tanggung jawab, bukan default semua role bisa melihat semua."
+          ? "Supaya data penting tidak terlihat oleh orang yang tidak berwenang."
           : "Visibility should follow data risk and responsibility instead of defaulting to every role seeing everything.",
       };
     case "LIFECYCLE":
       return {
         text: id
-          ? `Untuk ${primaryEntity}, status apa yang perlu dilalui dari dibuat sampai selesai atau dibatalkan, dan kejadian apa yang membuatnya benar-benar selesai?${followUp}`
+          ? `Untuk ${primaryEntity}, status apa saja yang perlu ada dari dibuat sampai selesai atau dibatalkan? Kapan dianggap benar-benar selesai?${followUp}`
           : `For ${primaryEntity}, which states should it move through from creation to completion or cancellation, and what event makes it truly complete?${followUp}`,
         recommendation: id
-          ? "Status dan transisi yang jelas menjaga workflow, notifikasi, dan acceptance criteria tetap konsisten."
+          ? "Supaya semua orang memakai status yang sama dan tidak bingung."
           : "Clear states and transitions keep workflows, notifications, and acceptance criteria consistent.",
       };
     case "CONFLICT_CAPACITY":
       return {
         text: id
-          ? `Karena ${entities} memiliki proses berbasis waktu atau resource terbatas, kalau dua permintaan memakai slot/resource yang sama, sistem harus menolak, mengantrikan, atau mengizinkan override dengan persetujuan?${followUp}`
+          ? `Kalau dua permintaan memakai ${primaryEntity} yang sama di waktu yang sama, sistem harus menolak, mengantri, atau tetap mengizinkan setelah ada persetujuan?${followUp}`
           : `Because ${entities} involve time or constrained resources, when two requests target the same slot or resource, should the system reject, queue, or allow an approved override?${followUp}`,
         recommendation: id
-          ? "Aturan conflict harus diputuskan sebelum availability dan notifikasi memberi janji kepada user."
+          ? "Supaya janji ke pelanggan tidak tabrakan."
           : "Conflict behavior should be decided before availability and notifications make promises to users.",
       };
     case "ASSIGNMENT":
       return {
         text: id
-          ? `Saat ${entities} perlu ditangani oleh ${roles}, bagaimana assignment ditentukan dan bolehkah record dipindahkan ke role lain tanpa menghapus histori?${followUp}`
+          ? `Kalau ${entities} perlu ditangani, siapa yang menanganinya? Bolehkah dipindah ke orang lain tanpa menghapus riwayatnya?${followUp}`
           : `When ${entities} need to be handled by ${roles}, how is assignment decided, and can a record move to another role without losing history?${followUp}`,
         recommendation: id
-          ? "Assignment perlu membedakan pemilik saat ini dari histori siapa yang pernah menangani record."
+          ? "Supaya selalu jelas siapa yang sedang mengerjakan dan siapa yang pernah mengerjakannya."
           : "Assignment should distinguish current ownership from the history of who handled the record.",
       };
     case "CROSS_BOUNDARY":
       return {
         text: id
-          ? `Jika ${entities} berpindah antar ${boundaries}, apakah ownership, visibility, histori, dan aturan workflow ikut berpindah atau tetap mengikuti tempat asal?${followUp}`
+          ? `Kalau ${entities} pindah ke ${boundaries} lain, apakah aturan akses dan riwayatnya ikut pindah, atau tetap mengikuti tempat asal?${followUp}`
           : `If ${entities} move across ${boundaries}, do ownership, visibility, history, and workflow rules move with them or stay with the originating boundary?${followUp}`,
         recommendation: id
-          ? "Perpindahan lintas batas harus eksplisit agar akses dan histori tidak berubah diam-diam."
+          ? "Supaya akses dan riwayat tidak berubah diam-diam saat data pindah."
           : "Cross-boundary movement needs an explicit rule so access and history do not change silently.",
       };
     case "DUPLICATE":
       return {
         text: id
-          ? `Kalau ${primaryEntity} yang sama muncul dari konteks atau channel berbeda, apa yang dianggap duplicate: digabung, ditautkan, diberi tanda untuk review, atau tetap terpisah?${followUp}`
+          ? `Kalau ${primaryEntity} yang sama muncul dari tempat berbeda, apa yang harus terjadi: digabung, ditandai dulu, atau tetap terpisah?${followUp}`
           : `If the same ${primaryEntity} appears from different contexts or channels, what counts as a duplicate: merge, link, flag for review, or keep separate?${followUp}`,
         recommendation: id
-          ? "Jangan menggabungkan data secara diam-diam; tetapkan sinyal duplicate dan siapa yang memutuskan."
+          ? "Supaya data yang sama tidak digabung diam-diam."
           : "Do not silently merge data; define the duplicate signal and who makes the final decision.",
       };
     case "HISTORY":
       return {
         text: id
-          ? `Untuk histori ${primaryEntity}, perubahan apa yang harus tetap terlihat, siapa yang boleh melihatnya, dan apakah histori mengikuti record atau pemilik saat ini?${followUp}`
+          ? `Perubahan apa saja yang perlu tetap tercatat dalam riwayat ${primaryEntity}? Siapa yang boleh melihat riwayat tersebut?${followUp}`
           : `For ${primaryEntity} history, which changes must remain visible, who may inspect them, and does history follow the record or its current owner?${followUp}`,
         recommendation: id
-          ? "History policy memengaruhi audit, koreksi, privacy, dan kepercayaan pada data."
+          ? "Supaya perubahan penting bisa dicek kembali kalau ada kesalahan."
           : "History policy affects auditability, corrections, privacy, and trust in the data.",
       };
     case "COMPLETION":
       return {
         text: id
-          ? `Untuk ${primaryWorkflow}, bukti apa yang membuat workflow dianggap selesai, dan apakah record yang selesai boleh dibuka kembali?${followUp}`
+          ? `Untuk proses ${primaryEntity}, kapan dianggap selesai? Kalau sudah selesai, boleh dibuka lagi?${followUp}`
           : `For ${primaryWorkflow}, what evidence makes the workflow complete, and can a completed record be reopened?${followUp}`,
         recommendation: id
-          ? "Completion harus terlihat di state dan laporan, bukan hanya berarti tombol terakhir ditekan."
+          ? "Supaya sistem tahu dengan jelas kapan sebuah proses benar-benar selesai."
           : "Completion should be visible in state and reporting, not just mean that the last button was pressed.",
       };
     case "APPROVAL":
       return {
         text: id
-          ? `Dari ${roles}, siapa yang boleh approve, reject, atau override perubahan penting pada ${primaryEntity}, dan bukti apa yang harus disimpan?${followUp}`
+          ? `Siapa yang boleh menyetujui atau menolak perubahan penting pada ${primaryEntity}? Kalau ada pengecualian, siapa yang boleh memberikan izin?${followUp}`
           : `Among ${roles}, who may approve, reject, or override a consequential change to ${primaryEntity}, and what evidence must be retained?${followUp}`,
         recommendation: id
-          ? "Approval boundary harus konsisten dengan permission dan audit trail."
+          ? "Supaya perubahan penting hanya dilakukan oleh orang yang berwenang dan tetap tercatat."
           : "Approval boundaries must stay consistent with permissions and the audit trail.",
       };
     case "MONEY":
       return {
         text: id
-          ? `Jika ${primaryEntity} terkait pembayaran atau deposit, siapa yang bertanggung jawab atas status uang, dan apa yang terjadi saat cancel, gagal, refund, atau dispute?${followUp}`
+          ? `Kalau ${primaryEntity} melibatkan pembayaran, siapa yang bertanggung jawab atas status pembayarannya? Apa yang terjadi kalau dibatalkan, gagal, dikembalikan, atau ada sengketa?${followUp}`
           : `If ${primaryEntity} involves payment or a deposit, who owns the money state, and what happens on cancellation, failure, refund, or dispute?${followUp}`,
         recommendation: id
-          ? "Money state perlu dipisahkan dari status workflow supaya pembatalan dan rekonsiliasi tidak ambigu."
+          ? "Supaya status pembayaran tidak tercampur dengan status pekerjaan."
           : "Keep money state distinct from workflow state so cancellation and reconciliation stay unambiguous.",
       };
     case "RETENTION":
       return {
         text: id
-          ? `Berapa lama ${primaryEntity} dan histori terkait harus tersedia, dan apa arti delete jika masih ada record atau dokumen yang terhubung?${followUp}`
+          ? `Berapa lama ${primaryEntity} perlu disimpan? Kalau data dihapus tetapi masih terhubung dengan dokumen lain, apa yang harus terjadi?${followUp}`
           : `How long should ${primaryEntity} and its history remain available, and what does delete mean when linked records or documents still exist?${followUp}`,
         recommendation: id
-          ? "Retention dan deletion harus diputuskan sebelum relasi data dan privacy behavior dikunci."
+          ? "Supaya data lama tidak menumpuk, tapi data penting tidak hilang sembarangan."
           : "Retention and deletion should be decided before data relationships and privacy behavior are locked.",
       };
     case "WORKFLOW_ANCHOR":
@@ -221,34 +221,38 @@ function genericQuestionCopy(
               ? `Apa hasil utama yang ingin terjadi ketika seseorang menemukan produk yang mereka minati?${followUp}`
               : `What is the main outcome when someone finds something they want in this product?${followUp}`
             : id
-              ? `Ketika seseorang tertarik pada ${primaryEntity}, hasil pertama apa yang harus terjadi supaya produk ini berhasil dipakai?${followUp}`
+              ? `Kalau seseorang tertarik pada ${primaryEntity}, hasil pertama apa yang harus terjadi supaya produk ini terasa berguna?${followUp}`
               : `When someone is interested in ${primaryEntity}, what first outcome should happen to prove the product was actually used?${followUp}`,
         recommendation: id
-          ? "Outcome yang terlihat membantu membatasi scope dan acceptance criteria."
+          ? "Supaya jelas hasil pertama yang menandakan produk ini benar-benar dipakai."
           : "An observable outcome keeps scope and acceptance criteria honest.",
       };
     case "RELATIONSHIPS":
       return {
         text: id
-          ? `Dari ${entities}, record mana yang wajib tetap terhubung supaya histori dan konteksnya bisa dipahami bersama?${followUp}`
+          ? `Dari ${entities}, data mana yang wajib tetap terhubung supaya riwayatnya bisa dipahami bersama?${followUp}`
           : `Among ${entities}, which records must stay connected so their history and context can be understood together?${followUp}`,
         recommendation: id
-          ? "Relasi yang diputuskan menjadi dasar ERD; relasi lain tetap unresolved."
+          ? "Supaya data yang saling berkaitan tidak tercerai dan sulit dilacak."
           : "Decided relationships become the ERD basis; other relationships remain unresolved.",
       };
     case "ROLE_BOUNDARIES":
       return {
         text: id
-          ? `Untuk ${roles}, apa yang boleh dilihat atau diubah oleh tiap role pada ${entities}?${followUp}`
+          ? `Untuk ${roles}, apa yang boleh dilihat atau diubah oleh masing-masing orang pada ${entities}?${followUp}`
           : `For ${roles}, what may each role see or change in ${entities}?${followUp}`,
         recommendation: id
-          ? "Permission sebaiknya mengikuti tanggung jawab yang benar-benar disebut, bukan default semua akses."
+          ? "Supaya setiap orang hanya mengurus bagian yang memang jadi tanggung jawabnya."
           : "Permissions should follow stated responsibilities rather than defaulting to universal access.",
       };
     default:
       return {
-        text: `${candidate.intent} ${entities}.${followUp}`,
-        recommendation: candidate.description,
+        text: id
+          ? `Ada keputusan yang perlu dipastikan soal ${entities}.${followUp}`
+          : `${candidate.intent} ${entities}.${followUp}`,
+        recommendation: id
+          ? "Supaya aturan penting tidak ditebak sendiri."
+          : candidate.description,
       };
   }
 }
@@ -303,7 +307,7 @@ function genericOptions(
         id: "job_seeker_only",
         label: id ? "Pencari kerja saja" : "Job seekers only",
         description: id
-          ? "Platform membantu user menemukan, menyimpan, dan melacak lowongan."
+          ? "Aplikasi membantu orang menemukan, menyimpan, dan melacak lowongan."
           : "The product helps people discover, save, and track job openings.",
       },
       {
@@ -317,23 +321,23 @@ function genericOptions(
         id: "not_sure",
         label: id ? "Belum ditentukan" : "Not decided yet",
         description: id
-          ? "Bandingkan dua model produk sebelum mengunci scope."
+          ? "Bandingkan dua model produk sebelum dikunci."
           : "Compare both product models before locking scope.",
       },
     ],
     IDENTITY: [
       {
         id: "shared_identity",
-        label: id ? "Satu record bersama" : "Shared identity",
+        label: id ? "Satu data bersama" : "Shared identity",
         description: id
-          ? "Identitas dan histori mengikuti orang atau benda yang sama."
+          ? "Identitas dan riwayat mengikuti orang atau barang yang sama."
           : "The same identity and history follow them everywhere.",
       },
       {
         id: "separate_records",
-        label: id ? "Record terpisah" : "Separate records",
+        label: id ? "Data terpisah" : "Separate records",
         description: id
-          ? "Setiap konteks menjaga record-nya sendiri."
+          ? "Setiap sisi menjaga datanya sendiri."
           : "Each context keeps its own record.",
       },
     ],
@@ -341,15 +345,15 @@ function genericOptions(
       {
         id: "owner_all_others_scoped",
         label: id
-          ? "Owner melihat semua, role lain terbatas"
+          ? "Pemilik melihat semua, orang lain terbatas"
           : "Owner sees all, others stay scoped",
         description: id
-          ? "Akses penuh hanya untuk pemilik; role lain mengikuti tanggung jawabnya."
+          ? "Akses penuh hanya untuk pemilik; orang lain mengikuti tugasnya."
           : "Full access stays with the owner; other roles stay scoped.",
       },
       {
         id: "everyone_sees_all",
-        label: id ? "Semua role melihat semua" : "Everyone sees everything",
+        label: id ? "Semua orang melihat semua" : "Everyone sees everything",
         description: id
           ? "Kolaborasi lebih mudah, batas data lebih longgar."
           : "Easier collaboration, looser data boundaries.",
@@ -375,15 +379,15 @@ function genericOptions(
       {
         id: "role_scoped_access",
         label: id
-          ? "Tiap role melihat bagian tugasnya"
+          ? "Tiap orang melihat bagian tugasnya"
           : "Each role sees its own scope",
         description: id
-          ? "Akses mengikuti tanggung jawab nyata tiap peran."
+          ? "Akses mengikuti tanggung jawab nyata tiap orang."
           : "Access follows each role's real responsibility.",
       },
       {
         id: "shared_full_access",
-        label: id ? "Semua role melihat semua" : "All roles see everything",
+        label: id ? "Semua orang melihat semua" : "All roles see everything",
         description: id
           ? "Kolaborasi mudah, batas data lebih longgar."
           : "Easy collaboration, looser data boundaries.",
@@ -414,16 +418,16 @@ function genericOptions(
         id: "reject_conflict",
         label: id ? "Tolak permintaan bentrok" : "Reject conflicting requests",
         description: id
-          ? "Slot/resource hanya boleh dipakai satu peminjaman."
+          ? "Waktu atau tempat yang sama hanya boleh dipakai satu permintaan."
           : "A slot or resource serves only one request.",
       },
       {
         id: "queue_with_approval",
         label: id
-          ? "Antrikan atau override dengan persetujuan"
+          ? "Antrikan atau izinkan setelah ada persetujuan"
           : "Queue or override with approval",
         description: id
-          ? "Konflik tidak hilang, tapi bisa lewat jalur persetujuan."
+          ? "Bentrok tidak hilang, tapi bisa lewat jalur persetujuan."
           : "Conflicts route through an explicit approval path.",
       },
     ],
@@ -431,16 +435,16 @@ function genericOptions(
       {
         id: "creator_handles",
         label: id
-          ? "Pembuat record menangani sendiri"
+          ? "Pembuat data menangani sendiri"
           : "Creator handles it directly",
         description: id
-          ? "Tanggung jawab jelas sejak record dibuat."
+          ? "Tanggung jawab jelas sejak data dibuat."
           : "Responsibility is clear from creation.",
       },
       {
         id: "reassignable_with_history",
         label: id
-          ? "Bisa dipindah dengan histori"
+          ? "Bisa dipindah dengan riwayat"
           : "Reassignable with history",
         description: id
           ? "Perpindahan tanggung jawab tetap tercatat."
@@ -451,28 +455,26 @@ function genericOptions(
       {
         id: "rules_follow_record",
         label: id
-          ? "Aturan ikut record saat pindah"
+          ? "Aturan ikut data saat pindah"
           : "Rules move with the record",
         description: id
-          ? "Akses dan histori konsisten lintas unit."
+          ? "Akses dan riwayat tetap sama di tempat baru."
           : "Access and history stay consistent across units.",
       },
       {
         id: "origin_keeps_rules",
         label: id
-          ? "Unit asal tetap pemilik aturan"
+          ? "Tempat asal tetap pegang aturannya"
           : "Origin keeps ownership rules",
         description: id
-          ? "Record baru mengikuti aturan unit tujuan."
+          ? "Data di tempat baru mengikuti aturan tempat itu."
           : "The new location applies its own rules.",
       },
     ],
     DUPLICATE: [
       {
         id: "merge_with_review",
-        label: id
-          ? "Gabungkan dengan langkah review"
-          : "Merge with a review step",
+        label: id ? "Gabungkan setelah diperiksa" : "Merge with a review step",
         description: id
           ? "Data ganda disatukan setelah diperiksa."
           : "Duplicates combine after human review.",
@@ -492,14 +494,14 @@ function genericOptions(
         id: "full_change_history",
         label: id ? "Semua perubahan tercatat" : "Every change is recorded",
         description: id
-          ? "Audit penuh untuk koreksi dan kepercayaan data."
+          ? "Catatan lengkap untuk koreksi dan kepercayaan data."
           : "Full audit trail for corrections and trust.",
       },
       {
         id: "key_changes_only",
         label: id ? "Hanya perubahan penting" : "Only key changes",
         description: id
-          ? "Histori ringkas, fokus pada perubahan material."
+          ? "Riwayat ringkas, fokus pada perubahan yang penting."
           : "Compact history focused on material changes.",
       },
     ],
@@ -526,9 +528,11 @@ function genericOptions(
     APPROVAL: [
       {
         id: "dedicated_approver",
-        label: id ? "Role khusus yang menyetujui" : "A dedicated approver role",
+        label: id
+          ? "Orang khusus yang menyetujui"
+          : "A dedicated approver role",
         description: id
-          ? "Persetujuan terpisah dari pembuat record."
+          ? "Persetujuan terpisah dari orang yang membuat data."
           : "Approval stays separate from creation.",
       },
       {
@@ -548,7 +552,7 @@ function genericOptions(
           ? "Status uang terpisah dari status proses"
           : "Money state separate from workflow state",
         description: id
-          ? "Refund dan gagal bayar tidak merusak status kerja."
+          ? "Pengembalian uang dan gagal bayar tidak merusak status pekerjaan."
           : "Refunds and failures never corrupt workflow state.",
       },
       {
@@ -606,7 +610,7 @@ function genericOptions(
         id: "contact_first",
         label: id ? "Menghubungi tim" : "Contact the team",
         description: id
-          ? "Tindakan pertama adalah percakapan atau follow-up."
+          ? "Tindakan pertama adalah percakapan atau tindak lanjut."
           : "The first action is a conversation or follow-up.",
       },
       {

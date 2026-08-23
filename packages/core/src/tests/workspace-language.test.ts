@@ -138,6 +138,76 @@ describe("workspace language and question presentation", () => {
     );
   });
 
+  it("uses plain Indonesian for generic discovery copy across archetypes", () => {
+    const jargon =
+      /\b(record|role|workflow|visibility|assignment|ownership|resource|override|availability|approval boundary|permission|audit trail|money state|retention|deletion|privacy behavior|acceptance criteria|unresolved|duplicate|channel|histori|approve|reject|slot|conflict|refund|dispute|delete|scope|user)\b/i;
+    const state = createInitialProjectState({
+      id: "plain-id",
+      name: "Kasir Warteg",
+      rawIdea:
+        "Saya mau membuat aplikasi kasir untuk warteg supaya pesanan dan pembayaran lebih mudah dicatat. Ada kasir dan pemilik. Pesanan ditangani kasir. Meja terbatas jadi jadwal bisa bentrok. Pelanggan yang sama kadang muncul dua kali. Perlu riwayat perubahan, nota, dan aturan hapus data lama.",
+    });
+    state.entities = ["pesanan", "pembayaran", "pelanggan"];
+    state.roles = ["kasir", "pemilik"];
+    state.workflows = ["mencatat pesanan"];
+
+    const topics = [
+      "ownership_boundary",
+      "visibility_boundary",
+      "lifecycle_transitions",
+      "resource_conflict_policy",
+      "assignment_behavior",
+      "duplicate_semantics",
+      "approval_responsibility",
+      "money_responsibility",
+      "retention_deletion",
+    ] as const;
+
+    const examples: Record<string, string> = {};
+    for (const topic of topics) {
+      const question = genericQuestionForTopic(state, topic);
+      expect(question, topic).toBeTruthy();
+      expect(question!.topic).toBe(topic);
+      const visible = [
+        question!.text,
+        question!.recommendation || "",
+        ...(question!.options || []).flatMap((option) => [
+          option.label,
+          option.description || "",
+        ]),
+      ].join("\n");
+      examples[topic] = question!.text;
+      expect(visible, topic).not.toMatch(jargon);
+      expect(
+        question!.text.split(/[.?!]/).filter(Boolean).length,
+      ).toBeLessThanOrEqual(3);
+    }
+
+    const english = createInitialProjectState({
+      id: "plain-en",
+      name: "Clinic desk",
+      rawIdea:
+        "I want a clinic desk app with staff, patients, rooms, bookings, payments, and history.",
+    });
+    english.entities = ["patient", "booking"];
+    english.roles = ["staff", "owner"];
+    english.workflows = ["book a room"];
+    const englishOwnership = genericQuestionForTopic(
+      english,
+      "ownership_boundary",
+    );
+    expect(englishOwnership).toBeTruthy();
+    expect(englishOwnership!.text).toMatch(/owns the record|responsibility/i);
+    expect(englishOwnership!.options?.map((option) => option.id)).toEqual(
+      genericQuestionForTopic(state, "ownership_boundary")!.options?.map(
+        (option) => option.id,
+      ),
+    );
+    expect(examples.visibility_boundary).toMatch(/siapa yang boleh melihat/i);
+    expect(examples.approval_responsibility).toMatch(/menyetujui|menolak/i);
+    expect(examples.retention_deletion).toMatch(/berapa lama|dihapus/i);
+  });
+
   it("rejects a second answer to a stale question id at the engine queue level", () => {
     const state = createInitialProjectState({
       id: "crm",
