@@ -7,9 +7,12 @@ const managedProvider = process.env.PLAYWRIGHT_MANAGED_PROVIDER === "true";
 // Default on for deterministic agentic E2E. This flag is consumed only by
 // Playwright's spawned local server; production runtime never sets it.
 const mockSearch = process.env.PLAYWRIGHT_MOCK_SEARCH !== "false";
+const plannerFailure = process.env.PLAYWRIGHT_PLANNER_FAILURE === "true";
 const providerEnvironment = managedProvider
   ? "set AI_PROVIDER_MODE=openai-compatible&& set OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1&& set OPENAI_COMPATIBLE_API_KEY=test-demo-key&& set OPENAI_COMPATIBLE_MODEL=demo-test-model&& "
-  : "set AI_PROVIDER_MODE=mock&& set OPENAI_COMPATIBLE_BASE_URL=&& set OPENAI_COMPATIBLE_API_KEY=&& set OPENAI_COMPATIBLE_MODEL=&& ";
+  : plannerFailure
+    ? "set AI_PROVIDER_MODE=openai-compatible&& set OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:1/v1&& set OPENAI_COMPATIBLE_API_KEY=fake-compatible-key&& set OPENAI_COMPATIBLE_MODEL=fake-compatible-model&& "
+    : "set AI_PROVIDER_MODE=mock&& set OPENAI_COMPATIBLE_BASE_URL=&& set OPENAI_COMPATIBLE_API_KEY=&& set OPENAI_COMPATIBLE_MODEL=&& ";
 
 export default defineConfig({
   testDir: "./playwright",

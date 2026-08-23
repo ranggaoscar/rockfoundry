@@ -14,7 +14,11 @@ import {
   saveProjectState,
 } from "@/lib/local-project";
 import { persistQuestionMessage, persistUserMessage } from "@/lib/discovery";
-import { mapNaturalAnswer, runConversationTurn } from "@/lib/conversation";
+import {
+  logPlannerFailure,
+  mapNaturalAnswer,
+  runConversationTurn,
+} from "@/lib/conversation";
 import { z } from "zod";
 
 const AnswerSchema = z
@@ -180,21 +184,11 @@ export async function POST(
       )
       .join(", ");
     mergeDetectedContradictions(processed.updatedState);
-    const conversation = await runConversationTurn({
-      projectId: id,
-      text: displayAnswer,
-      intent: "ACTIVE_DECISION_ANSWER",
-      answer: answer,
-      state: processed.updatedState,
-      preferredTopic: currentQuestion.topic,
-    });
-
-    let nextQuestion: Question | null = null;
-    if (conversation.result.finalAction.type === "ASK_USER") {
-      nextQuestion =
-        conversation.questionForAction || conversation.questions[0] || null;
-    }
-    processed.updatedState.discovery.activeQuestionId = nextQuestion?.id;
+    const deterministicNextQuestion =
+      engine.generateQuestions(processed.updatedState, [], 1)[0] || null;
+    // Persist canonical human truth before optional planner orchestration.
+    processed.updatedState.discovery.activeQuestionId =
+      deterministicNextQuestion?.id;
     const saved = await saveProjectState(
       id,
       processed.updatedState,
@@ -206,6 +200,26 @@ export async function POST(
       revised:
         body.mode === "revise" || Boolean(processed.decision?.supersedes),
     });
+
+    let nextQuestion: Question | null = deterministicNextQuestion;
+    try {
+      const conversation = await runConversationTurn({
+        projectId: id,
+        text: displayAnswer,
+        intent: "ACTIVE_DECISION_ANSWER",
+        answer: answer,
+        state: saved.state,
+        preferredTopic: currentQuestion.topic,
+      });
+      if (conversation.result.finalAction.type === "ASK_USER") {
+        nextQuestion =
+          conversation.questionForAction || conversation.questions[0] || null;
+      }
+    } catch (error) {
+      // Planner orchestration is optional after a valid canonical answer.
+      // Preserve the persisted deterministic question on planner failure.
+      logPlannerFailure(error);
+    }
     if (nextQuestion) {
       await persistQuestionMessage(id, nextQuestion);
     } else if (saved.state.discovery.importantDecisionsRemaining === 0) {

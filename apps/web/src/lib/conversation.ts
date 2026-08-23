@@ -15,6 +15,7 @@ import { prisma } from "@rockfoundry/db";
 import { createModelDiscoveryPlanner } from "./agent-planner";
 import { parseProjectState } from "./local-project";
 import { createServerToolRegistry } from "./server-tools";
+import { z } from "zod";
 
 export type MessageIntent =
   | "ACTIVE_DECISION_ANSWER"
@@ -44,6 +45,21 @@ export function classifyMessage(text: string): MessageIntent {
 
 /** Web-layer compatibility export for the pure core matcher. */
 export const mapNaturalAnswer = matchNaturalAnswer;
+
+export function logPlannerFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : "unknown failure";
+  const category = /timed out/i.test(message)
+    ? "planner-timeout"
+    : /parse JSON|invalid JSON/i.test(message)
+      ? "planner-json"
+      : error instanceof z.ZodError ||
+          /ZodError|Invalid (union|input)|expected/i.test(message)
+        ? "planner-schema"
+        : /Planned action rejected/i.test(message)
+          ? "planner-policy"
+          : "planner-provider";
+  console.error(`[conversation] ${category}`);
+}
 
 function canonicalQuestion(
   state: ProjectState,
