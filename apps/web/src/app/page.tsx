@@ -255,7 +255,8 @@ function HomeWorkspace() {
                 <div>
                   <span className="font-medium">3. Handoff</span>
                   <p className="mt-1 text-muted-foreground">
-                    Generate BRD, PRD, ERD, and coding-agent constraints.
+                    Build documents, an interactive design, and a coding-agent
+                    handoff.
                   </p>
                 </div>
               </section>

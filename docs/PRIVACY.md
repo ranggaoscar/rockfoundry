@@ -2,9 +2,9 @@
 
 ## Local-first boundary
 
-RockFoundry V1 does not require a RockFoundry account, hosted backend, cloud database, cloud storage, or managed RockFoundry AI service. Projects and generated artifacts are stored on the local machine in an OS-aware application-data directory.
+RockFoundry does not require a RockFoundry account, hosted backend, cloud database, cloud storage, or managed RockFoundry AI service. Projects and generated artifacts are stored on the local machine in an OS-aware application-data directory.
 
-Anyone with access to the local machine or local RockFoundry instance can access its projects. V1 does not provide multi-user authorization or tenant isolation.
+Anyone with access to the local machine or local RockFoundry instance can access its projects. RockFoundry does not provide multi-user authorization or tenant isolation.
 
 ## Provider-bound processing
 

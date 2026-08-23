@@ -2,7 +2,7 @@
   "name": "rockfoundry",
   "version": "1.0.0-agentic.1",
   "private": true,
-  "description": "Open-source local-first product discovery for AI builders. Find hidden decisions, score Decision Debt, and export anti-invention handoffs before coding agents invent your product.",
+  "description": "Open-source product intelligence for AI builders. Turn rough ideas into explicit decisions, interactive prototypes, and coding-agent-ready handoffs.",
   "homepage": "https://github.com/ranggaoscar/rockfoundry",
   "repository": {
     "type": "git",

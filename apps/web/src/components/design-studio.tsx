@@ -87,16 +87,14 @@ export function DesignStudio({
   async function generate() {
     setWorking(true);
     setError("");
-    setStage("Reading Product Map...");
+    setStage("Generating interactive prototype...");
     try {
-      setStage("Building Screen Map...");
       const response = await fetch(
         `/api/projects/${projectId}/design/generate`,
         {
           method: "POST",
         },
       );
-      setStage("Creating design direction...");
       const data = await response.json();
       if (!response.ok)
         throw new Error(data.error || "Could not generate design.");

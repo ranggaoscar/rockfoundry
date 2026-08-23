@@ -934,7 +934,7 @@ export default function ProjectWorkspace({
                 })}
                 {working && (
                   <div className="rf-typing" role="status">
-                    <span className="rf-pulse-dot" /> Saving decision...
+                    <span className="rf-pulse-dot" /> Updating your product...
                   </div>
                 )}
                 {pageError && (

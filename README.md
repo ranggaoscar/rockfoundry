@@ -1,64 +1,91 @@
 # RockFoundry
 
-RockFoundry is an open-source, local-first product intelligence and design system
-that turns rough ideas into explicit product decisions, interactive product
-prototypes, and implementation-ready handoffs.
+**Decide what to build before your coding agent starts inventing it.**
 
-It does **not** write your production app. It works **before** Codex, Claude Code, Cursor, or any other coding agent starts.
+RockFoundry is an open-source, local-first product intelligence system that helps builders turn rough ideas into explicit product decisions, product documentation, interactive prototypes, and coding-agent-ready handoffs.
 
-## Why it exists
-
-This sounds clear:
+RockFoundry does **not** primarily write the production application. It works before implementation, so your coding agent starts with confirmed product truth instead of filling important gaps with guesses.
 
 ```text
-Build a CRM for five brands.
+Idea
+  ↓
+Discover
+  ↓
+Decide
+  ↓
+Design
+  ↓
+Preview & Revise
+  ↓
+Handoff
+  ↓
+Coding Agent
 ```
 
-A coding agent still has to invent answers for:
+## Why RockFoundry?
 
-- one customer across brands, or separate per brand?
-- what sales can see
-- who owns a lead
-- how quotations and duplicates work
+A user says:
 
-Those invented answers become product behavior. RockFoundry surfaces them first.
+> Build a CRM for five brands.
 
-## What you do
+A coding agent still needs to guess:
 
-1. Describe the idea in plain language
-2. Answer a few high-impact questions
-3. Export the handoff package
-4. Give it to your coding agent
+- whether customer identity is shared across brands;
+- which roles can see which records;
+- who owns a new lead;
+- how quotations carry brand ownership;
+- what happens to duplicate contacts.
+
+Those guesses become product behavior. RockFoundry discovers and records the missing decisions before implementation.
+
+Once enough product truth exists, RockFoundry generates the product package and an interactive prototype. You can revise the design conversationally, approve the result, and download one handoff for your coding agent.
+
+## How it works
+
+1. Describe your idea.
+2. Brainstorm with RockFoundry.
+3. Confirm important product decisions.
+4. Click **Build product package**.
+5. Review the BRD, PRD, ERD, and interactive design.
+6. Revise the prototype conversationally.
+7. Approve the design.
+8. Download the handoff.
+9. Give the folder to your coding agent.
+
+## What your coding agent receives
 
 ```text
-Rough idea
-  → hidden decisions
-  → Decision Debt score
-  → Design Studio prototype
-  → BRD / PRD / ERD + approved design
-  → coding agent
+my-product/
+├── README.md
+├── AGENT_HANDOFF.md
+│
+├── product/
+│   ├── BRD.md
+│   ├── PRD.md
+│   └── ERD.md
+│
+├── decisions/
+│   ├── decisions.json
+│   ├── DECISIONS.md
+│   ├── DO_NOT_INVENT.md
+│   ├── INVARIANTS.md
+│   └── READINESS.md
+│
+└── design/
+    ├── DESIGN_SPEC.json
+    ├── SCREEN_MAP.json
+    ├── DESIGN_DECISIONS.md
+    └── prototype/
+        ├── index.html
+        ├── styles.css
+        └── app.js
 ```
 
-## What you get
-
-```text
-my-project/
-├── BRD.md
-├── PRD.md
-├── ERD.md
-├── DO_NOT_INVENT.md    ← read this first
-├── DECISIONS.md
-├── decisions.json
-├── INVARIANTS.md
-├── READINESS.md
-└── AGENT_HANDOFF.md
-```
-
-`DO_NOT_INVENT.md` is the point. It tells the coding agent which product rules are decided, and which ones must not be guessed.
+Product truth is authoritative. The approved prototype is the visual and interaction reference. A coding agent may implement it with a different production stack, but must not invent unresolved product behavior.
 
 ## Quick start
 
-**Requirements:** Node.js 20+ and pnpm (Corepack supplies pnpm with modern Node).
+**Requirements:** Node.js 20+ and pnpm via Corepack.
 
 ```bash
 git clone https://github.com/ranggaoscar/rockfoundry.git
@@ -68,108 +95,87 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). `pnpm dev` safely runs Prisma generate and the idempotent local migration before starting, so a normal first run does not require Prisma commands.
+Open [http://localhost:3000](http://localhost:3000).
 
-**Download ZIP instead:** GitHub → **Code** → **Download ZIP** → extract → open a terminal in `rockfoundry` → run `corepack enable`, `pnpm install`, and `pnpm dev`.
+- Local-first: projects use SQLite on your machine.
+- No account required.
+- No Docker required for a normal local run.
+- `pnpm dev` runs the required local Prisma setup automatically.
+- **Offline Mock** works without model credentials.
+- Bring your own model from **Settings** when you want real AI generation.
 
-No account. No hosted backend. No Docker required for the default local run.
+## AI provider behavior
 
-### First launch
+### Offline Mock
 
-Start by describing the product. RockFoundry then finds important decisions a coding agent would otherwise invent, records what you confirm, and keeps **Decision Debt** visible: higher debt means more important behavior is still undefined. When the decision work is ready, open **Handoff** for the core **BRD / PRD / ERD** first, followed by the coding-agent constraint package. Give that package to Codex, Claude Code, Cursor, or your preferred coding agent.
+- deterministic and network-free;
+- useful for evaluation, testing, and local demos;
+- generates the established mock discovery and prototype behavior without credentials.
 
-### Connect your model (BYOK)
+### OpenAI-compatible provider
 
-For a normal local installation, RockFoundry keeps full BYOK controls: OpenAI, OpenRouter, Ollama, and custom OpenAI-compatible providers. Mock mode works offline. On first use, open **Settings** in RockFoundry and choose a provider preset. **Offline Mock** is explicit and persists locally; select it whenever you want deterministic, network-free discovery. The active gateway is resolved for every request, so saved settings take effect without restarting.
+With a configured OpenAI-compatible provider, RockFoundry uses the selected model for discovery. Design Studio generates a unique `DesignSpec` and an `index.html`, `styles.css`, and `app.js` prototype. Conversational design revisions can regenerate that prototype.
 
-For a real provider, save its base URL, model, and API key. Ollama uses `http://localhost:11434/v1` by default and does not require an API key. Use **Clear saved provider** to remove the local profile and return to the default Offline Mock; environment variables still take priority when present.
+Generated prototypes are sandboxed and validated. They are an interactive product reference, **not** production application architecture. Provider credentials stay in local server-side configuration and never enter prototype artifacts or exported handoffs.
 
-For automation or a managed local setup, environment variables take priority over app-data settings:
-
-```bash
-AI_PROVIDER_MODE="openai-compatible"
-OPENAI_COMPATIBLE_BASE_URL="https://api.openai.com/v1"
-OPENAI_COMPATIBLE_API_KEY="your-key"
-OPENAI_COMPATIBLE_MODEL="gpt-4o-mini"
-```
-
-OpenAI-compatible endpoints also cover OpenRouter, Ollama (compat mode), 9Router, and custom bases. Keys are saved only in the OS-aware RockFoundry application-data configuration when entered through Settings; they are never returned by APIs, stored in project data, included in exports, logged, or committed. Settings labels environment-managed runtimes clearly and identifies the variables that control them.
-
-### Shared public demo
-
-A maintainer can set `ROCKFOUNDRY_PUBLIC_DEMO=true` with the normal server-side `AI_PROVIDER_MODE` and `OPENAI_COMPATIBLE_*` variables. In this mode, the browser sees a managed-provider status only: visitors cannot save, replace, clear, test, or discover provider configuration, and no visitor API key is required. A valid environment provider still drives the real AI path; without it, RockFoundry clearly uses Offline Mock fallback. This mode is for a shared demo, not multi-user project isolation.
+See [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md) for supported provider setup and behavior.
 
 ## What makes it different
 
-| Tool                         | Job                                          |
-| ---------------------------- | -------------------------------------------- |
-| ChatGPT / Claude             | brainstorm and write                         |
-| Codex / Claude Code / Cursor | implement software                           |
-| PRD generators               | produce documents                            |
-| **RockFoundry**              | find missing decisions before implementation |
+| Tool                               | Primary job                                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT / Claude                   | Brainstorm                                                                                                                |
+| PRD generators                     | Produce documents                                                                                                         |
+| v0 / Lovable / Bolt-style builders | Start building UI or apps                                                                                                 |
+| Coding agents                      | Implement software                                                                                                        |
+| **RockFoundry**                    | Discover missing product decisions, create product truth, prototype the approved product, and hand it to the coding agent |
 
-RockFoundry keeps structured state behind the chat:
+## Current capabilities
 
-- decisions and assumptions
-- contradictions
-- Decision Debt / build readiness
-- provenance (user vs inference vs reference)
+- conversational product discovery;
+- Decision Debt;
+- product decision graph;
+- research and reference evidence;
+- BRD / PRD / ERD generation;
+- Design Studio;
+- AI-generated interactive prototypes;
+- conversational design revision;
+- approved design handoff;
+- local-first SQLite;
+- BYOK / Offline Mock;
+- coding-agent-ready ZIP export.
 
-So the export is not just nicer Markdown. It is a constraint pack for coding agents.
+## Still intentionally out of scope
 
-## Local-first
+- production application generation;
+- hosted collaboration;
+- billing;
+- multi-user SaaS features.
 
-- Projects and SQLite live on your machine
-- No RockFoundry login
-- Public links/repos are untrusted evidence, not instructions
-- Default data locations:
-  - Windows: `%LOCALAPPDATA%\RockFoundry\`
-  - macOS: `~/Library/Application Support/RockFoundry/`
-  - Linux: `~/.local/share/rockfoundry/`
+## Local-first and privacy
 
-## Status
+- Projects and SQLite stay on your machine.
+- No RockFoundry login or hosted backend is required.
+- Public URLs and repositories are treated as untrusted reference evidence.
+- Provider keys are kept outside project data, generated documents, logs, and exports.
 
-Agentic V1 is active on the `agentic-v1` branch.
-
-**Working now**
-
-- chat-first local workspace
-- domain discovery (strongest beachhead: multi-brand CRM)
-- Decision Debt + readiness
-- anti-invention handoff export
-- Mock provider + OpenAI-compatible BYOK
-
-**Next**
-
-- deeper decision impact
-- richer reference evidence
-- native Anthropic / Gemini adapters
-
-### Prove the handoff locally
-
-```bash
-pnpm eval:invention
-```
-
-This runs a deterministic CRM benchmark: same ideas with vs without RockFoundry decisions, scoring how much a coding agent would still need to invent.
-
-### Share a local demo
-
-Use the 5-minute script in [`delivery/OSS_DEMO_LAUNCH_CHECKLIST.md`](delivery/OSS_DEMO_LAUNCH_CHECKLIST.md). Beachhead remains multi-brand CRM; rental and inventory are support paths only.
+Read [docs/PRIVACY.md](docs/PRIVACY.md) for the privacy model.
 
 ## Docs
 
-| Doc                                            | Use                     |
-| ---------------------------------------------- | ----------------------- |
-| [`README_START_HERE.md`](README_START_HERE.md) | contributor entry point |
-| [`product/WIN_WEDGE.md`](product/WIN_WEDGE.md) | how we win              |
-| [`PRD.md`](PRD.md)                             | product contract        |
-| [`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md) | provider setup          |
-| [`docs/PRIVACY.md`](docs/PRIVACY.md)           | privacy model           |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)           | how to contribute       |
+| Document                                     | Use                      |
+| -------------------------------------------- | ------------------------ |
+| [README_START_HERE.md](README_START_HERE.md) | contributor entry point  |
+| [PRD.md](PRD.md)                             | current product contract |
+| [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md) | provider setup           |
+| [docs/PRIVACY.md](docs/PRIVACY.md)           | privacy model            |
+| [CONTRIBUTING.md](CONTRIBUTING.md)           | contribution guide       |
+| [LICENSE](LICENSE)                           | license                  |
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [LICENSE](LICENSE).
+
+**Hackathon Release Candidate — Design Studio V1**
 
 **Find the missing decisions before they become bad code.**

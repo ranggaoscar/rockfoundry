@@ -1,4 +1,4 @@
-# RockFoundry Agentic V1 Product Requirements Document
+# RockFoundry Product Requirements Document — Hackathon Release Candidate
 
 ## 0. Product Reset
 
@@ -294,9 +294,8 @@ interface AIProvider {
 
 Current implementation and architecture targets:
 
-- `OpenAICompatibleProvider` — implemented in Agentic V1.
-- `AnthropicProvider` — architecture target; not wired into the current runtime.
-- `GeminiProvider` — architecture target; not wired into the current runtime.
+- `OpenAICompatibleProvider` — implemented in the current release.
+- Native Anthropic and Gemini adapters are intentionally out of scope for this release.
 
 OpenAI-compatible endpoints must be able to represent OpenAI, OpenRouter, 9Router, Ollama where compatible, and custom endpoints.
 
@@ -622,11 +621,11 @@ Open RockFoundry
 7. Chat-first workspace UI and responsive drawers.
 8. Unit, integration, Playwright, security, and build quality gate.
 
-Do not merge this branch into `main`. Do not release or deploy a hosted service as part of V1.
+For this Hackathon Release Candidate, merge to `main` is authorized only after the required local quality gate is green. Hosted deployment remains a separate operation.
 
 ## 20. Definition of Done
 
-RockFoundry Agentic V1 is ready for review when:
+RockFoundry is ready for Hackathon Release Candidate review when:
 
 - the local app runs with SQLite and no account;
 - projects and conversation history persist locally;

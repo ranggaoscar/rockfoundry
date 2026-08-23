@@ -1,40 +1,32 @@
 # AI Providers and BYOK
 
-RockFoundry is free and open source. Users bring their own provider key or choose the explicit Mock Provider.
+RockFoundry is free and open source. Use **Offline Mock** without credentials, or bring an OpenAI-compatible provider from Settings.
 
-## Supported architecture and current status
+## Current provider behavior
 
-| Provider or mode | Adapter / path                  | Current status                    | Notes                                                            |
-| ---------------- | ------------------------------- | --------------------------------- | ---------------------------------------------------------------- |
-| Mock Provider    | Local deterministic provider    | **Implemented**                   | Offline demos, tests, and E2E.                                   |
-| OpenAI           | OpenAI-compatible               | **Implemented**                   | Uses the current configurable chat-completions path.             |
-| OpenRouter       | OpenAI-compatible               | **Available through the adapter** | User supplies a compatible base URL, key, and model.             |
-| 9Router          | OpenAI-compatible               | **Available through the adapter** | User supplies a compatible endpoint configuration.               |
-| Ollama           | OpenAI-compatible where enabled | **Available through the adapter** | Local endpoint; capability depends on the Ollama-compatible API. |
-| Custom endpoint  | OpenAI-compatible               | **Available through the adapter** | User controls the base URL and model.                            |
-| Anthropic        | Native messages API             | **Architecture target**           | Native adapter is not wired into the current runtime.            |
-| Gemini           | Native Gemini API               | **Architecture target**           | Native adapter is not wired into the current runtime.            |
+| Provider or mode | Current behavior                                                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| Offline Mock     | Deterministic, network-free discovery and prototype behavior for demos, tests, and evaluation. |
+| OpenAI           | Supported through the OpenAI-compatible path.                                                  |
+| OpenRouter       | Supported when configured with a compatible base URL, key, and model.                          |
+| Ollama           | Supported when its OpenAI-compatible endpoint is enabled.                                      |
+| Custom endpoint  | Supported when it implements the configured OpenAI-compatible contract.                        |
 
-V1 needs one active profile. The model and UI should not hardcode a single vendor. Multiple named profiles can be added later.
+RockFoundry resolves one active provider configuration for each request: explicit environment configuration first, then persisted OS-aware local configuration, then explicit Mock mode. Saving a Settings profile takes effect without restarting the app.
 
-The current Agentic V1 runtime supports one active OpenAI-compatible configuration. Resolve order is: explicit environment configuration, persisted OS-aware application-data configuration, then explicit Mock mode. The runtime resolves this configuration for each gateway request, so saving a profile in Settings does not require a restart. The Settings panel marks environment-managed runtimes and names the controlling `AI_PROVIDER_MODE` and `OPENAI_COMPATIBLE_*` variables.
+## What real providers do
 
-## Provider contract
+With a real OpenAI-compatible provider configured:
 
-```ts
-interface AIProvider {
-  id: string;
-  testConnection(): Promise<TestResult>;
-  complete(request: CompletionRequest): Promise<AIResponse>;
-  runAgent(request: AgentRequest): Promise<AgentResponse>;
-}
-```
+- discovery uses the selected model to help structure product context;
+- Design Studio generates a validated `DesignSpec` plus `index.html`, `styles.css`, and `app.js`;
+- conversational design revisions can regenerate the existing prototype.
 
-All structured agent output is validated against Zod action schemas before it can affect local state.
+The deterministic Screen Map and confirmed product truth remain authoritative. A provider supplies presentation and prototype output inside those boundaries.
 
-## Settings UX
+## Settings
 
-Provider setup is progressive. Do not block first launch with configuration. When AI is required, open the compact settings sheet, select a preset, save a local profile, test it, and optionally discover its models:
+Provider setup is progressive: first launch works in Offline Mock without configuration. To connect a provider, open **Settings**, select a compatible preset, save the base URL, model, and API key, then test the connection.
 
 ```text
 AI Provider
@@ -45,28 +37,41 @@ Model: [ ... ]
 [Test connection]
 ```
 
-The explicit **Offline Mock** preset is available for offline demo and test flows and persists as the active local profile. **Ollama** may be saved and tested without an API key. Use **Clear saved provider** to delete the persisted local profile; an environment-managed profile remains active until its variables are removed. A real provider failure shows a retry/settings action and never silently changes to mock mode.
+**Offline Mock** is explicit and remains useful for deterministic local work. **Ollama** can be saved and tested without an API key. **Clear saved provider** removes the persisted local profile; an environment-managed profile remains active until its variables are removed.
 
-## Key storage
+A real provider failure shows a safe user-facing error and does **not** silently switch to Mock.
 
-Keys are not project data. Store them outside SQLite project records using an OS-aware application configuration directory or secure OS credential storage where straightforward. Never include keys in:
+## Environment configuration
+
+Environment configuration takes priority over Settings:
+
+```bash
+AI_PROVIDER_MODE="openai-compatible"
+OPENAI_COMPATIBLE_BASE_URL="https://api.openai.com/v1"
+OPENAI_COMPATIBLE_API_KEY="your-key"
+OPENAI_COMPATIBLE_MODEL="gpt-4o-mini"
+```
+
+## Prototype safety
+
+Generated prototypes are interactive references, not production application architecture. Before persistence and preview, RockFoundry validates generated HTML, CSS, and JavaScript. The preview runs sandboxed. External scripts/styles, unsafe network behavior, unsafe embeds, and invalid output are rejected.
+
+## Key storage and privacy
+
+Keys are not project data. They stay outside SQLite project records in OS-aware local application configuration. Never include keys in:
 
 - conversation messages;
-- canonical state;
-- BRD, PRD, or ERD;
+- canonical project state;
+- BRD, PRD, ERD, DesignSpec, or prototype files;
 - logs and debug output;
-- tool activity;
 - exports;
-- analytics;
 - Git.
 
-## Provider privacy
-
-Local-first does not mean zero data leaves the machine. A prompt, selected references, and project context sent to a configured provider leave the machine. The user chooses the provider and is responsible for reviewing its retention and training policy. Mock and local Ollama runs can keep inference local.
+Local-first does not mean zero data leaves the machine: project context sent to a configured provider leaves the machine. You choose the provider and should review its retention and training policy. Offline Mock and local Ollama can keep inference local.
 
 ## Failure handling
 
-Normalize provider failures into safe user-facing states:
+Provider failures must resolve to safe user-facing states, such as:
 
 ```text
 RockFoundry couldn't reach your configured AI provider.
