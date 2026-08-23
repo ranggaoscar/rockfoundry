@@ -19,3 +19,4 @@ export * from "./tools/registry";
 export * from "./eval/invention-harness";
 export * from "./eval/generalization";
 export * from "./export/derived";
+export * from "./design";

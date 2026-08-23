@@ -387,6 +387,23 @@ Rules:
 
 ${decided || "- None yet."}
 
+${
+  state.studio.approvedVersion
+    ? `## Approved product design
+
+Reference:
+- design/DESIGN_SPEC.json
+- design/SCREEN_MAP.json
+- design/prototype/
+
+The prototype is an approved visual and interaction reference.
+Implementation may translate it into the production stack, but must preserve
+approved workflows, screen hierarchy, interaction priorities, and role boundaries.
+Do not invent alternative product behavior. Do not copy prototype code blindly.
+`
+    : ""
+}
+
 ## Current handoff quality
 
 - Project: ${state.name || "Untitled project"}
@@ -751,6 +768,33 @@ export async function generateExport(
   zip.file("READINESS.md", documents.READINESS);
   zip.file("AGENT_HANDOFF.md", documents.AGENT_HANDOFF);
   zip.file("decisions.json", documents.DECISIONS_JSON);
+  let fileCount = 9;
+  const pack = state.generationMetadata.designPackage as
+    | {
+        spec?: unknown;
+        files?: Array<{ path: string; content: string }>;
+        summary?: string;
+      }
+    | undefined;
+  if (state.studio.currentVersion > 0 && pack?.files?.length) {
+    const label = state.studio.status === "APPROVED" ? "APPROVED" : "DRAFT";
+    zip.file(
+      "design/DESIGN_SPEC.json",
+      JSON.stringify(pack.spec || {}, null, 2),
+    );
+    zip.file(
+      "design/SCREEN_MAP.json",
+      JSON.stringify(state.studio.screenMap, null, 2),
+    );
+    zip.file(
+      "design/DESIGN_DECISIONS.md",
+      `# Design decisions (${label} v${state.studio.currentVersion})\n\n${pack.summary || ""}\n`,
+    );
+    for (const file of pack.files) {
+      zip.file(`design/prototype/${file.path}`, file.content);
+    }
+    fileCount += 3 + pack.files.length;
+  }
   const buffer = await zip.generateAsync({ type: "nodebuffer" });
   const generatedAt = new Date().toISOString();
   return {
@@ -758,7 +802,7 @@ export async function generateExport(
     documents,
     metadata: {
       sizeBytes: buffer.length,
-      fileCount: 9,
+      fileCount,
       generatedAt,
     },
   };

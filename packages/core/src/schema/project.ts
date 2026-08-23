@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DesignStateSchema, emptyDesignState } from "./design";
 
 export const ConfidenceSchema = z.enum([
   "EXPLICIT",
@@ -208,6 +209,7 @@ export const ProjectStateSchema = z.object({
     summary: "",
   }),
   generationMetadata: z.record(z.string(), z.unknown()).default({}),
+  studio: DesignStateSchema.default(emptyDesignState()),
 });
 export type ProjectState = z.infer<typeof ProjectStateSchema>;
 
