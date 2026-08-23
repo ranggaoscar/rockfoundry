@@ -4,6 +4,7 @@ import {
   detectContradictions,
   evaluateReadinessDirectly,
   QuestionEngine,
+  type Question,
 } from "@rockfoundry/core";
 import { prisma } from "@rockfoundry/db";
 import {
@@ -13,7 +14,7 @@ import {
   saveProjectState,
 } from "@/lib/local-project";
 import { persistQuestionMessage, persistUserMessage } from "@/lib/discovery";
-import { mapNaturalAnswer } from "@/lib/conversation";
+import { mapNaturalAnswer, runConversationTurn } from "@/lib/conversation";
 import { z } from "zod";
 
 const AnswerSchema = z
@@ -170,16 +171,6 @@ export async function POST(
       answer,
       currentQuestion,
     );
-    mergeDetectedContradictions(processed.updatedState);
-    const nextQuestion =
-      engine.generateQuestions(processed.updatedState, [], 1)[0] || null;
-    processed.updatedState.discovery.activeQuestionId = nextQuestion?.id;
-    const saved = await saveProjectState(
-      id,
-      processed.updatedState,
-      project.version,
-    );
-
     const answerValues = Array.isArray(answer) ? answer : [answer];
     const displayAnswer = answerValues
       .map(
@@ -188,6 +179,25 @@ export async function POST(
             ?.label || value,
       )
       .join(", ");
+    mergeDetectedContradictions(processed.updatedState);
+    const conversation = await runConversationTurn({
+      projectId: id,
+      text: displayAnswer,
+      intent: "ACTIVE_DECISION_ANSWER",
+      answer: answer,
+    });
+    let nextQuestion: Question | null = null;
+    if (conversation.result.finalAction.type === "ASK_USER") {
+      nextQuestion =
+        conversation.questionForAction || conversation.questions[0] || null;
+    }
+    processed.updatedState.discovery.activeQuestionId = nextQuestion?.id;
+    const saved = await saveProjectState(
+      id,
+      processed.updatedState,
+      project.version,
+    );
+
     await persistUserMessage(id, displayAnswer, {
       questionId: currentQuestion.id,
       revised:

@@ -1,5 +1,6 @@
 import {
   AgentRunner,
+  deterministicDiscoveryPlanner,
   generateGenericDecisionCandidates,
   genericQuestionForTopic,
   type AgentAction,
@@ -9,7 +10,6 @@ import {
 import { prisma } from "@rockfoundry/db";
 import { createModelDiscoveryPlanner } from "./agent-planner";
 import { createServerToolRegistry } from "./server-tools";
-import { deterministicDiscoveryPlanner } from "@rockfoundry/core";
 import { parseProjectState } from "./local-project";
 
 export type MessageIntent =
@@ -81,7 +81,7 @@ export async function runConversationTurn(input: {
   projectId: string;
   text: string;
   intent: MessageIntent;
-  answer?: string | null;
+  answer?: string | string[] | null;
 }) {
   const project = await prisma.project.findUnique({
     where: { id: input.projectId },
@@ -139,5 +139,11 @@ export async function runConversationTurn(input: {
     },
   });
 
-  return { result, candidates, questions, fallbackQuestion };
+  return {
+    result,
+    candidates,
+    questions,
+    fallbackQuestion,
+    questionForAction: fallbackQuestion,
+  };
 }
