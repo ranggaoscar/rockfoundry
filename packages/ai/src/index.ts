@@ -4,6 +4,7 @@ import {
   InitialIdeaExtractionSchema,
   PrototypeGenerationOutputSchema,
 } from "@rockfoundry/core";
+import { z } from "zod";
 import {
   AiGatewayProvider,
   InferenceRequest,
@@ -339,6 +340,13 @@ export class MockGatewayProvider implements AiGatewayProvider {
   }
 }
 
+const DesignArchitectureResponseSchema = z.toJSONSchema(
+  DesignArchitectureOutputSchema,
+);
+const PrototypeGenerationResponseSchema = z.toJSONSchema(
+  PrototypeGenerationOutputSchema,
+);
+
 export class AiGateway {
   constructor(
     private provider: AiGatewayProvider = new MockGatewayProvider(),
@@ -384,6 +392,7 @@ export class AiGateway {
       ],
       temperature: 0.25,
       responseFormat: "json",
+      responseSchema: DesignArchitectureResponseSchema,
     });
     const architecture = DesignArchitectureOutputSchema.parse(result.data);
     return {
@@ -423,6 +432,7 @@ export class AiGateway {
       ],
       temperature: 0.35,
       responseFormat: "json",
+      responseSchema: PrototypeGenerationResponseSchema,
     });
     const prototype = PrototypeGenerationOutputSchema.parse(result.data);
     return {

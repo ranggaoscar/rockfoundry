@@ -12,7 +12,10 @@ import {
   jsonError,
   parseProjectState,
 } from "@/lib/local-project";
-import { generateProjectDesign } from "@/lib/design";
+import {
+  generateProjectDesign,
+  logDesignGenerationFailure,
+} from "@/lib/design";
 
 export async function POST(
   _req: NextRequest,
@@ -72,6 +75,7 @@ export async function POST(
         "Add a little more product context before building the package.",
         422,
       );
+    logDesignGenerationFailure(error);
     return jsonError("RockFoundry couldn't build the product package.", 422);
   }
 }

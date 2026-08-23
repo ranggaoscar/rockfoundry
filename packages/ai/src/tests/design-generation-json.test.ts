@@ -95,8 +95,49 @@ describe("Design generation JSON transport", () => {
       model: "design-model",
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const payload = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(payload.model).toBe("design-model");
+    const architecturePayload = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const prototypePayload = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(architecturePayload.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { strict: true },
+    });
+    expect(
+      architecturePayload.response_format.json_schema.schema.properties,
+    ).toHaveProperty("designSpec");
+    expect(prototypePayload.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { strict: true },
+    });
+    expect(
+      prototypePayload.response_format.json_schema.schema.properties,
+    ).toHaveProperty("files");
+    expect(prototypePayload.model).toBe("design-model");
+    vi.unstubAllGlobals();
+  });
+
+  it("surfaces strict-schema provider 4xx without a json_object downgrade", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      text: async () => '{"error":"schema rejected"}',
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+      ),
+    );
+
+    await expect(
+      gateway.runDesignArchitecture({ product: {}, screenMap: [] }),
+    ).rejects.toThrow("422");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      response_format: { type: "json_schema", json_schema: { strict: true } },
+    });
     vi.unstubAllGlobals();
   });
 
