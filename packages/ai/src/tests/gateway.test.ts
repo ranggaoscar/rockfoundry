@@ -46,4 +46,62 @@ describe("OpenAI-compatible gateway URLs", () => {
     );
     vi.unstubAllGlobals();
   });
+
+  it("requests json_object mode for JSON transport without a schema", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: '{"ok":true}' } }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleGateway(
+      "https://example.test/v1",
+      "test-key",
+      "test-model",
+    ).complete({
+      messages: [{ role: "user", content: "Return JSON" }],
+      responseFormat: "json",
+      maxRetries: 0,
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      response_format: { type: "json_object" },
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps strict json_schema mode when a response schema exists", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: '{"ok":true}' } }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleGateway(
+      "https://example.test/v1",
+      "test-key",
+      "test-model",
+    ).complete({
+      messages: [{ role: "user", content: "Return JSON" }],
+      responseFormat: "json",
+      responseSchema: {
+        type: "object",
+        properties: { ok: { type: "boolean" } },
+        required: ["ok"],
+      },
+      maxRetries: 0,
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: { strict: true },
+      },
+    });
+    vi.unstubAllGlobals();
+  });
 });

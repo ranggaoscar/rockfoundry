@@ -31,6 +31,13 @@ describe("initial discovery timeout policy", () => {
     expect(TASK_MAX_RETRIES.initial_idea_extraction).toBe(2);
   });
 
+  it("gives design architecture and prototype generation explicit bounded policies", () => {
+    expect(TASK_TIMEOUT.design_architecture).toBe(120_000);
+    expect(TASK_MAX_RETRIES.design_architecture).toBe(1);
+    expect(TASK_TIMEOUT.prototype_generation).toBe(180_000);
+    expect(TASK_MAX_RETRIES.prototype_generation).toBe(1);
+  });
+
   it("allows a 65-second initial extraction to complete", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn(

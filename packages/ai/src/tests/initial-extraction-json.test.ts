@@ -50,7 +50,7 @@ describe("initial discovery JSON transport", () => {
     );
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.model).toBe("selected-model");
-    expect(request.response_format).toBeUndefined();
+    expect(request.response_format).toEqual({ type: "json_object" });
     vi.unstubAllGlobals();
   });
 

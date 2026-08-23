@@ -7,7 +7,7 @@ import {
   jsonError,
   parseProjectState,
 } from "@/lib/local-project";
-import { reviseProjectDesign } from "@/lib/design";
+import { logDesignGenerationFailure, reviseProjectDesign } from "@/lib/design";
 
 const Input = z.object({ text: z.string().trim().min(2).max(2000) });
 
@@ -37,6 +37,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError)
       return jsonError("Describe the design change.", 400);
+    logDesignGenerationFailure(error);
     return jsonError("RockFoundry couldn't revise that design.", 422);
   }
 }

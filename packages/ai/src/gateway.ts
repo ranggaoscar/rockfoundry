@@ -129,7 +129,9 @@ export class NineRouterGateway implements AiGatewayProvider {
                     strict: true,
                   },
                 }
-              : undefined,
+              : req.responseFormat === "json"
+                ? { type: "json_object" }
+                : undefined,
           }),
           signal: controller.signal,
         },

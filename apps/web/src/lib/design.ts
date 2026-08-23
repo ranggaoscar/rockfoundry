@@ -18,6 +18,49 @@ import { getAiGateway } from "./ai-provider";
 import { saveProjectState } from "./local-project";
 import { createServerToolRegistry } from "./server-tools";
 import { AgentRunner } from "@rockfoundry/core";
+import { ApiError } from "@rockfoundry/ai";
+import { z } from "zod";
+
+export class DesignGenerationError extends Error {
+  constructor(
+    public readonly task:
+      "design_architecture" | "prototype_generation" | "prototype_validation",
+    public readonly cause: unknown,
+  ) {
+    super(`Design generation failed during ${task}.`);
+    this.name = "DesignGenerationError";
+  }
+}
+
+export function logDesignGenerationFailure(error: unknown) {
+  const failure =
+    error instanceof DesignGenerationError
+      ? error
+      : new DesignGenerationError("prototype_generation", error);
+  const cause = failure.cause;
+  const category =
+    cause instanceof ApiError
+      ? "provider HTTP"
+      : cause instanceof z.ZodError
+        ? "Zod schema"
+        : failure.task === "prototype_validation"
+          ? "prototype validation"
+          : cause instanceof Error && /timed out/i.test(cause.message)
+            ? "timeout"
+            : cause instanceof Error &&
+                /parse JSON|invalid JSON/i.test(cause.message)
+              ? "JSON parse"
+              : "unknown";
+  const detail =
+    cause instanceof ApiError
+      ? `HTTP ${cause.statusCode}`
+      : cause instanceof Error && /timed out/i.test(cause.message)
+        ? cause.message
+        : undefined;
+  console.error(
+    `[design-generation] ${failure.task} failed: ${category}${detail ? ` (${detail})` : ""}`,
+  );
+}
 
 const ARTIFACT_TYPES = [
   "DESIGN_SPEC",
@@ -108,17 +151,24 @@ async function generateWithRealProvider(
   const screenMap = state.studio.screenMap.length
     ? state.studio.screenMap
     : deriveScreenMap(state);
-  const architecture = await gateway.runDesignArchitecture({
-    product,
-    screenMap,
-  });
-  const prototype = await gateway.runPrototypeGeneration({
-    product,
-    architecture: architecture.architecture,
-    screenMap,
-    revisionRequest: input.request,
-    existingFiles: input.existing?.files,
-  });
+  let architecture;
+  try {
+    architecture = await gateway.runDesignArchitecture({ product, screenMap });
+  } catch (error) {
+    throw new DesignGenerationError("design_architecture", error);
+  }
+  let prototype;
+  try {
+    prototype = await gateway.runPrototypeGeneration({
+      product,
+      architecture: architecture.architecture,
+      screenMap,
+      revisionRequest: input.request,
+      existingFiles: input.existing?.files,
+    });
+  } catch (error) {
+    throw new DesignGenerationError("prototype_generation", error);
+  }
   return DesignGenerationResultSchema.parse({
     designSpec: architecture.architecture.designSpec,
     screenMap,
@@ -148,7 +198,11 @@ export async function generateProjectDesign(
     generated.files,
     generated.screenMap,
   );
-  if (!validation.accepted) throw new Error(validation.reasons.join(" "));
+  if (!validation.accepted)
+    throw new DesignGenerationError(
+      "prototype_validation",
+      new Error(validation.reasons.join(" ")),
+    );
   const next = applyGeneratedDesign(state, generated, {
     summary: generated.summary,
     source: "SYSTEM",
@@ -209,7 +263,11 @@ export async function reviseProjectDesign(
     generated.files,
     generated.screenMap,
   );
-  if (!validation.accepted) throw new Error(validation.reasons.join(" "));
+  if (!validation.accepted)
+    throw new DesignGenerationError(
+      "prototype_validation",
+      new Error(validation.reasons.join(" ")),
+    );
   const next = applyGeneratedDesign(state, generated, {
     summary: text,
     source: "USER",

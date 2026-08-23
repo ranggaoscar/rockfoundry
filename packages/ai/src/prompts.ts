@@ -200,6 +200,8 @@ export const TASK_TEMPERATURE: Record<string, number> = {
 // Task timeout mapping (in ms)
 export const TASK_TIMEOUT: Record<string, number> = {
   initial_idea_extraction: 120000,
+  design_architecture: 120000,
+  prototype_generation: 180000,
   contextual_question_enrichment: 60000,
   ambiguity_analysis: 90000,
   contradiction_review: 90000,
@@ -212,6 +214,8 @@ export const TASK_TIMEOUT: Record<string, number> = {
 // Task max retries
 export const TASK_MAX_RETRIES: Record<string, number> = {
   initial_idea_extraction: 2,
+  design_architecture: 1,
+  prototype_generation: 1,
   contextual_question_enrichment: 2,
   ambiguity_analysis: 1,
   contradiction_review: 1,

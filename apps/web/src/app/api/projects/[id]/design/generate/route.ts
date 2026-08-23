@@ -6,7 +6,10 @@ import {
   jsonError,
   parseProjectState,
 } from "@/lib/local-project";
-import { generateProjectDesign } from "@/lib/design";
+import {
+  generateProjectDesign,
+  logDesignGenerationFailure,
+} from "@/lib/design";
 
 export async function POST(
   _req: NextRequest,
@@ -32,6 +35,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof Error && error.message === "DESIGN_BLOCKED")
       return jsonError("Not enough product structure to design yet.", 422);
+    logDesignGenerationFailure(error);
     return jsonError("RockFoundry couldn't generate that product design.", 422);
   }
 }
