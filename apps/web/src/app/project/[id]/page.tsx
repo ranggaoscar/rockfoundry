@@ -75,21 +75,23 @@ type Drawer = "context" | "documents" | "settings" | null;
 type WorkspaceSurface = "discover" | "map" | "design" | "handoff";
 
 function isIndonesianProject(state: any) {
-  return /\b(saya|mau|ingin|bikin|buat|dengan|untuk|dan|yang|aplikasi)\b/i.test(
-    String(state?.rawIdea || ""),
+  return /\b(saya|mau|ingin|bikin|buat|membuat|dengan|untuk|dan|yang|aplikasi|supaya|agar|pesanan|pembayaran|kasir|warteg)\b/i.test(
+    String(state?.rawIdea || state?.normalizedSummary || ""),
   );
 }
 
 function initialMessages(project: ProjectData): Message[] {
   const idea = project.description?.trim();
+  const indo = isIndonesianProject(project.canonicalState || { rawIdea: idea });
   if (!idea)
     return [
       {
         id: "welcome",
         role: "assistant",
-        text: "What do you want to build?",
-        detail:
-          "Tell me the idea in plain language. I’ll surface the hidden decisions a coding agent would otherwise invent — then we’ll pay down Decision Debt before handoff.",
+        text: indo ? "Mau bikin apa?" : "What do you want to build?",
+        detail: indo
+          ? "Ceritakan idenya dengan bahasa biasa. Gua akan munculkan keputusan tersembunyi yang biasanya ditebak coding agent — baru kita selesaikan Decision Debt sebelum handoff."
+          : "Tell me the idea in plain language. I’ll surface the hidden decisions a coding agent would otherwise invent — then we’ll pay down Decision Debt before handoff.",
       },
     ];
   return [{ id: "idea", role: "user", text: idea }];
@@ -287,6 +289,7 @@ export default function ProjectWorkspace({
   }, [fetchReferences]);
 
   const state = project?.canonicalState || {};
+  const indo = isIndonesianProject(state);
   const debtScore = decisionDebtScore(state);
   const acceptedDecisionCount = Array.isArray(state.decisions)
     ? state.decisions.filter((decision: any) => decision.status === "ACCEPTED")
@@ -920,6 +923,7 @@ export default function ProjectWorkspace({
                     <MessageRow
                       key={message.id}
                       message={message}
+                      language={indo ? "id" : "en"}
                       nextUserText={
                         visibleMessages
                           .slice(index + 1)
@@ -1000,10 +1004,16 @@ export default function ProjectWorkspace({
                       }}
                       placeholder={
                         question
-                          ? "Answer naturally..."
+                          ? indo
+                            ? "Tulis jawaban..."
+                            : "Answer naturally..."
                           : project.description
-                            ? "Add context or a reference URL..."
-                            : "Describe your idea..."
+                            ? indo
+                              ? "Tambah konteks atau URL referensi..."
+                              : "Add context or a reference URL..."
+                            : indo
+                              ? "Ceritakan idenya..."
+                              : "Describe your idea..."
                       }
                       rows={1}
                       className="rf-composer min-h-[54px] w-full resize-none pr-14"
@@ -1024,7 +1034,11 @@ export default function ProjectWorkspace({
                     </button>
                   </div>
                   <div className="flex items-center justify-between px-1 py-2 text-[11px] text-muted-foreground">
-                    <span>Enter to send · Shift+Enter for a new line</span>
+                    <span>
+                      {indo
+                        ? "Enter untuk mengirim · Shift+Enter untuk baris baru"
+                        : "Enter to send · Shift+Enter for a new line"}
+                    </span>
                     <span>{provider.label}</span>
                   </div>
                 </form>
@@ -1060,6 +1074,7 @@ export default function ProjectWorkspace({
 
 function MessageRow({
   message,
+  language = "en",
   nextUserText,
   activeQuestionId,
   working,
@@ -1068,6 +1083,7 @@ function MessageRow({
   onAnswer,
 }: {
   message: Message;
+  language?: "id" | "en";
   nextUserText?: string;
   activeQuestionId?: string;
   working: boolean;
@@ -1117,7 +1133,9 @@ function MessageRow({
       <div className="rf-message-row rf-message-agent">
         <div className="rf-avatar rf-avatar-agent">R</div>
         <div className="min-w-0 flex-1">
-          <div className="rf-topic">{humanTopicLabel(message.topic)}</div>
+          <div className="rf-topic">
+            {humanTopicLabel(message.topic, language)}
+          </div>
           <div className="rf-resolved">
             <span aria-hidden="true">✓</span>
             <span>{nextUserText || message.text}</span>
@@ -1138,7 +1156,9 @@ function MessageRow({
       </div>
       <div className="min-w-0 flex-1">
         {isQuestion ? (
-          <div className="rf-topic">{humanTopicLabel(message.topic)}</div>
+          <div className="rf-topic">
+            {humanTopicLabel(message.topic, language)}
+          </div>
         ) : isUser ? null : (
           <div className="mb-1 text-[12px] font-medium text-muted-foreground">
             RockFoundry
@@ -1278,6 +1298,8 @@ function ContextContent({
   working: boolean;
   onReviseDecision: (topic: string) => void;
 }) {
+  const indo = isIndonesianProject(state);
+  const language = indo ? "id" : "en";
   const decisions = (state.decisions || []).filter(
     (item: any) => item && item.status !== "SUPERSEDED",
   );
@@ -1418,7 +1440,7 @@ function ContextContent({
             {decisions.slice(0, 8).map((item: any, index: number) => {
               const label =
                 item.topic && item.decision
-                  ? `${humanTopicLabel(item.topic)}: ${String(item.decision).replace(/[_-]+/g, " ")}`
+                  ? `${humanTopicLabel(item.topic, language)}: ${String(item.decision).replace(/[_-]+/g, " ")}`
                   : item.title || item.description || String(item);
               const canRevise = Boolean(item.topic);
               return (
@@ -1451,7 +1473,7 @@ function ContextContent({
       <ContextList
         title="Open decisions"
         items={(state.discovery?.unresolvedTopics || []).map((topic: string) =>
-          humanTopicLabel(topic),
+          humanTopicLabel(topic, language),
         )}
         empty="No high-impact decisions remain open."
       />

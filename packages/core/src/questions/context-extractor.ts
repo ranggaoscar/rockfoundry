@@ -185,17 +185,42 @@ function shortIdeaNouns(rawIdea: string) {
   const words = rawIdea.split(/\s+/).filter(Boolean);
   if (words.length === 0 || words.length > 12) return [];
   const stop =
-    /^(?:i|want|to|a|an|the|for|with|and|or|of|my|our|build|create|make|web|website|app|application|system|platform|gua|gue|saya|aku|mau|ingin|bikin|buat|bangun|jualan|jual|beli|untuk|dari|yang|dan|ini|itu|sebuah|seorang|aplikasi|produk)$/i;
+    /^(?:i|want|to|a|an|the|for|with|and|or|of|my|our|build|create|make|making|web|website|app|application|system|platform|gua|gue|saya|aku|mau|ingin|bikin|buat|membuat|membuatkan|bangun|jualan|jual|beli|untuk|dari|yang|dan|ini|itu|sebuah|seorang|aplikasi|produk|supaya|agar|lebih|mudah|dicatat|mencatat|mencari|mengelola|menangani|setelah|sebelum|bisa|harus|perlu|juga|atau|kalau|apakah|dengan|punya|ada|sama|dulu|nanti|saja|aja|sekali|sangat|buatkan|dibuat|dibikin)$/i;
   return uniqueFacts(
     words
       .map(cleanCandidate)
       .filter((value) => value.length >= 4 && !stop.test(value))
+      .filter((value) => !isInternalIdentifier(value))
       .map((value) => ({
         value,
         confidence: "STRONGLY_INFERRED" as const,
         source: "AGENT_INFERENCE" as const,
         evidence: value,
       })),
+  );
+}
+
+function isInternalIdentifier(value: string) {
+  const text = value.trim();
+  if (!text) return true;
+  if (/^[a-z]+(?:_[a-z0-9]+)+$/.test(text)) return true;
+  if (/^[A-Z][A-Za-z ]+:\s*[a-z0-9]+(?:_[a-z0-9]+)+$/.test(text)) return true;
+  if (
+    /\b(?:Primary workflow outcome|Lifecycle transition rule|Identity boundary|Ownership boundary|Visibility boundary|Assignment rule|Completion semantics|Duplicate semantics|History and auditability rule|Money responsibility|Retention and deletion rule|Resource conflict policy|Cross-boundary behavior|Approval responsibility|Record relationship decision|Role boundary)\b/i.test(
+      text,
+    ) &&
+    /[_:]/.test(text)
+  )
+    return true;
+  return false;
+}
+
+function isWeakContextToken(value: string) {
+  return (
+    isInternalIdentifier(value) ||
+    /^(?:membuat|buat|bikin|create|make|build|manage|track|handle|record|records|workflow|ownership|visibility|assignment|history|completion)$/i.test(
+      value.trim(),
+    )
   );
 }
 
@@ -375,12 +400,26 @@ export function contextValues(facts: StructuralFact[], limit = 4) {
   return facts
     .map((fact) => fact.value)
     .filter(Boolean)
+    .filter((value) => !isWeakContextToken(value))
     .slice(0, limit);
 }
 
 export function contextLabel(facts: StructuralFact[], fallback: string) {
   const values = contextValues(facts);
   return values.length ? values.join(", ") : fallback;
+}
+
+export function displayContextLabel(
+  facts: StructuralFact[],
+  fallback: string,
+  limit = 2,
+) {
+  const values = contextValues(facts, limit);
+  return values.length ? values.join(", ") : fallback;
+}
+
+export function primaryContextNoun(facts: StructuralFact[], fallback: string) {
+  return contextValues(facts, 1)[0] || fallback;
 }
 
 export function contextConfidence(context: StructuralContext): Confidence {

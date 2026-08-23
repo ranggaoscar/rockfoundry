@@ -4,6 +4,7 @@ import {
   detectConversationLanguage,
   detectDiscoveryDomain,
   extractStructuralContext,
+  genericQuestionForTopic,
   QuestionEngine,
 } from "../index";
 
@@ -53,6 +54,88 @@ describe("workspace language and question presentation", () => {
       context.entities.some((item) => item.value.toLowerCase() === "mobil"),
     ).toBe(true);
     expect(state.entities).toEqual([]);
+  });
+
+  it("renders natural Indonesian discovery copy without internal enums or verb entities", () => {
+    const idea =
+      "Saya mau membuat aplikasi kasir untuk warteg supaya pesanan dan pembayaran lebih mudah dicatat.";
+    let state = createInitialProjectState({
+      id: "warteg-kasir",
+      name: "Kasir Warteg",
+      rawIdea: idea,
+    });
+    const engine = new QuestionEngine();
+    const context = extractStructuralContext(state);
+    expect(context.language).toBe("id");
+    expect(
+      context.entities.map((item) => item.value.toLowerCase()),
+    ).not.toContain("membuat");
+    expect(
+      context.entities.map((item) => item.value.toLowerCase()).join(" "),
+    ).not.toMatch(/membuat,\s*kasir,\s*warteg/);
+
+    // Simulate previously accepted generic decisions that used to leak enums,
+    // plus a grounded operational entity for ownership relevance.
+    state = {
+      ...state,
+      entities: ["pesanan"],
+      roles: ["kasir"],
+      decisions: [
+        {
+          id: "d1",
+          topic: "primary_workflow",
+          decision: "order_first",
+          status: "ACCEPTED",
+          reason: "test",
+          source: "USER",
+          confidence: "EXPLICIT",
+          affects: ["workflow"],
+        },
+        {
+          id: "d2",
+          topic: "lifecycle_transitions",
+          decision: "simple_lifecycle",
+          status: "ACCEPTED",
+          reason: "test",
+          source: "USER",
+          confidence: "EXPLICIT",
+          affects: ["states"],
+        },
+      ],
+      workflows: [
+        "Primary workflow outcome: order_first",
+        "Lifecycle transition rule: simple_lifecycle",
+      ],
+    };
+
+    const ownership = genericQuestionForTopic(state, "ownership_boundary");
+    expect(ownership).toBeTruthy();
+    const text = ownership!.text;
+    expect(text).toMatch(/siapa|bertanggung jawab|penanggung/i);
+    expect(text).not.toMatch(/order_first|simple_lifecycle/i);
+    expect(text).not.toMatch(
+      /Primary workflow outcome|Lifecycle transition rule/i,
+    );
+    expect(text).not.toMatch(/membuat,\s*kasir,\s*warteg/i);
+    expect(text).not.toMatch(/\bOwnership\b/);
+    expect(ownership!.recommendation || "").not.toMatch(
+      /order_first|simple_lifecycle|Ownership/i,
+    );
+    for (const option of ownership!.options || []) {
+      expect(option.label).not.toMatch(/order_first|simple_lifecycle|[_]/);
+      expect(option.label).not.toMatch(/\bOwnership\b/);
+    }
+
+    const impact = engine.processAnswer(
+      state,
+      ownership!.id,
+      ownership!.options?.[0]?.id || "creator_owns",
+      ownership!,
+    ).impact;
+    expect(impact?.headline).toMatch(/Sudah diputuskan|Locked/i);
+    expect(impact?.headline + " " + impact?.detail).not.toMatch(
+      /order_first|simple_lifecycle/,
+    );
   });
 
   it("rejects a second answer to a stale question id at the engine queue level", () => {

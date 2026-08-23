@@ -137,14 +137,57 @@ export function describeDecisionImpact(input: {
   topic: string;
   decision: string;
   affects?: string[];
+  language?: "id" | "en";
 }): { headline: string; detail: string } {
   const meta = CRM_DECISION_META[input.topic as CrmDecisionTopic];
   const affects = input.affects?.length
     ? input.affects
     : meta?.affects || [input.topic];
   const title = meta?.title || humanizeTopic(input.topic);
+  const readableAffects = affects.map((item) =>
+    humanizeTopic(String(item)).replace(/\b\w/g, (letter) =>
+      letter.toUpperCase(),
+    ),
+  );
+  if (input.language === "id") {
+    const indoTitle =
+      {
+        Ownership: "Penanggung jawab",
+        Identity: "Identitas",
+        Visibility: "Akses",
+        Lifecycle: "Status",
+        Assignment: "Penugasan",
+        History: "Riwayat",
+        Completion: "Penyelesaian",
+        Duplicates: "Data ganda",
+        Outcome: "Hasil utama",
+        Roles: "Peran",
+        Boundaries: "Batas",
+        Capacity: "Kapasitas",
+        Approval: "Persetujuan",
+        Payments: "Pembayaran",
+        Retention: "Retensi",
+        Relationships: "Relasi",
+      }[title] || title;
+    const indoAffects = readableAffects.map((item) => {
+      const lower = item.toLowerCase();
+      if (lower.includes("ownership")) return "penanggung jawab";
+      if (lower.includes("assignment")) return "penugasan";
+      if (lower.includes("permission")) return "izin akses";
+      if (lower.includes("notification")) return "notifikasi";
+      if (lower.includes("history")) return "riwayat";
+      if (lower.includes("workflow") || lower.includes("state"))
+        return "alur dan status";
+      if (lower.includes("acceptance")) return "kriteria penerimaan";
+      return item.toLowerCase();
+    });
+    return {
+      headline: `Sudah diputuskan — ${indoTitle}.`,
+      detail: `Ini memengaruhi ${indoAffects.join(", ")}.`,
+    };
+  }
   const headline = `Locked for now — ${title}.`;
-  const detail = `This affects ${affects.join(", ")}.`;
+  const detail = `This affects ${readableAffects.join(", ").toLowerCase()}.`;
   return { headline, detail };
 }
 

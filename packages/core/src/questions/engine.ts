@@ -228,9 +228,50 @@ function applyCanonicalRule(
     record_relationships: "Record relationship decision",
     role_boundaries: "Role boundary",
   };
+  const genericDecisionRules: Record<string, string> = {
+    order_first: "The primary user outcome is placing an order.",
+    booking_first: "The primary user outcome is booking or scheduling.",
+    contact_first: "The primary user outcome is contacting the team.",
+    simple_lifecycle:
+      "Records move through a simple created-to-done lifecycle.",
+    rich_lifecycle:
+      "Records move through pending, active, completed, cancelled, or deferred states.",
+    creator_owns: "The creator becomes the operational owner of the record.",
+    assigned_role_owns:
+      "An assigned role owns the record and ownership can move with history.",
+    creator_handles: "The creator handles the work directly after creation.",
+    reassignable_with_history:
+      "Work can be reassigned while preserving full history.",
+    shared_identity: "The same real-world thing stays one shared record.",
+    separate_records: "Separate contexts keep separate records.",
+    owner_all_others_scoped:
+      "Owners see everything while other roles stay scoped.",
+    everyone_sees_all: "Every involved role can see the full record history.",
+    role_scoped_access: "Each role only sees the part assigned to them.",
+    shared_full_access: "All involved roles can see and change the same scope.",
+    reject_conflict: "Conflicting resource requests are rejected.",
+    queue_with_approval:
+      "Conflicting resource requests can queue or override with approval.",
+    rules_follow_record:
+      "Rules and history follow the record across boundaries.",
+    origin_keeps_rules: "The originating boundary keeps ownership rules.",
+    merge_with_review: "Likely duplicates are merged after review.",
+    flag_for_review: "Likely duplicates are flagged and never auto-merged.",
+    full_change_history: "Every material change remains visible in history.",
+    key_changes_only: "Only key changes remain visible in history.",
+    explicit_completion: "Completion requires an explicit done state or proof.",
+    reopenable_completion:
+      "Completed records can be reopened under a clear rule.",
+    needs_clarification: "The decision still needs a clearer rule.",
+  };
+  const humanizeDecision = (value: string) =>
+    value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
   const rule =
     rules[decision] ||
-    (genericLabels[topic] ? `${genericLabels[topic]}: ${decision}` : undefined);
+    genericDecisionRules[decision] ||
+    (genericLabels[topic]
+      ? `${genericLabels[topic]}: ${humanizeDecision(decision)}`
+      : undefined);
   if (!rule) return;
   if (!state.businessRules.includes(rule)) state.businessRules.push(rule);
   if (
@@ -1041,6 +1082,7 @@ export class QuestionEngine {
       topic,
       decision,
       affects,
+      language: isIndonesian(parsed) ? "id" : "en",
     });
 
     return {

@@ -7,9 +7,10 @@ import type {
 import { buildGenericCandidates, type DecisionCandidate } from "./archetypes";
 import { detectArtifactGapSignals } from "./artifact-gap-signals";
 import {
-  contextLabel,
   contextValues,
+  displayContextLabel,
   extractStructuralContext,
+  primaryContextNoun,
 } from "./context-extractor";
 import { rankDecisionCandidates } from "./candidate-ranker";
 
@@ -54,27 +55,30 @@ function genericQuestionCopy(
     ? distinctEntityFacts
     : context.entities;
   const id = context.language === "id";
-  const entities = contextLabel(
+  const entities = displayContextLabel(
     entityFacts,
-    id ? "record utama" : "the main records",
+    id ? "data utama" : "the main records",
   );
-  const roles = contextLabel(
+  const roles = displayContextLabel(
     context.roles,
-    id ? "role yang terlibat" : "the roles involved",
+    id ? "orang yang terlibat" : "the roles involved",
   );
-  const workflows = contextLabel(
+  const workflows = displayContextLabel(
     context.workflows,
     id ? "alur utama" : "the main workflow",
   );
-  const primaryEntity = contextValues(entityFacts, 1)[0] || "record";
+  const primaryEntity = primaryContextNoun(entityFacts, id ? "data" : "record");
   const primaryWorkflow =
-    contextValues(context.workflows, 1)[0] ||
+    contextValues(context.workflows, 1).filter(
+      (value) =>
+        !/[_:]|outcome|transition rule|boundary|semantics/i.test(value),
+    )[0] ||
     (id
       ? `alur pertama untuk ${primaryEntity}`
       : `the first workflow involving ${primaryEntity}`);
-  const boundaries = contextLabel(
+  const boundaries = displayContextLabel(
     context.boundaries,
-    "organizational boundaries",
+    id ? "batas organisasi" : "organizational boundaries",
   );
   const followUp = hasAmbiguousAnswer(state, candidate.topic)
     ? id
@@ -104,10 +108,10 @@ function genericQuestionCopy(
     case "OWNERSHIP":
       return {
         text: id
-          ? `Untuk ${entities} dalam ${workflows}, siapa pemilik operasional setelah record dibuat, dan apa yang terjadi jika tanggung jawab berpindah?${followUp}`
+          ? `Setelah ${primaryEntity} dibuat, siapa yang bertanggung jawab menanganinya? Jika tanggung jawab berpindah ke orang lain, apakah riwayatnya perlu tetap disimpan?${followUp}`
           : `For ${entities} in ${workflows}, who owns the record after creation, and what happens when responsibility changes?${followUp}`,
         recommendation: id
-          ? "Ownership yang eksplisit mencegah record tanpa penanggung jawab dan menjaga riwayat reassignment."
+          ? "Supaya setiap data selalu punya penanggung jawab yang jelas dan riwayat perubahannya tetap tercatat."
           : "Explicit ownership prevents orphaned work and preserves reassignment history.",
       };
     case "VISIBILITY":
@@ -354,16 +358,16 @@ function genericOptions(
     OWNERSHIP: [
       {
         id: "creator_owns",
-        label: id ? "Pembuat menjadi pemilik" : "Creator owns it",
+        label: id ? "Pembuat menjadi penanggung jawab" : "Creator owns it",
         description: id
-          ? "Ownership dimulai dari yang membuat record."
+          ? "Penanggung jawab dimulai dari yang membuat data."
           : "Ownership starts with whoever created the record.",
       },
       {
         id: "assigned_role_owns",
-        label: id ? "Role yang ditugaskan" : "Assigned role owns it",
+        label: id ? "Penanggung jawab bisa dialihkan" : "Assigned role owns it",
         description: id
-          ? "Pemilik bisa berubah tanpa menghapus histori."
+          ? "Tanggung jawab bisa pindah tanpa menghapus riwayat."
           : "Ownership can move without deleting history.",
       },
     ],
