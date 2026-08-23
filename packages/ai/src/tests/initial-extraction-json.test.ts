@@ -22,6 +22,31 @@ function compatibleResponse(content: string) {
 }
 
 describe("initial discovery JSON transport", () => {
+  it("uses request-level medium reasoning for initial extraction even when provider default is high", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(compatibleResponse(JSON.stringify(validExtraction)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "selected-model",
+        "high",
+      ),
+    );
+
+    await gateway.runInitialExtraction("Build an inventory workspace");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(request.model).toBe("selected-model");
+    expect(request.reasoning_effort).toBe("medium");
+    expect(request.response_format).toEqual({ type: "json_object" });
+    vi.unstubAllGlobals();
+  });
+
   it("parses valid JSON text from an OpenAI-compatible provider before extraction validation", async () => {
     const fetchMock = vi
       .fn()

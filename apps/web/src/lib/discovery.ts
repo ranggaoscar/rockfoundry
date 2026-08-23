@@ -1,23 +1,22 @@
 import { prisma } from "@rockfoundry/db";
 import {
-  AgentRunner,
-  deterministicDiscoveryPlanner,
+  detectContradictions,
   generateGenericDecisionCandidates,
   genericQuestionForTopic,
-  detectContradictions,
   mergeExtraction,
   QuestionEngine,
   type ProjectState,
   type Question,
 } from "@rockfoundry/core";
 import { getAiGateway } from "./ai-provider";
-import { createModelDiscoveryPlanner } from "./agent-planner";
-import { createServerToolRegistry } from "./server-tools";
 import {
   getLocalProject,
   parseProjectState,
   saveProjectState,
 } from "./local-project";
+
+/** Fast Discovery V1: one extraction call, then deterministic canonical question. */
+export const INITIAL_DISCOVERY_PATH = "fast_initial_v1" as const;
 
 export function questionMetadata(question: Question) {
   return {
@@ -96,6 +95,10 @@ export async function runInitialDiscovery(
   });
 
   try {
+    // Fast Discovery V1 critical path:
+    // ONE provider call (initial_idea_extraction @ medium) → deterministic question.
+    // Model discovery planner intentionally not used here; it remains for
+    // research/reference/conversation agentic turns.
     const aiResult = await getAiGateway().runInitialExtraction(rawIdea);
     const project = await getLocalProject(projectId);
     if (!project) throw new Error("PROJECT_NOT_FOUND");
@@ -105,6 +108,9 @@ export async function runInitialDiscovery(
       aiResult.extraction,
     );
     merged.state.generationMetadata.initialExtractionComplete = true;
+    merged.state.generationMetadata.initialDiscoveryPath =
+      INITIAL_DISCOVERY_PATH;
+    merged.state.generationMetadata.initialDiscoveryProviderCalls = 1;
     mergeDetectedContradictions(merged.state);
     const candidates = generateGenericDecisionCandidates(merged.state).slice(
       0,
@@ -115,81 +121,10 @@ export async function runInitialDiscovery(
         genericQuestionForTopic(merged.state, candidate.topic),
       )
       .filter((question): question is Question => Boolean(question));
-    // Product intelligence owns the active question identity. A model can
-    // reason about wording/context, but cannot replace this canonical queue.
+    // Product intelligence owns the active question identity.
     const candidateQuestion =
       nextQuestion(merged.state) || genericCandidateQuestions[0];
     if (!candidateQuestion) throw new Error("NO_DISCOVERY_QUESTION");
-    const candidateQuestions = [
-      candidateQuestion,
-      ...genericCandidateQuestions,
-    ].filter(
-      (question, index, all) =>
-        all.findIndex((candidate) => candidate.id === question.id) === index,
-    );
-    const tools = createServerToolRegistry();
-    const planner =
-      createModelDiscoveryPlanner(
-        candidates,
-        candidateQuestion,
-        "INITIAL_DISCOVERY",
-      ) || deterministicDiscoveryPlanner(candidateQuestion);
-    const runner = new AgentRunner(planner, tools);
-    const toolRunByAction = new Map<string, string>();
-    const agentResult = await runner.run({
-      project: merged.state,
-      candidateTopics: candidateQuestions
-        .map((question) => question.topic)
-        .filter((topic): topic is string => Boolean(topic)),
-      questionForAction: (action) => {
-        if (action.type !== "ASK_USER") return undefined;
-        return action.questionId === candidateQuestion.id
-          ? candidateQuestion
-          : undefined;
-      },
-      onToolStart: async (action) => {
-        if (action.type !== "CALL_TOOL") return;
-        const row = await prisma.toolRun.create({
-          data: {
-            projectId,
-            toolName: action.toolName,
-            status: "RUNNING",
-            inputSummary: action.rationale || action.toolName,
-            startedAt: new Date(),
-          },
-        });
-        toolRunByAction.set(action.id, row.id);
-      },
-      onToolRun: async (activity) => {
-        const rowId = toolRunByAction.get(activity.action.id);
-        if (!rowId) return;
-        await prisma.toolRun.update({
-          where: { id: rowId },
-          data: {
-            status: "COMPLETED",
-            outputSummary: activity.observation?.summary || "Tool completed.",
-            completedAt: new Date(),
-          },
-        });
-      },
-      onToolFailure: async (action, error) => {
-        const rowId = toolRunByAction.get(action.id);
-        if (!rowId) return;
-        await prisma.toolRun.update({
-          where: { id: rowId },
-          data: {
-            status: "FAILED",
-            failureReason: error.message.slice(0, 500),
-            completedAt: new Date(),
-          },
-        });
-      },
-    });
-    if (agentResult.finalAction.type !== "ASK_USER")
-      throw new Error("AGENT_DID_NOT_SELECT_QUESTION");
-    // Keep the exact canonical question (including its ID) in the persisted
-    // state and returned response. Mixing a model action ID with a different
-    // question object creates stale-question 409s on the first answer.
     const question: Question = candidateQuestion;
     merged.state.discovery.activeQuestionId = question.id;
     const saved = await saveProjectState(
@@ -214,6 +149,8 @@ export async function runInitialDiscovery(
       question,
       extraction: aiResult.extraction,
       runId: run.id,
+      discoveryPath: INITIAL_DISCOVERY_PATH,
+      providerCalls: 1 as const,
       merge: {
         appliedChanges: merged.appliedChanges,
         skippedChanges: merged.skippedChanges,

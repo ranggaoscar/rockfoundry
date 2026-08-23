@@ -47,6 +47,31 @@ describe("OpenAI-compatible gateway URLs", () => {
     vi.unstubAllGlobals();
   });
 
+  it("lets request-level reasoning override the gateway default", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "ok" } }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OpenAICompatibleGateway(
+      "https://example.test/v1",
+      "test-key",
+      "test-model",
+      "high",
+    ).complete({
+      messages: [{ role: "user", content: "override" }],
+      reasoningEffort: "medium",
+      maxRetries: 0,
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      model: "test-model",
+      reasoning_effort: "medium",
+    });
+    vi.unstubAllGlobals();
+  });
+
   it("sends configured reasoning effort and omits it when absent", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
