@@ -1,12 +1,10 @@
 # RockFoundry
 
-**Open-source, local-first product discovery for AI builders.**
+RockFoundry is an open-source, local-first product intelligence and design system
+that turns rough ideas into explicit product decisions, interactive product
+prototypes, and implementation-ready handoffs.
 
-> Before AI writes your code, make sure it isn't inventing your product.
-
-RockFoundry finds the hidden product decisions inside a rough idea, then hands a coding agent a build package it is less likely to invent around.
-
-It does **not** write your app. It works **before** Codex, Claude Code, Cursor, or any other coding agent starts.
+It does **not** write your production app. It works **before** Codex, Claude Code, Cursor, or any other coding agent starts.
 
 ## Why it exists
 
@@ -36,7 +34,8 @@ Those invented answers become product behavior. RockFoundry surfaces them first.
 Rough idea
   → hidden decisions
   → Decision Debt score
-  → BRD / PRD / ERD + DO_NOT_INVENT
+  → Design Studio prototype
+  → BRD / PRD / ERD + approved design
   → coding agent
 ```
 

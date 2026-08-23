@@ -1,0 +1,243 @@
+import { prisma } from "@rockfoundry/db";
+import {
+  applyGeneratedDesign,
+  applyVisualRevision,
+  approveDesign,
+  classifyDesignRevision,
+  evaluateDesignReadiness,
+  generateMockPrototype,
+  markDesignStale,
+  validatePrototypeFiles,
+  type DesignGenerationResult,
+  type ProjectState,
+} from "@rockfoundry/core";
+import { resolveProviderSettings } from "./provider-config";
+import { saveProjectState } from "./local-project";
+import { createServerToolRegistry } from "./server-tools";
+import { AgentRunner } from "@rockfoundry/core";
+
+const ARTIFACT_TYPES = [
+  "DESIGN_SPEC",
+  "SCREEN_MAP",
+  "DESIGN_DECISIONS",
+  "PROTOTYPE_HTML",
+  "PROTOTYPE_CSS",
+  "PROTOTYPE_JS",
+  "DESIGN_MANIFEST",
+] as const;
+
+async function persistDesignArtifacts(
+  projectId: string,
+  version: number,
+  generated: DesignGenerationResult,
+  status: string,
+) {
+  const files = Object.fromEntries(
+    generated.files.map((file) => [file.path, file.content]),
+  );
+  const payloads: Record<(typeof ARTIFACT_TYPES)[number], string> = {
+    DESIGN_SPEC: JSON.stringify(generated.designSpec, null, 2),
+    SCREEN_MAP: JSON.stringify(generated.screenMap, null, 2),
+    DESIGN_DECISIONS: generated.summary,
+    PROTOTYPE_HTML: files["index.html"] || "",
+    PROTOTYPE_CSS: files["styles.css"] || "",
+    PROTOTYPE_JS: files["app.js"] || "",
+    DESIGN_MANIFEST: JSON.stringify({
+      version,
+      status,
+      screens: generated.screenMap.map((screen) => screen.id),
+    }),
+  };
+  await prisma.$transaction(
+    ARTIFACT_TYPES.map((type) =>
+      prisma.artifact.upsert({
+        where: { projectId_type_version: { projectId, type, version } },
+        create: {
+          projectId,
+          type,
+          version,
+          status,
+          content: payloads[type],
+        },
+        update: { status, content: payloads[type], generatedAt: new Date() },
+      }),
+    ),
+  );
+}
+
+export function designSnapshot(state: ProjectState) {
+  const pack = state.generationMetadata.designPackage as
+    | { files?: Array<{ path: string; content: string }>; spec?: unknown }
+    | undefined;
+  return {
+    studio: state.studio,
+    readiness: evaluateDesignReadiness(state),
+    files: pack?.files || [],
+    spec: pack?.spec || null,
+  };
+}
+
+export async function generateProjectDesign(
+  projectId: string,
+  state: ProjectState,
+  version: number,
+  request?: string,
+) {
+  const readiness = evaluateDesignReadiness(state);
+  if (readiness.level === "BLOCKED") throw new Error("DESIGN_BLOCKED");
+  const generated = generateMockPrototype(state, { request });
+  const validation = validatePrototypeFiles(
+    generated.files,
+    generated.screenMap,
+  );
+  if (!validation.accepted) throw new Error(validation.reasons.join(" "));
+  const next = applyGeneratedDesign(state, generated, {
+    summary: generated.summary,
+    source: "SYSTEM",
+    request,
+  });
+  const saved = await saveProjectState(projectId, next, version);
+  await persistDesignArtifacts(
+    projectId,
+    saved.state.studio.currentVersion,
+    generated,
+    saved.state.studio.status,
+  );
+  return { ...saved, generated, validation };
+}
+
+export async function reviseProjectDesign(
+  projectId: string,
+  state: ProjectState,
+  version: number,
+  text: string,
+) {
+  const impact = classifyDesignRevision(text);
+  if (impact === "POTENTIAL_PRODUCT_DECISION") {
+    return {
+      impact,
+      state,
+      version,
+      message:
+        "This changes the product model, not only the interface. Confirm it as a product decision before design can change.",
+    };
+  }
+  const pack = state.generationMetadata.designPackage as
+    | {
+        spec?: DesignGenerationResult["designSpec"];
+        files?: DesignGenerationResult["files"];
+        summary?: string;
+      }
+    | undefined;
+  if (!pack?.files) throw new Error("NO_DESIGN");
+  const current: DesignGenerationResult = {
+    designSpec: pack.spec || generateMockPrototype(state).designSpec,
+    screenMap: state.studio.screenMap,
+    files: pack.files,
+    summary: pack.summary || "",
+    assumptions: state.studio.assumptions,
+  };
+  const generated =
+    impact === "VISUAL_ONLY" || /compact/i.test(text)
+      ? applyVisualRevision(current, text)
+      : generateMockPrototype(state, { request: text });
+  const validation = validatePrototypeFiles(
+    generated.files,
+    generated.screenMap,
+  );
+  if (!validation.accepted) throw new Error(validation.reasons.join(" "));
+  const next = applyGeneratedDesign(state, generated, {
+    summary: text,
+    source: "USER",
+    request: text,
+  });
+  const saved = await saveProjectState(projectId, next, version);
+  await persistDesignArtifacts(
+    projectId,
+    saved.state.studio.currentVersion,
+    generated,
+    saved.state.studio.status,
+  );
+  return { impact, ...saved, generated };
+}
+
+export async function approveProjectDesign(
+  projectId: string,
+  state: ProjectState,
+  version: number,
+) {
+  const saved = await saveProjectState(
+    projectId,
+    approveDesign(state),
+    version,
+  );
+  return saved;
+}
+
+export async function markStaleAfterProductChange(
+  projectId: string,
+  state: ProjectState,
+  version: number,
+  screenIds: string[],
+) {
+  return saveProjectState(
+    projectId,
+    markDesignStale(state, screenIds),
+    version,
+  );
+}
+
+export async function researchDesignReferences(
+  projectId: string,
+  state: ProjectState,
+  query: string,
+) {
+  const tools = createServerToolRegistry();
+  const settings = resolveProviderSettings();
+  const runner = new AgentRunner(
+    {
+      nextAction({ iteration }) {
+        if (iteration === 1)
+          return {
+            id: "design-search",
+            type: "CALL_TOOL",
+            toolName: "web_search",
+            input: { query, maxResults: 5 },
+          };
+        return {
+          id: "wait",
+          type: "WAIT_FOR_USER",
+          reason: "Design references collected as untrusted evidence.",
+        };
+      },
+    },
+    tools,
+  );
+  const result = await runner.run({
+    project: state,
+    latestUserMessage: query,
+    onToolStart: async (action) => {
+      if (action.type !== "CALL_TOOL") return;
+      await prisma.toolRun.create({
+        data: {
+          projectId,
+          toolName: action.toolName,
+          status: "RUNNING",
+          inputSummary: query,
+          startedAt: new Date(),
+        },
+      });
+    },
+    onToolRun: async (activity) => {
+      await prisma.toolRun.updateMany({
+        where: { projectId, toolName: "web_search", status: "RUNNING" },
+        data: {
+          status: "COMPLETED",
+          outputSummary: activity.observation?.summary || "Search completed.",
+          completedAt: new Date(),
+        },
+      });
+    },
+  });
+  return { providerMode: settings.mode, result };
+}

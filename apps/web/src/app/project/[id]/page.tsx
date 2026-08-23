@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { SettingsPanel, useProviderStatus } from "@/components/settings-panel";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
+import { DesignStudio } from "@/components/design-studio";
 import { humanTopicLabel } from "@/lib/topic-label";
 
 type ProjectData = {
@@ -71,6 +72,7 @@ type Activity = {
   failureReason?: string | null;
 };
 type Drawer = "context" | "documents" | "settings" | null;
+type WorkspaceSurface = "discover" | "map" | "design" | "handoff";
 
 function isIndonesianProject(state: any) {
   return /\b(saya|mau|ingin|bikin|buat|dengan|untuk|dan|yang|aplikasi)\b/i.test(
@@ -151,6 +153,7 @@ export default function ProjectWorkspace({
   const [references, setReferences] = useState<Reference[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [drawer, setDrawer] = useState<Drawer>(null);
+  const [surface, setSurface] = useState<WorkspaceSurface>("discover");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [pageError, setPageError] = useState("");
@@ -832,20 +835,54 @@ export default function ProjectWorkspace({
           <button
             className="rf-header-action hidden sm:inline-flex"
             type="button"
-            onClick={() => setDrawer("context")}
+            onClick={() => {
+              setSurface("map");
+              setDrawer("context");
+            }}
           >
             Product Map
           </button>
           <button
+            className="rf-header-action hidden sm:inline-flex"
+            type="button"
+            onClick={() => {
+              setSurface("design");
+              setDrawer(null);
+            }}
+          >
+            Design
+          </button>
+          <button
             className="rf-header-action inline-flex"
             type="button"
-            onClick={() => setDrawer("documents")}
+            onClick={() => {
+              setSurface("handoff");
+              setDrawer("documents");
+            }}
           >
             <FileText className="size-3.5" /> Handoff
           </button>
         </header>
 
         <div className="relative flex min-h-0 flex-1 flex-col">
+          {surface === "design" ? (
+            <DesignStudio
+              projectId={project.id}
+              studio={state.studio}
+              onState={(nextState, version) =>
+                setProject((current) =>
+                  current
+                    ? {
+                        ...current,
+                        canonicalState: nextState,
+                        version,
+                      }
+                    : current,
+                )
+              }
+            />
+          ) : (
+            <>
           <div
             ref={conversationRef}
             className="rf-conversation mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-5 sm:px-8 sm:pt-6"
@@ -951,6 +988,8 @@ export default function ProjectWorkspace({
               </div>
             </form>
           </div>
+            </>
+          )}
         </div>
       </section>
 
@@ -1616,6 +1655,22 @@ function DocumentsContent({
           ))}
         </div>
       </section>
+      {state.studio?.currentVersion > 0 && (
+        <section>
+          <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
+            {state.studio.status === "APPROVED"
+              ? "Approved design"
+              : "Draft design"}
+          </h3>
+          <div className="space-y-1 text-[13px] text-muted-foreground">
+            <div>design/DESIGN_SPEC.json</div>
+            <div>design/SCREEN_MAP.json</div>
+            <div>design/prototype/index.html</div>
+            <div>design/prototype/styles.css</div>
+            <div>design/prototype/app.js</div>
+          </div>
+        </section>
+      )}
       <button
         className="rf-primary-button w-full"
         type="button"
