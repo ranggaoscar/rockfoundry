@@ -92,11 +92,18 @@ describe("Agentic core state", () => {
         entities: ["Customer", "Quotation"],
       }),
     );
-    expect(result.metadata.fileCount).toBe(10);
+    expect(result.metadata.fileCount).toBe(13);
     expect(result.documents.BRD).toContain("# Business Requirements Document");
     expect(result.documents.PRD).toContain("## 22. Open Decisions");
     expect(result.documents.ERD).toContain("```mermaid");
     expect(result.documents.DO_NOT_INVENT).toContain("# DO NOT INVENT");
     expect(result.documents.AGENT_HANDOFF).toContain("Agent Handoff");
+    expect(result.documents.AGENT_HANDOFF).toContain("baseline DesignSpec");
+    const zip = await (await import("jszip")).default.loadAsync(result.buffer);
+    const names = Object.keys(zip.files);
+    expect(names).toContain("design/DESIGN_SPEC.json");
+    expect(names).toContain("design/SCREEN_MAP.json");
+    expect(names).toContain("design/DESIGN_DECISIONS.md");
+    expect(names.some((name) => name.startsWith("design/prototype/"))).toBe(false);
   });
 });

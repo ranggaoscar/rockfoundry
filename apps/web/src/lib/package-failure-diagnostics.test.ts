@@ -7,7 +7,7 @@ import {
   DesignGenerationError,
   logDesignGenerationFailure,
 } from "./design";
-import { buildPackageFailureMetadata } from "./package-jobs";
+import { buildPackageFailureMetadata } from "./package-failure-diagnostics";
 
 describe("safe PackageJob failure metadata", () => {
   it("persists only safe design failure fields", () => {

@@ -81,9 +81,7 @@ type WorkspaceSurface = "discover" | "map" | "design" | "handoff";
 const PACKAGE_PROGRESS_STAGES = [
   ["GENERATING_DOCUMENTS", "Menyusun dokumen"],
   ["BUILDING_SCREEN_MAP", "Merancang layar aplikasi"],
-  ["DESIGN_ARCHITECTURE", "Menyusun arah desain"],
-  ["PROTOTYPE_GENERATION", "Membuat prototype"],
-  ["QUALITY_REVIEW", "Memeriksa kualitas tampilan"],
+  ["BASELINE_DESIGN_SPEC", "Menyiapkan arah desain dasar"],
   ["FINALIZING_HANDOFF", "Menyiapkan handoff"],
 ] as const;
 
@@ -168,15 +166,14 @@ function PackageBuildStatus({
   onRetry: () => void;
 }) {
   const failed = job.status === "FAILED";
-  const designFailed = job.status === "DESIGN_FAILED";
   const queued = job.status === "QUEUED";
   return (
     <section className="mx-auto mt-10 w-full max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-left" aria-label="Package build status">
       <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        {failed ? "Pembuatan paket berhenti" : designFailed ? "Paket produk siap, prototype tertunda" : queued ? "Paket produk sedang disiapkan" : "Paket produk sedang dibuat"}
+        {failed ? "Pembuatan paket berhenti" : queued ? "Paket produk sedang disiapkan" : "Paket produk sedang dibuat"}
       </p>
       <p className="mt-2 text-sm text-muted-foreground">
-        {failed ? job.errorSummary || "Pembuatan paket gagal. Coba lagi." : designFailed ? job.errorSummary || "Dokumen dan struktur produk sudah siap. Prototype belum berhasil dibuat." : queued ? "Menunggu worker..." : job.stageLabel}
+        {failed ? job.errorSummary || "Pembuatan paket gagal. Coba lagi." : queued ? "Menunggu worker..." : job.stageLabel}
       </p>
       {!failed && (
         <ol className="mt-4 space-y-2 text-sm" aria-label="Tahapan pembuatan paket">
@@ -192,9 +189,9 @@ function PackageBuildStatus({
           })}
         </ol>
       )}
-      {(failed || designFailed) && (
+      {failed && (
         <button className="rf-primary-button mt-4" type="button" onClick={onRetry}>
-          {designFailed ? "Coba lagi membuat prototype" : "Coba lagi"}
+          Coba lagi
         </button>
       )}
     </section>
@@ -250,6 +247,7 @@ export default function ProjectWorkspace({
       );
     const data = await response.json();
     setProject(data.project);
+    setExportReady(Boolean(data.project.canonicalState?.studio?.currentVersion > 0));
     setActivity(data.activity || []);
     setMessages(
       data.messages?.length
@@ -795,12 +793,19 @@ export default function ProjectWorkspace({
     if (!projectId || packageJob) return;
     void fetch(`/api/projects/${projectId}/package`)
       .then((response) => response.ok ? response.json() : null)
-      .then((data) => { if (data?.job) setPackageJob(data.job); })
+      .then((data) => {
+        if (!data?.job) return;
+        setPackageJob(data.job);
+        if (data.job.status === "COMPLETED") {
+          setExportReady(true);
+          setSurface("design");
+        }
+      })
       .catch(() => undefined);
   }, [packageJob, projectId]);
 
   useEffect(() => {
-    if (!projectId || !packageJob || ["COMPLETED", "FAILED", "DESIGN_FAILED"].includes(packageJob.status)) return;
+    if (!projectId || !packageJob || ["COMPLETED", "FAILED"].includes(packageJob.status)) return;
     const poll = window.setInterval(async () => {
       const response = await fetch(`/api/projects/${projectId}/package`);
       if (!response.ok) return;
@@ -982,6 +987,8 @@ export default function ProjectWorkspace({
             <DesignStudio
               projectId={project.id}
               studio={state.studio}
+              packageReady={Boolean(exportReady || packageJob?.status === "COMPLETED")}
+              language={indo ? "id" : "en"}
               onDownloadHandoff={() =>
                 window.location.assign(`/api/projects/${projectId}/export`)
               }
@@ -1044,14 +1051,14 @@ export default function ProjectWorkspace({
                     </button>
                   </div>
                 )}
-                {canBuildPackage && !working && packageJob && ["QUEUED", "RUNNING", "FAILED", "DESIGN_FAILED"].includes(packageJob.status) ? (
+                {canBuildPackage && !working && packageJob && ["QUEUED", "RUNNING", "FAILED"].includes(packageJob.status) ? (
                   <PackageBuildStatus job={packageJob} onRetry={() => void buildProductPackage()} />
                 ) : canBuildPackage && !working && !packageJob ? (
                   <div className="mx-auto mt-10 max-w-md text-center">
                     <p className="text-sm leading-6 text-muted-foreground">
                       {indo
-                        ? "Keputusan penting sudah siap. Buat satu paket berisi dokumen, Screen Map, dan prototype."
-                        : "Your key product decisions are ready. Build one package with documents, a Screen Map, and a live prototype."}
+                        ? "Keputusan penting sudah siap. Buat paket Product Truth, Screen Map, baseline DesignSpec, dan handoff untuk coding agent."
+                        : "Your key product decisions are ready. Build the Product Truth package, Screen Map, baseline DesignSpec, and coding-agent handoff."}
                     </p>
                     <button
                       className="rf-primary-button mt-4"
@@ -1809,19 +1816,24 @@ function DocumentsContent({
           ))}
         </div>
       </section>
-      {state.studio?.currentVersion > 0 && (
+      {exportReady && (
         <section>
           <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
-            {state.studio.status === "APPROVED"
-              ? "Approved design"
-              : "Draft design"}
+            Product design reference
           </h3>
           <div className="space-y-1 text-[13px] text-muted-foreground">
             <div>design/DESIGN_SPEC.json</div>
             <div>design/SCREEN_MAP.json</div>
-            <div>design/prototype/index.html</div>
-            <div>design/prototype/styles.css</div>
-            <div>design/prototype/app.js</div>
+            <div>design/DESIGN_DECISIONS.md</div>
+            {state.studio?.currentVersion > 0 ? (
+              <>
+                <div>design/prototype/index.html</div>
+                <div>design/prototype/styles.css</div>
+                <div>design/prototype/app.js</div>
+              </>
+            ) : (
+              <div className="pt-1 text-xs">Prototype optional — not included yet.</div>
+            )}
           </div>
         </section>
       )}

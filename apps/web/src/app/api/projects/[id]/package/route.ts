@@ -20,26 +20,11 @@ export async function POST(
     if (readiness.level !== "BUILD_READY")
       return jsonError("Selesaikan keputusan penting sebelum membuat paket produk.", 422);
 
-    const previous = await prisma.packageJob.findFirst({
-      where: { projectId: id },
-      orderBy: { createdAt: "desc" },
-    });
-    const enqueued = previous?.status === "DESIGN_FAILED" && previous.projectVersion === project.version
-      ? {
-          job: await prisma.packageJob.create({
-            data: {
-              projectId: id,
-              projectVersion: project.version,
-              status: "QUEUED",
-              stage: "PROTOTYPE_GENERATION",
-              completedStages: previous.completedStages,
-              progress: JSON.stringify({ resumeFrom: "PROTOTYPE_GENERATION" }),
-            },
-          }),
-          reused: false,
-        }
-      : await enqueuePackageJob(prisma, id, project.version);
-    return Response.json({ job: await latestPackageJob(id), reused: enqueued.reused }, { status: 202 });
+    const enqueued = await enqueuePackageJob(prisma, id, project.version);
+    return Response.json(
+      { job: await latestPackageJob(id, prisma, project.version), reused: enqueued.reused },
+      { status: 202 },
+    );
   } catch {
     return jsonError("RockFoundry couldn't start the product package.", 422);
   }
@@ -52,6 +37,6 @@ export async function GET(
   const { id } = await params;
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
-  const job = await latestPackageJob(id);
+  const job = await latestPackageJob(id, prisma, project.version);
   return Response.json({ job });
 }

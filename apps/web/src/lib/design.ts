@@ -151,10 +151,17 @@ type ArchitectureResolution = {
   failure?: ReturnType<typeof classifyDesignGenerationFailure>;
 };
 
+export type DesignGenerationStage =
+  | "DESIGN_ARCHITECTURE"
+  | "PROTOTYPE_GENERATION"
+  | "QUALITY_REVIEW"
+  | "PROTOTYPE_REPAIR";
+
 async function generateWithRealProvider(
   state: ProjectState,
   input: { request?: string; existing?: DesignGenerationResult } = {},
   gateway = getAiGateway(),
+  onStage?: (stage: DesignGenerationStage) => void | Promise<void>,
 ): Promise<DesignGenerationResult & { architectureResolution: ArchitectureResolution; prototypeMs: number }> {
   const product = designProductContext(state);
   const screenMap = state.studio.screenMap.length
@@ -164,6 +171,7 @@ async function generateWithRealProvider(
   const architectureStarted = Date.now();
   let architecture: ArchitectureResolution;
   try {
+    await onStage?.("DESIGN_ARCHITECTURE");
     const response = await gateway.runDesignArchitecture({ product, screenMap });
     architecture = {
       designSpec: response.architecture.designSpec,
@@ -188,6 +196,7 @@ async function generateWithRealProvider(
   let prototype;
   const prototypeStarted = Date.now();
   try {
+    await onStage?.("PROTOTYPE_GENERATION");
     prototype = await gateway.runPrototypeGeneration({
       product,
       architecture: {
@@ -232,15 +241,23 @@ export async function generateProjectDesign(
     gateway?: ReturnType<typeof getAiGateway>;
     save?: typeof saveProjectState;
     persist?: typeof persistDesignArtifacts;
+    onStage?: (stage: DesignGenerationStage) => void | Promise<void>;
   } = {},
 ) {
+  const totalStarted = Date.now();
   const readiness = evaluateDesignReadiness(state);
   if (readiness.level === "BLOCKED") throw new Error("DESIGN_BLOCKED");
   const settings = deps.providerSettings || resolveProviderSettings();
   const generated =
     settings.mode === "openai-compatible"
-      ? await generateWithRealProvider(state, { request }, deps.gateway)
-      : generateMockPrototype(state, { request });
+      ? await generateWithRealProvider(
+          state,
+          { request },
+          deps.gateway,
+          deps.onStage,
+        )
+      : (await deps.onStage?.("PROTOTYPE_GENERATION"),
+        generateMockPrototype(state, { request }));
   const architectureResolution: ArchitectureResolution =
     "architectureResolution" in generated
       ? (generated.architectureResolution as ArchitectureResolution)
@@ -263,11 +280,15 @@ export async function generateProjectDesign(
   let designStatus: "IN_REVIEW" | "NEEDS_REVIEW" = "IN_REVIEW";
   let qualityReview: { verdict: "PASS" | "REPAIR"; score?: number; summary?: string; blockingProblems?: string[] } | null = null;
   let repairAttempted = false;
+  let qualityReviewMs = 0;
+  let repairMs = 0;
   if (settings.mode === "openai-compatible") {
     const gateway = deps.gateway || getAiGateway();
     const files = Object.fromEntries(reviewed.files.map((file) => [file.path, file.content]));
     let review;
+    const qualityStarted = Date.now();
     try {
+      await deps.onStage?.("QUALITY_REVIEW");
       review = await gateway.runDesignQualityReview({
         productSummary: JSON.stringify({ name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows }),
         screenMap: reviewed.screenMap,
@@ -277,6 +298,8 @@ export async function generateProjectDesign(
       });
     } catch (error) {
       throw new DesignGenerationError("quality_review", error);
+    } finally {
+      qualityReviewMs = Date.now() - qualityStarted;
     }
     qualityReview = {
       verdict: review.verdict,
@@ -286,7 +309,9 @@ export async function generateProjectDesign(
     };
     if (review.verdict === "REPAIR") {
       repairAttempted = true;
+      const repairStarted = Date.now();
       try {
+        await deps.onStage?.("PROTOTYPE_REPAIR");
         const repaired = await gateway.runPrototypeRepair({
           product: { name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows },
           screenMap: reviewed.screenMap,
@@ -305,6 +330,8 @@ export async function generateProjectDesign(
         if (!repairedSafety.accepted || !quality.accepted) designStatus = "NEEDS_REVIEW";
       } catch {
         designStatus = "NEEDS_REVIEW";
+      } finally {
+        repairMs = Date.now() - repairStarted;
       }
     }
   } else if (!quality.accepted) {
@@ -351,7 +378,13 @@ export async function generateProjectDesign(
     generated: reviewed,
     validation,
     architectureResolution,
-    timings: { designArchitectureAiMs: architectureResolution.attemptMs, prototypeMs: prototypeGenerationMs },
+    timings: {
+      designArchitectureAiMs: architectureResolution.attemptMs,
+      prototypeMs: prototypeGenerationMs,
+      qualityReviewMs,
+      repairMs,
+      totalMs: Date.now() - totalStarted,
+    },
   };
 }
 

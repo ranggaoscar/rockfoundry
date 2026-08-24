@@ -10,6 +10,7 @@ import { ProjectStateSchema } from "../schema/project";
 import { generateExport } from "../export/generator";
 import { validatePrototypeFiles } from "../design/validate";
 import { validatePrototypeQuality } from "../design/quality";
+import JSZip from "jszip";
 
 describe("Design Engine V2", () => {
   it("derives task screens from entities and workflows instead of actor Home", () => {
@@ -135,6 +136,30 @@ describe("Design Engine V2", () => {
     expect(result.metadata.fileCount).toBeGreaterThanOrEqual(10);
     expect(result.documents.AGENT_HANDOFF).toContain("DO_NOT_INVENT.md");
     expect(result.documents.AGENT_HANDOFF).toContain("The approved prototype, when included");
+  });
+
+  it("ships a coding-agent-ready package without a prototype", async () => {
+    const result = await generateExport(
+      createInitialProjectState({ id: "package-first", name: "Package First", rawIdea: "Kasir" }),
+    );
+    const zip = await JSZip.loadAsync(result.buffer);
+    const names = Object.keys(zip.files);
+    expect(names).toEqual(expect.arrayContaining([
+      "README.md",
+      "AGENT_HANDOFF.md",
+      "product/BRD.md",
+      "product/PRD.md",
+      "product/ERD.md",
+      "decisions/DO_NOT_INVENT.md",
+      "decisions/INVARIANTS.md",
+      "decisions/READINESS.md",
+      "design/DESIGN_SPEC.json",
+      "design/SCREEN_MAP.json",
+      "design/DESIGN_DECISIONS.md",
+    ]));
+    expect(names.some((name) => name.startsWith("design/prototype/"))).toBe(false);
+    expect(await zip.file("README.md")?.async("string")).toMatch(/prototype is optional/i);
+    expect(await zip.file("AGENT_HANDOFF.md")?.async("string")).toContain("Product Truth is authoritative");
   });
 
   it("round-trips a complete legacy DesignState without requiring V2-only fields", () => {

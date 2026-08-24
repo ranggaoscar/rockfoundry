@@ -17,6 +17,8 @@ import {
   relationshipLine,
   relationshipsForEntity,
 } from "./derived";
+import { buildDesignSpec } from "../design/mock-generator";
+import { deriveScreenMap } from "../design/screen-map";
 
 export interface ArtifactDocuments {
   BRD: string;
@@ -322,7 +324,8 @@ function renderAgentHandoff(state: ProjectState) {
 Use this package as the authoritative confirmed product truth before writing code.
 
 Confirmed product decisions are authoritative. Do not infer, overwrite, or add unresolved behavior.
-The approved prototype, when included, is the visual and interaction reference. The target implementation stack may differ from the prototype; translate intent rather than copying it blindly.
+Product Truth is authoritative. Screen Map and the baseline DesignSpec are the implementation reference even when no prototype exists.
+The approved prototype, when included, is an optional visual and interaction reference. The target implementation stack may differ from it, so translate intent rather than copying it blindly.
 
 ## Package contents
 
@@ -333,6 +336,8 @@ The approved prototype, when included, is the visual and interaction reference. 
 - \`DECISIONS.md\` / \`decisions.json\` — explicit decisions and remaining risks
 - \`INVARIANTS.md\` — must-hold rules while coding
 - \`READINESS.md\` — build readiness and Decision Debt
+- \`design/SCREEN_MAP.json\` — deterministic screen inventory derived from Product Truth
+- \`design/DESIGN_SPEC.json\` — baseline implementation direction derived from Product Truth and Screen Map
 
 ## Read order (all tools)
 
@@ -405,6 +410,20 @@ approved workflows, screen hierarchy, interaction priorities, and role boundarie
 Do not invent alternative product behavior. Do not copy prototype code blindly.
 `
     : ""
+}
+
+## Design reference
+
+- Product Truth remains authoritative over visual suggestions.
+- Use \`design/SCREEN_MAP.json\` and \`design/DESIGN_SPEC.json\` as the implementation reference.
+- \`design/prototype/\` may be absent. If it is absent, do not invent a visual or interaction contract.
+
+${
+  state.studio.approvedVersion
+    ? `The approved prototype is included under \`design/prototype/\` and may be used as an additional visual reference.`
+    : state.studio.currentVersion
+      ? `A draft prototype is included under \`design/prototype/\`. It is not approved product truth.`
+      : "No prototype is included in this package."
 }
 
 ## Current handoff quality
@@ -762,10 +781,13 @@ function renderHandoffReadme(state: ProjectState) {
     ? "The approved prototype under design/prototype/ is the visual and interaction reference."
     : state.studio.currentVersion
       ? "A draft prototype is included under design/prototype/. Review and approve it before treating it as visual reference."
-      : "No product design is included yet.";
+      : "No prototype is included. Screen Map and baseline DesignSpec remain the implementation reference.";
+  const implementationGuidance = state.studio.currentVersion
+    ? "The target implementation stack may differ from this prototype. Translate the approved visual and interaction intent into the target stack; do not copy prototype code blindly and do not invent unresolved product behavior."
+    : "No prototype is included. Do not invent visual or interaction requirements beyond design/SCREEN_MAP.json and design/DESIGN_SPEC.json.";
   return `# ${state.name} — Coding Agent Start Here
 
-Start with AGENT_HANDOFF.md. It defines product truth, the do-not-invent boundary, and the required read order.
+Start with AGENT_HANDOFF.md. It defines Product Truth, the do-not-invent boundary, and the required read order.
 
 ## Read in this order
 
@@ -778,7 +800,9 @@ Start with AGENT_HANDOFF.md. It defines product truth, the do-not-invent boundar
 
 ${design}
 
-The target implementation stack may differ from this prototype. Translate the approved visual and interaction intent into the target stack; do not copy prototype code blindly and do not invent unresolved product behavior.
+Product Truth is authoritative. Use design/SCREEN_MAP.json and design/DESIGN_SPEC.json as the implementation reference. Prototype is optional and may be absent; coding agents must not invent unresolved behavior or visual requirements.
+
+${implementationGuidance}
 `;
 }
 
@@ -786,6 +810,10 @@ export async function generateExport(
   state: ProjectState,
 ): Promise<ExportPackage> {
   const documents = renderArtifacts(state);
+  const screenMap = state.studio.screenMap.length
+    ? state.studio.screenMap
+    : deriveScreenMap(state);
+  const baselineDesignSpec = buildDesignSpec(state, screenMap);
   const zip = new JSZip();
   zip.file("README.md", renderHandoffReadme(state));
   zip.file("product/BRD.md", documents.BRD);
@@ -797,7 +825,16 @@ export async function generateExport(
   zip.file("decisions/READINESS.md", documents.READINESS);
   zip.file("decisions/decisions.json", documents.DECISIONS_JSON);
   zip.file("AGENT_HANDOFF.md", documents.AGENT_HANDOFF);
-  let fileCount = 10;
+  zip.file(
+    "design/DESIGN_SPEC.json",
+    JSON.stringify(baselineDesignSpec, null, 2),
+  );
+  zip.file("design/SCREEN_MAP.json", JSON.stringify(screenMap, null, 2));
+  zip.file(
+    "design/DESIGN_DECISIONS.md",
+    "# Baseline design decisions\n\nThis deterministic baseline is derived from Product Truth and the Screen Map. A prototype is optional and is not required for coding-agent handoff.\n",
+  );
+  let fileCount = 13;
   const pack = state.generationMetadata.designPackage as
     | {
         spec?: unknown;
@@ -807,13 +844,10 @@ export async function generateExport(
     | undefined;
   if (state.studio.currentVersion > 0 && pack?.files?.length) {
     const label = state.studio.status === "APPROVED" ? "APPROVED" : "DRAFT";
-    zip.file(
-      "design/DESIGN_SPEC.json",
-      JSON.stringify(pack.spec || {}, null, 2),
-    );
+    zip.file("design/DESIGN_SPEC.json", JSON.stringify(pack.spec || baselineDesignSpec, null, 2));
     zip.file(
       "design/SCREEN_MAP.json",
-      JSON.stringify(state.studio.screenMap, null, 2),
+      JSON.stringify(screenMap, null, 2),
     );
     zip.file(
       "design/DESIGN_DECISIONS.md",
@@ -822,7 +856,7 @@ export async function generateExport(
     for (const file of pack.files) {
       zip.file(`design/prototype/${file.path}`, file.content);
     }
-    fileCount += 3 + pack.files.length;
+    fileCount += pack.files.length;
   }
   const buffer = await zip.generateAsync({ type: "nodebuffer" });
   const generatedAt = new Date().toISOString();

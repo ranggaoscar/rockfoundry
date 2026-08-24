@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("Normal user happy path", () => {
-  test("takes one rough idea to package, preview, approval, and one handoff download", async ({
+  test("takes one rough idea to package, optional prototype, approval, and one handoff download", async ({
     page,
   }) => {
     const idea =
@@ -51,6 +51,20 @@ test.describe("Normal user happy path", () => {
     await expect(
       page.getByText(/Paket produk sedang (disiapkan|dibuat)/i),
     ).toBeVisible({ timeout: 5_000 });
+
+    const projectId = page.url().split("/").pop()!;
+    await expect.poll(
+      async () =>
+        (await (await page.request.get(`/api/projects/${projectId}/package`)).json()).job?.status,
+      { timeout: 30_000 },
+    ).toBe("COMPLETED");
+    await expect(page.getByText("Baseline DesignSpec", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.locator('iframe[title="Product prototype"]')).toHaveCount(0);
+    await page
+      .getByRole("button", { name: /Buat prototype dengan AI|Generate Prototype with AI/i })
+      .click();
     await expect(page.locator('iframe[title="Product prototype"]')).toBeVisible(
       {
         timeout: 30_000,
@@ -67,7 +81,6 @@ test.describe("Normal user happy path", () => {
       timeout: 15_000,
     });
 
-    const projectId = page.url().split("/").pop()!;
     const download = await page.request.get(
       `/api/projects/${projectId}/export`,
     );

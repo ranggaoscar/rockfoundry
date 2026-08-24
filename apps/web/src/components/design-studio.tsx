@@ -30,6 +30,21 @@ type Studio = {
   debt: { count: number };
 };
 
+type PackageDesign = {
+  screenMap: Screen[];
+  designSpec: Record<string, unknown> | null;
+  summary: string;
+};
+
+type DesignJob = {
+  id: string;
+  status: string;
+  stage: string;
+  stageLabel: string;
+  progress: Record<string, unknown>;
+  errorSummary?: string | null;
+};
+
 const VIEWPORTS = {
   Desktop: 1440,
   Tablet: 768,
@@ -39,11 +54,17 @@ const VIEWPORTS = {
 export function DesignStudio({
   projectId,
   studio,
+  packageReady = false,
+  packageDesign,
+  language = "en",
   onState,
   onDownloadHandoff,
 }: {
   projectId: string;
   studio?: Studio;
+  packageReady?: boolean;
+  packageDesign?: PackageDesign | null;
+  language?: "id" | "en";
   onState: (state: unknown, version: number) => void;
   onDownloadHandoff: () => void;
 }) {
@@ -54,24 +75,53 @@ export function DesignStudio({
   const [viewport, setViewport] = useState<keyof typeof VIEWPORTS>("Desktop");
   const [composer, setComposer] = useState("");
   const [impactNote, setImpactNote] = useState("");
+  const [remotePackageDesign, setRemotePackageDesign] = useState<PackageDesign | null>(null);
+  const [designJob, setDesignJob] = useState<DesignJob | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [remoteReadiness, setRemoteReadiness] = useState<Studio["readiness"]>();
   const readiness = remoteReadiness || studio?.readiness;
   const previewUrl = `/api/projects/${projectId}/design/preview?v=${studio?.currentVersion || 0}`;
+  const baseline = remotePackageDesign || packageDesign || null;
   const hasDesign = Boolean(studio && studio.currentVersion > 0);
+  const effectivePackageReady = packageReady || Boolean(baseline) || hasDesign;
+  const designBusy = working || ["QUEUED", "RUNNING"].includes(designJob?.status || "");
 
   useEffect(() => {
     let cancelled = false;
     void fetch(`/api/projects/${projectId}/design`)
       .then((response) => response.json())
       .then((data) => {
-        if (!cancelled && data.readiness) setRemoteReadiness(data.readiness);
+        if (cancelled) return;
+        if (data.readiness) setRemoteReadiness(data.readiness);
+        if (data.packageDesign) setRemotePackageDesign(data.packageDesign);
+        if (data.designJob) setDesignJob(data.designJob);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [projectId]);
+
+  useEffect(() => {
+    if (!designJob || !["QUEUED", "RUNNING"].includes(designJob.status)) return;
+    const poll = window.setInterval(async () => {
+      const response = await fetch(`/api/projects/${projectId}/design/generate`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!data.job) return;
+      setDesignJob(data.job);
+      if (["COMPLETED", "FAILED"].includes(data.job.status)) {
+        setStage("");
+        const snapshot = await fetch(`/api/projects/${projectId}/design`);
+        if (!snapshot.ok) return;
+        const next = await snapshot.json();
+        if (next.packageDesign) setRemotePackageDesign(next.packageDesign);
+        if (next.state && typeof next.version === "number") onState(next.state, next.version);
+        if (data.job.status === "FAILED") setError(data.job.errorSummary || (language === "id" ? "Prototype belum berhasil dibuat." : "Prototype could not be created yet."));
+      }
+    }, 1000);
+    return () => window.clearInterval(poll);
+  }, [designJob, language, onState, projectId]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -87,7 +137,7 @@ export function DesignStudio({
   async function generate() {
     setWorking(true);
     setError("");
-    setStage("Generating interactive prototype...");
+    setStage(language === "id" ? "Menyiapkan prototype dengan AI..." : "Preparing AI prototype...");
     try {
       const response = await fetch(
         `/api/projects/${projectId}/design/generate`,
@@ -98,9 +148,7 @@ export function DesignStudio({
       const data = await response.json();
       if (!response.ok)
         throw new Error(data.error || "Could not generate design.");
-      setStage("Validating preview...");
-      onState(data.state, data.version);
-      setStage("");
+      setDesignJob(data.job);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Generate failed.");
     } finally {
@@ -179,12 +227,22 @@ export function DesignStudio({
 
   const grouped = useMemo(() => {
     const groups = new Map<string, Screen[]>();
-    for (const screen of studio?.screenMap || []) {
+    for (const screen of baseline?.screenMap || studio?.screenMap || []) {
       const key = screen.actorIds[0] || "product";
       groups.set(key, [...(groups.get(key) || []), screen]);
     }
     return [...groups.entries()];
-  }, [studio?.screenMap]);
+  }, [baseline?.screenMap, studio?.screenMap]);
+
+  const effectiveScreens = baseline?.screenMap || studio?.screenMap || [];
+  const prototypeFailed = designJob?.status === "FAILED";
+  const prototypeActionLabel = prototypeFailed
+    ? language === "id"
+      ? "Coba lagi membuat prototype"
+      : "Retry prototype"
+    : language === "id"
+      ? "Buat prototype dengan AI"
+      : "Generate Prototype with AI";
 
   return (
     <div className="rf-studio">
@@ -192,7 +250,9 @@ export function DesignStudio({
         <p className="rf-studio-kicker">Screen Map</p>
         {grouped.length === 0 && (
           <p className="text-[13px] text-muted-foreground">
-            Generate a design to derive screens from product truth.
+            {language === "id"
+              ? "Screen Map muncul dari Product Truth."
+              : "Screen Map is derived from Product Truth."}
           </p>
         )}
         {grouped.map(([actor, screens]) => (
@@ -230,21 +290,44 @@ export function DesignStudio({
           <span className="rf-studio-meta">
             {studio?.currentVersion
               ? `v${studio.currentVersion} · ${studio.status}`
-              : "No design yet"}
+              : baseline
+                ? language === "id"
+                  ? "Baseline · READY"
+                  : "Baseline · READY"
+                : language === "id"
+                  ? "Belum ada paket"
+                  : "No package yet"}
           </span>
         </div>
         {!hasDesign ? (
           <div className="rf-studio-empty">
-            <p className="rf-studio-kicker">Design Readiness</p>
-            <p className="rf-studio-score">
-              {readiness?.score ?? 0}% · {readiness?.level || "BLOCKED"}
+            <p className="rf-studio-kicker">
+              {baseline ? "Baseline DesignSpec" : "Design Readiness"}
             </p>
+            {baseline ? (
+              <p className="text-sm leading-6 text-muted-foreground">
+                {baseline.summary}
+              </p>
+            ) : (
+              <p className="rf-studio-score">
+                {readiness?.score ?? 0}% · {readiness?.level || "BLOCKED"}
+              </p>
+            )}
             <p>
-              {(studio?.screenMap.length || 0) > 0
-                ? `${studio?.screenMap.length} screens identified`
-                : "Screen map appears after generation"}
+              {effectiveScreens.length > 0
+                ? `${effectiveScreens.length} ${language === "id" ? "layar terpetakan" : "screens mapped"}`
+                : language === "id"
+                  ? "Screen Map belum tersedia"
+                  : "Screen Map is not available yet"}
             </p>
-            {(readiness?.unresolved.length || 0) > 0 && (
+            {prototypeFailed && (
+              <p className="rf-studio-note">
+                {language === "id"
+                  ? "Prototype belum berhasil dibuat."
+                  : "Prototype could not be created yet."}
+              </p>
+            )}
+            {(readiness?.unresolved.length || 0) > 0 && !baseline && (
               <p>
                 Prototype can use {readiness?.unresolved.length} unresolved
                 assumptions.
@@ -253,11 +336,26 @@ export function DesignStudio({
             <button
               type="button"
               className="rf-studio-primary"
-              disabled={working || readiness?.level === "BLOCKED"}
+              disabled={!effectivePackageReady || designBusy}
               onClick={() => void generate()}
             >
-              Generate Product Design
+              {prototypeActionLabel}
             </button>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {language === "id"
+                ? "Opsional — buat referensi visual interaktif berdasarkan Product Truth dan Screen Map."
+                : "Optional — create an interactive visual reference based on Product Truth and the Screen Map."}
+            </p>
+            {designJob && ["QUEUED", "RUNNING"].includes(designJob.status) && (
+              <p role="status">{designJob.stageLabel}</p>
+            )}
+            {!effectivePackageReady && (
+              <p className="text-xs text-muted-foreground">
+                {language === "id"
+                  ? "Buat Product Package dulu sebelum prototype."
+                  : "Build the Product Package before creating a prototype."}
+              </p>
+            )}
             {stage && <p>{stage}</p>}
           </div>
         ) : (
@@ -303,17 +401,17 @@ export function DesignStudio({
             placeholder="Revise the design or ask for references..."
           />
           <div className="rf-studio-actions">
-            <button type="submit" disabled={working || !hasDesign}>
+            <button type="submit" disabled={designBusy || !hasDesign}>
               Send
             </button>
             <button
               type="button"
-              disabled={working || !hasDesign}
+              disabled={designBusy || !hasDesign}
               onClick={() => void approve()}
             >
               Approve Design
             </button>
-            {studio?.status === "APPROVED" && (
+            {effectivePackageReady && (
               <button type="button" onClick={onDownloadHandoff}>
                 Download Handoff
               </button>

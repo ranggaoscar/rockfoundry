@@ -1,28 +1,35 @@
 import { prisma } from "@rockfoundry/db";
 import { claimNextPackageJob, recoverStalePackageJobs } from "./package-job-claims";
+import type { PackageJobRuntime } from "./package-jobs";
 
 let started = false;
+let interval: ReturnType<typeof setInterval> | undefined;
 
 export { claimNextPackageJob, recoverStalePackageJobs } from "./package-job-claims";
 
-export async function runPackageWorkerOnce() {
-  await recoverStalePackageJobs(prisma);
-  const jobId = await claimNextPackageJob(prisma);
-  if (!jobId) return false;
-  const { runPackageJob } = await import("./package-jobs");
-  await runPackageJob(jobId, true);
-  return true;
+export async function runPackageWorkerOnce(runtime: PackageJobRuntime = {}) {
+  const db = runtime.db || prisma;
+  await recoverStalePackageJobs(db);
+  const jobId = await claimNextPackageJob(db);
+  if (jobId) {
+    const { runPackageJob } = await import("./package-jobs");
+    await runPackageJob(jobId, true, runtime);
+    return true;
+  }
+  return false;
 }
 
 export function startPackageWorker() {
   if (started) return;
   started = true;
   const tick = () => { void runPackageWorkerOnce().catch(() => undefined); };
-  tick();
-  setInterval(tick, 1000).unref();
+  interval = setInterval(tick, 1000);
+  interval.unref();
 }
 
 export function resetPackageWorkerForTests() {
+  if (interval) clearInterval(interval);
+  interval = undefined;
   started = false;
 }
 

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("Design Studio", () => {
-  test("generates a live prototype, revises it, and keeps product decisions separate", async ({
+  test("generates an optional prototype after the package, revises it, and keeps product decisions separate", async ({
     page,
   }) => {
     await page.goto("/");
@@ -12,12 +12,46 @@ test.describe("Design Studio", () => {
       .getByRole("button", { name: /Mulai discovery|Start discovery/i })
       .click();
     await expect(page).toHaveURL(/\/project\//, { timeout: 30_000 });
-    await page.getByRole("button", { name: "Design" }).click();
-    await expect(page.getByText(/Design Readiness/i)).toBeVisible();
+    const packageButton = page.getByRole("button", {
+      name: /Buat paket produk|Build product package/i,
+    });
+    for (let index = 0; index < 20; index += 1) {
+      if (await packageButton.isVisible().catch(() => false)) break;
+      const option = page.locator(".rf-option").first();
+      if (await option.isVisible({ timeout: 20_000 }).catch(() => false)) {
+        const responsePromise = page.waitForResponse(
+          (response) =>
+            response.url().includes("/questions") &&
+            response.request().method() === "POST",
+        );
+        await option.click();
+        expect((await responsePromise).status()).toBe(200);
+        continue;
+      }
+
+      const responsePromise = page.waitForResponse(
+        (response) =>
+          response.url().includes("/conversation") &&
+          response.request().method() === "POST",
+      );
+      await page
+        .getByRole("textbox", { name: "Message RockFoundry" })
+        .fill("Use the recommended operational default for this workflow.");
+      await page.getByRole("button", { name: "Send message" }).click();
+      expect((await responsePromise).status()).toBe(200);
+    }
+
+    await expect(packageButton).toBeVisible({ timeout: 20_000 });
+    await packageButton.click();
+    await expect(page.getByText(/Baseline DesignSpec/i)).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(
-      page.getByRole("button", { name: "Generate Product Design" }),
+      page.getByRole("button", { name: /Buat prototype dengan AI|Generate Prototype with AI/i }),
     ).toBeEnabled({ timeout: 15_000 });
-    await page.getByRole("button", { name: "Generate Product Design" }).click();
+    await page
+      .getByRole("button", { name: /Buat prototype dengan AI|Generate Prototype with AI/i })
+      .click();
     await expect(page.getByText(/Job Discovery/i)).toBeVisible({
       timeout: 20_000,
     });

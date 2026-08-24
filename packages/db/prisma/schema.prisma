@@ -25,8 +25,9 @@ model Project {
   references     Reference[]
   toolRuns       ToolRun[]
   agentRuns      AgentRun[]
-  artifacts      Artifact[]
+  artifacts       Artifact[]
   packageJobs    PackageJob[]
+  designGenerationJobs DesignGenerationJob[]
   revisions      ProjectStateRevision[]
 
   @@index([updatedAt])
@@ -46,6 +47,25 @@ model PackageJob {
   startedAt     DateTime?
   completedAt   DateTime?
   heartbeatAt   DateTime?
+
+  @@index([projectId, createdAt])
+  @@index([status, heartbeatAt])
+}
+
+model DesignGenerationJob {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectVersion Int
+  status         String   @default("QUEUED")
+  stage          String   @default("DESIGN_ARCHITECTURE")
+  progress       String   @default("{}")
+  errorSummary   String?
+  retryCount     Int      @default(0)
+  createdAt      DateTime @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  heartbeatAt    DateTime?
 
   @@index([projectId, createdAt])
   @@index([status, heartbeatAt])

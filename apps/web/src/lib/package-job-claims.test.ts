@@ -13,6 +13,9 @@ const { PrismaClient } = require("@prisma/client") as any;
 import { claimNextPackageJob, enqueuePackageJob, isPackageJobVersionCurrent, recoverStalePackageJobs, startPackageJobHeartbeat } from "./package-job-claims";
 
  test("worker module import is side-effect free and bootstrap is idempotent", async () => {
+  const source = await fs.readFile(new URL("./package-worker.ts", import.meta.url), "utf8");
+  assert.equal(source.includes("./design-worker"), false);
+  assert.equal(source.includes("./design"), false);
   const worker = await import("./package-worker");
   worker.resetPackageWorkerForTests();
   assert.equal(worker.isPackageWorkerStartedForTests(), false);
@@ -26,11 +29,15 @@ import { claimNextPackageJob, enqueuePackageJob, isPackageJobVersionCurrent, rec
  test("Node instrumentation explicitly boots the worker", async () => {
   process.env.NEXT_RUNTIME = "nodejs";
   const worker = await import("./package-worker");
+  const designWorker = await import("./design-worker");
   worker.resetPackageWorkerForTests();
+  designWorker.resetDesignWorkerForTests();
   const instrumentation = await import("../instrumentation");
   await instrumentation.register();
   assert.equal(worker.isPackageWorkerStartedForTests(), true);
+  assert.equal(designWorker.isDesignWorkerStartedForTests(), true);
   worker.resetPackageWorkerForTests();
+  designWorker.resetDesignWorkerForTests();
 });
 
  test("edge instrumentation does not boot the worker", async () => {
@@ -46,8 +53,9 @@ process.env.NEXT_RUNTIME = "nodejs";
 
 async function tempDb() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rockfoundry-package-jobs-"));
-  const databasePath = path.join(dir, "test.db");
-  const db = new PrismaClient({ adapter: new PrismaLibSql({ url: `file:${databasePath}` }) });
+  const db = new PrismaClient({ adapter: new PrismaLibSql({ url: "file::memory:?cache=shared" }) });
+  await db.$executeRawUnsafe(`DROP TABLE IF EXISTS "PackageJob"`);
+  await db.$executeRawUnsafe(`DROP TABLE IF EXISTS "Project"`);
   await db.$executeRawUnsafe(`CREATE TABLE "Project" ("id" TEXT PRIMARY KEY, "name" TEXT NOT NULL, "description" TEXT, "canonicalState" TEXT NOT NULL DEFAULT '{}', "version" INTEGER NOT NULL DEFAULT 1, "deletedAt" DATETIME, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
   await db.$executeRawUnsafe(`CREATE TABLE "PackageJob" ("id" TEXT PRIMARY KEY, "projectId" TEXT NOT NULL, "projectVersion" INTEGER NOT NULL, "status" TEXT NOT NULL DEFAULT 'QUEUED', "stage" TEXT NOT NULL DEFAULT 'PREPARING_PRODUCT', "completedStages" TEXT NOT NULL DEFAULT '[]', "progress" TEXT NOT NULL DEFAULT '{}', "errorSummary" TEXT, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "startedAt" DATETIME, "completedAt" DATETIME, "heartbeatAt" DATETIME)`);
   await db.$executeRawUnsafe(`INSERT INTO "Project" ("id", "name") VALUES ('p1', 'test')`);
@@ -57,12 +65,13 @@ async function tempDb() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function closeDb(db: any, dir: string) {
   await db.$disconnect();
+  await db._engine?.stop?.();
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
       await fs.rm(dir, { recursive: true, force: true });
       return;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt === 9) return;
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt === 9) throw error;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
