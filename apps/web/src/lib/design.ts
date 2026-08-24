@@ -8,6 +8,7 @@ import {
   generateMockPrototype,
   markDesignStale,
   validatePrototypeFiles,
+  validatePrototypeQuality,
   DesignGenerationResultSchema,
   deriveScreenMap,
   type DesignGenerationResult,
@@ -24,7 +25,7 @@ import { z } from "zod";
 export class DesignGenerationError extends Error {
   constructor(
     public readonly task:
-      "design_architecture" | "prototype_generation" | "prototype_validation",
+      "design_architecture" | "prototype_generation" | "prototype_validation" | "quality_review" | "prototype_repair",
     public readonly cause: unknown,
   ) {
     super(`Design generation failed during ${task}.`);
@@ -163,8 +164,8 @@ function designProductContext(state: ProjectState) {
 async function generateWithRealProvider(
   state: ProjectState,
   input: { request?: string; existing?: DesignGenerationResult } = {},
+  gateway = getAiGateway(),
 ): Promise<DesignGenerationResult> {
-  const gateway = getAiGateway();
   const product = designProductContext(state);
   const screenMap = state.studio.screenMap.length
     ? state.studio.screenMap
@@ -204,36 +205,95 @@ export async function generateProjectDesign(
   state: ProjectState,
   version: number,
   request?: string,
+  deps: {
+    providerSettings?: ReturnType<typeof resolveProviderSettings>;
+    gateway?: ReturnType<typeof getAiGateway>;
+    save?: typeof saveProjectState;
+    persist?: typeof persistDesignArtifacts;
+  } = {},
 ) {
   const readiness = evaluateDesignReadiness(state);
   if (readiness.level === "BLOCKED") throw new Error("DESIGN_BLOCKED");
-  const settings = resolveProviderSettings();
+  const settings = deps.providerSettings || resolveProviderSettings();
   const generated =
     settings.mode === "openai-compatible"
-      ? await generateWithRealProvider(state, { request })
+      ? await generateWithRealProvider(state, { request }, deps.gateway)
       : generateMockPrototype(state, { request });
-  const validation = validatePrototypeFiles(
-    generated.files,
-    generated.screenMap,
-  );
+  let reviewed = generated;
+  const validation = validatePrototypeFiles(reviewed.files, reviewed.screenMap);
   if (!validation.accepted)
-    throw new DesignGenerationError(
-      "prototype_validation",
-      new Error(validation.reasons.join(" ")),
-    );
-  const next = applyGeneratedDesign(state, generated, {
-    summary: generated.summary,
-    source: "SYSTEM",
+    throw new DesignGenerationError("prototype_validation", new Error(validation.reasons.join(" ")));
+  let quality = validatePrototypeQuality(reviewed.files, reviewed.screenMap, reviewed.designSpec);
+  let designStatus: "IN_REVIEW" | "NEEDS_REVIEW" = "IN_REVIEW";
+  let qualityReview: { verdict: "PASS" | "REPAIR"; score?: number; summary?: string; blockingProblems?: string[] } | null = null;
+  let repairAttempted = false;
+  if (settings.mode === "openai-compatible") {
+    const gateway = deps.gateway || getAiGateway();
+    const files = Object.fromEntries(reviewed.files.map((file) => [file.path, file.content]));
+    const review = await gateway.runDesignQualityReview({
+      productSummary: JSON.stringify({ name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows }),
+      screenMap: reviewed.screenMap,
+      designSpec: reviewed.designSpec,
+      prototype: { html: files["index.html"] || "", css: files["styles.css"] || "", js: files["app.js"] || "" },
+      quality,
+    });
+    qualityReview = {
+      verdict: review.verdict,
+      score: review.score,
+      summary: review.improvements[0] || review.assessments[0]?.assessment,
+      blockingProblems: review.blockingProblems,
+    };
+    if (review.verdict === "REPAIR") {
+      repairAttempted = true;
+      try {
+        const repaired = await gateway.runPrototypeRepair({
+          product: { name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows },
+          screenMap: reviewed.screenMap,
+          designSpec: reviewed.designSpec,
+          existingFiles: reviewed.files,
+          blockingProblems: review.blockingProblems,
+        });
+        reviewed = DesignGenerationResultSchema.parse({ ...reviewed, files: repaired.prototype.files });
+        const repairedSafety = validatePrototypeFiles(reviewed.files, reviewed.screenMap);
+        quality = validatePrototypeQuality(reviewed.files, reviewed.screenMap, reviewed.designSpec);
+        qualityReview = {
+          ...qualityReview!,
+          summary: quality.accepted ? "Repaired prototype passed deterministic safety and quality checks." : quality.reasons.join(" "),
+          blockingProblems: quality.reasons,
+        };
+        if (!repairedSafety.accepted || !quality.accepted) designStatus = "NEEDS_REVIEW";
+      } catch {
+        designStatus = "NEEDS_REVIEW";
+      }
+    }
+  } else if (!quality.accepted) {
+    throw new DesignGenerationError("prototype_validation", new Error(quality.reasons.join(" ")));
+  }
+  const next = applyGeneratedDesign(state, reviewed, {
+    summary: reviewed.summary,
+        source: "SYSTEM",
+        status: designStatus,
     request,
   });
-  const saved = await saveProjectState(projectId, next, version);
-  await persistDesignArtifacts(
+  const saved = await (deps.save || saveProjectState)(projectId, next, version);
+  await (deps.persist || persistDesignArtifacts)(
     projectId,
     saved.state.studio.currentVersion,
-    generated,
+    reviewed,
     saved.state.studio.status,
   );
-  return { ...saved, generated, validation };
+  if (qualityReview || repairAttempted) {
+    await (deps.save || saveProjectState)(projectId, {
+      ...saved.state,
+      generationMetadata: {
+        ...saved.state.generationMetadata,
+        designQualityReview: qualityReview,
+        repairAttempted,
+        finalDesignStatus: designStatus,
+      },
+    }, saved.version);
+  }
+  return { ...saved, generated: reviewed, validation };
 }
 
 export async function reviseProjectDesign(
@@ -281,10 +341,11 @@ export async function reviseProjectDesign(
     generated.files,
     generated.screenMap,
   );
-  if (!validation.accepted)
+  const quality = validatePrototypeQuality(generated.files, generated.screenMap, generated.designSpec);
+  if (!validation.accepted || !quality.accepted)
     throw new DesignGenerationError(
       "prototype_validation",
-      new Error(validation.reasons.join(" ")),
+      new Error([...validation.reasons, ...quality.reasons].join(" ")),
     );
   const next = applyGeneratedDesign(state, generated, {
     summary: text,

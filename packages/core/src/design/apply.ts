@@ -6,7 +6,7 @@ import { evaluateDesignReadiness } from "./readiness";
 export function applyGeneratedDesign(
   state: ProjectState,
   generated: DesignGenerationResult,
-  input: { summary: string; source?: "USER" | "SYSTEM"; request?: string } = {
+  input: { summary: string; source?: "USER" | "SYSTEM"; request?: string; status?: "DRAFT" | "IN_REVIEW" | "NEEDS_REVIEW" } = {
     summary: generated.summary,
   },
 ): ProjectState {
@@ -14,7 +14,7 @@ export function applyGeneratedDesign(
   const readiness = evaluateDesignReadiness(state);
   const studio = DesignStateSchema.parse({
     ...state.studio,
-    status: state.studio.status === "APPROVED" ? "DRAFT" : "DRAFT",
+    status: input.status || "DRAFT",
     readiness,
     direction: generated.designSpec.direction,
     screenMap: generated.screenMap,

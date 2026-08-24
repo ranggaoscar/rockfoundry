@@ -139,23 +139,65 @@ export function deriveScreenMap(state: ProjectState): DesignScreen[] {
     ].map((screen) => DesignScreenSchema.parse(screen));
   }
 
-  const actors = state.targetUsers.length
-    ? state.targetUsers
-    : state.roles.length
-      ? state.roles
-      : ["user"];
-  return actors.slice(0, 3).flatMap((actor, index) => {
-    const id = slug(actor) || `actor-${index + 1}`;
-    return [
-      DesignScreenSchema.parse({
-        id: `${id}-home`,
-        name: `${actor} Home`,
-        actorIds: [id],
-        purpose: `Primary workspace for ${actor}.`,
-        route: index === 0 ? "#/" : `#/${id}`,
-        status: "INFERRED",
-        source: "INFERRED",
-      }),
-    ];
-  });
+  const actors = (state.targetUsers.length ? state.targetUsers : state.roles).slice(0, 3);
+  const entities = state.entities.slice(0, 6);
+  const workflows = state.workflows.slice(0, 6);
+  const firstActor = slug(actors[0] || "user") || "user";
+  const references = [...state.features, ...state.decisions.filter((d) => d.status === "ACCEPTED").map((d) => d.topic)].slice(0, 6);
+  const screens: DesignScreen[] = [];
+  if (entities.length || workflows.length) {
+    screens.push({
+      id: "workspace-overview",
+      name: "Workspace overview",
+      actorIds: actors.map((actor) => slug(actor)),
+      purpose: "See the confirmed work context and the next product outcome.",
+      primaryAction: workflows[0] || "Review the current product context.",
+      entityIds: entities.slice(0, 3).map(slug),
+      states: ["empty", "loading", "error"],
+      truthReferences: references,
+      route: "#/",
+      status: "DRAFT",
+      source: "DERIVED",
+    });
+    if (entities.length) screens.push({
+      id: "entity-list",
+      name: `${entities[0]} list`,
+      actorIds: [firstActor],
+      purpose: `Review ${entities[0]} records relevant to the confirmed workflow.`,
+      primaryAction: workflows[0] || "Review a record.",
+      entityIds: [slug(entities[0])],
+      states: ["empty", "loading", "error"],
+      truthReferences: references,
+      route: "#/records",
+      status: "INFERRED",
+      source: "DERIVED",
+    });
+    if (entities.length > 1) screens.push({
+      id: "entity-detail",
+      name: `${entities[0]} detail`,
+      actorIds: [firstActor],
+      purpose: `Inspect one ${entities[0]} and its confirmed relationships.`,
+      primaryAction: workflows[0] || "Continue the confirmed workflow.",
+      entityIds: entities.slice(0, 3).map(slug),
+      states: ["loading", "error"],
+      truthReferences: references,
+      route: "#/records/demo",
+      status: "INFERRED",
+      source: "DERIVED",
+    });
+    return screens.map((screen) => DesignScreenSchema.parse(screen));
+  }
+  return [{
+    id: "product-context",
+    name: "Product context",
+    actorIds: actors.map((actor) => slug(actor)),
+    purpose: "Review the confirmed product context before adding unresolved behavior.",
+    primaryAction: "Review confirmed product context.",
+    entityIds: [],
+    states: ["empty", "loading", "error"],
+    truthReferences: references,
+    route: "#/",
+    status: "INFERRED",
+    source: "INFERRED",
+  }].map((screen) => DesignScreenSchema.parse(screen));
 }

@@ -173,6 +173,22 @@ RULES:
 - Flag any license restrictions that may apply`,
 };
 
+export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> = {
+  initial_idea_extraction: "medium",
+  ambiguous_conversation: "medium",
+  research: "high",
+  screen_architecture: "max",
+  design_architecture: "max",
+  prototype_generation: "high",
+  design_quality_review: "high",
+  prototype_repair: "high",
+  final_consistency_review: "max",
+};
+
+export function reasoningEffortForTask(taskType: string, override?: string) {
+  return override || TASK_REASONING_EFFORT[taskType];
+}
+
 // Task type to model tier mapping
 export const TASK_MODEL_TIER: Record<string, "cheap" | "default" | "strong"> = {
   initial_idea_extraction: "default",

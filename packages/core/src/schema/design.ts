@@ -21,7 +21,7 @@ export const DesignScreenStatusSchema = z.enum([
   "DRAFT",
   "APPROVED",
 ]);
-export const DesignSourceSchema = z.enum(["USER", "SYSTEM", "INFERRED"]);
+export const DesignSourceSchema = z.enum(["USER", "SYSTEM", "INFERRED", "DERIVED", "ASSUMPTION", "CONFIRMED"]);
 
 export const DesignScreenSchema = z.object({
   id: z.string().min(1),
@@ -29,6 +29,10 @@ export const DesignScreenSchema = z.object({
   actorIds: z.array(z.string()).default([]),
   purpose: z.string().min(1),
   route: z.string().regex(/^#\/[a-z0-9/-]*$/),
+  primaryAction: z.string().optional(),
+  entityIds: z.array(z.string()).optional(),
+  states: z.array(z.string()).optional(),
+  truthReferences: z.array(z.string()).optional(),
   status: DesignScreenStatusSchema.default("INFERRED"),
   source: DesignSourceSchema.default("INFERRED"),
 });
@@ -44,7 +48,10 @@ export type DesignReadiness = z.infer<typeof DesignReadinessSchema>;
 
 export const DesignDirectionSchema = z.object({
   mood: z.string().default("quiet-technical"),
+  tone: z.string().default("clear and restrained"),
   density: z.string().default("comfortable"),
+  platform: z.string().default("responsive web"),
+  shell: z.string().default("workspace shell"),
   navigation: z.string().default("sidebar"),
   visualKeywords: z.array(z.string()).default([]),
   references: z.array(z.string()).default([]),
@@ -76,7 +83,10 @@ export const DesignStateSchema = z.object({
   }),
   direction: DesignDirectionSchema.default({
     mood: "quiet-technical",
+    tone: "clear and restrained",
     density: "comfortable",
+    platform: "responsive web",
+    shell: "workspace shell",
     navigation: "sidebar",
     visualKeywords: [],
     references: [],
@@ -108,7 +118,16 @@ export type PrototypeFile = z.infer<typeof PrototypeFileSchema>;
 
 export const DesignSpecSchema = z.object({
   productName: z.string(),
-  direction: DesignDirectionSchema,
+  direction: DesignDirectionSchema.default({
+    mood: "quiet-technical",
+    tone: "clear and restrained",
+    density: "comfortable",
+    platform: "responsive web",
+    shell: "workspace shell",
+    navigation: "sidebar",
+    visualKeywords: [],
+    references: [],
+  }),
   informationArchitecture: z.array(z.string()).default([]),
   navigation: z.string(),
   visualHierarchy: z.string(),
@@ -129,6 +148,52 @@ export const DesignSpecSchema = z.object({
   responsive: z.string(),
   interactions: z.array(z.string()).default([]),
   states: z.array(z.string()).default([]),
+  tokens: z.object({
+    typography: z.string().default("system scale"),
+    spacing: z.string().default("4px base scale"),
+    radius: z.string().default("subtle"),
+    surfaces: z.string().default("layered neutral surfaces"),
+    bordersElevation: z.string().default("quiet borders, minimal elevation"),
+    semanticStates: z.string().default("clear success, warning, error, and neutral states"),
+  }).default({
+    typography: "system scale",
+    spacing: "4px base scale",
+    radius: "subtle",
+    surfaces: "layered neutral surfaces",
+    bordersElevation: "quiet borders, minimal elevation",
+    semanticStates: "clear success, warning, error, and neutral states",
+  }),
+  layout: z.object({
+    shellStructure: z.string().default("shared workspace shell"),
+    contentWidth: z.string().default("readable max width"),
+    desktopNavigation: z.string().default("sidebar"),
+    mobileNavigation: z.string().default("compact menu"),
+    responsiveBehavior: z.string().default("stack and preserve primary action"),
+  }).default({
+    shellStructure: "shared workspace shell",
+    contentWidth: "readable max width",
+    desktopNavigation: "sidebar",
+    mobileNavigation: "compact menu",
+    responsiveBehavior: "stack and preserve primary action",
+  }),
+  componentsV2: z.array(z.object({
+    name: z.string(),
+    purpose: z.string(),
+    variants: z.array(z.string()).default([]),
+    stateNotes: z.string().default(""),
+  })).default([]),
+  screensV2: z.array(z.object({
+    screenId: z.string(),
+    hierarchy: z.array(z.string()).default([]),
+    primaryAction: z.string().default(""),
+    secondaryActions: z.array(z.string()).default([]),
+    keyContent: z.array(z.string()).default([]),
+    components: z.array(z.string()).default([]),
+    emptyState: z.string().default(""),
+    loadingState: z.string().default(""),
+    errorState: z.string().default(""),
+    mobileAdaptation: z.string().default(""),
+  })).default([]),
 });
 export type DesignSpec = z.infer<typeof DesignSpecSchema>;
 
@@ -140,6 +205,15 @@ export const DesignArchitectureOutputSchema = z.object({
 export type DesignArchitectureOutput = z.infer<
   typeof DesignArchitectureOutputSchema
 >;
+
+export const DesignQualityReviewSchema = z.object({
+  verdict: z.enum(["PASS", "REPAIR"]),
+  score: z.number().min(0).max(100),
+  assessments: z.array(z.object({ area: z.string(), assessment: z.string() })).default([]),
+  blockingProblems: z.array(z.string()).default([]),
+  improvements: z.array(z.string()).default([]),
+});
+export type DesignQualityReview = z.infer<typeof DesignQualityReviewSchema>;
 
 export const PrototypeGenerationOutputSchema = z.object({
   files: z.array(PrototypeFileSchema).min(3).max(3),

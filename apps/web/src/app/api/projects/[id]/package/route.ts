@@ -1,22 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
+import { evaluateReadinessDirectly } from "@rockfoundry/core";
+import { getLocalProject, jsonError, parseProjectState } from "@/lib/local-project";
+import { latestPackageJob } from "@/lib/package-jobs";
+import { enqueuePackageJob } from "@/lib/package-job-claims";
 import { prisma } from "@rockfoundry/db";
-import {
-  evaluateDecisionDebt,
-  evaluateReadinessDirectly,
-  generateExport,
-  validateConsistency,
-} from "@rockfoundry/core";
-import {
-  getLocalProject,
-  jsonError,
-  parseProjectState,
-} from "@/lib/local-project";
-import {
-  generateProjectDesign,
-  logDesignGenerationFailure,
-} from "@/lib/design";
 
 export async function POST(
   _req: NextRequest,
@@ -26,64 +15,25 @@ export async function POST(
     const { id } = await params;
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
-    const currentState = parseProjectState(project);
-    const readiness = evaluateReadinessDirectly(currentState);
+    const state = parseProjectState(project);
+    const readiness = evaluateReadinessDirectly(state);
     if (readiness.level !== "BUILD_READY")
-      return jsonError(
-        "Selesaikan keputusan penting sebelum membuat paket produk.",
-        422,
-      );
-    const design = await generateProjectDesign(
-      id,
-      currentState,
-      project.version,
-    );
-    const state = design.state;
-    const consistency = validateConsistency(state);
-    const generated = await generateExport(state);
-    await prisma.$transaction(
-      Object.entries(generated.documents).map(([type, content]) =>
-        prisma.artifact.upsert({
-          where: {
-            projectId_type_version: {
-              projectId: id,
-              type,
-              version: design.version,
-            },
-          },
-          create: {
-            projectId: id,
-            type,
-            status: consistency.status === "BLOCKING" ? "DRAFT" : "READY",
-            content,
-            version: design.version,
-          },
-          update: {
-            status: consistency.status === "BLOCKING" ? "DRAFT" : "READY",
-            content,
-            generatedAt: new Date(),
-          },
-        }),
-      ),
-    );
-    return Response.json({
-      state,
-      version: design.version,
-      documents: ["BRD", "PRD", "ERD", "DECISIONS", "READINESS"],
-      design: {
-        version: state.studio.currentVersion,
-        screenCount: state.studio.screenMap.length,
-      },
-      decisionDebt: evaluateDecisionDebt(state),
-      downloadUrl: `/api/projects/${id}/export`,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.message === "DESIGN_BLOCKED")
-      return jsonError(
-        "Add a little more product context before building the package.",
-        422,
-      );
-    logDesignGenerationFailure(error);
-    return jsonError("RockFoundry couldn't build the product package.", 422);
+      return jsonError("Selesaikan keputusan penting sebelum membuat paket produk.", 422);
+
+    const enqueued = await enqueuePackageJob(prisma, id, project.version);
+    return Response.json({ job: await latestPackageJob(id), reused: enqueued.reused }, { status: 202 });
+  } catch {
+    return jsonError("RockFoundry couldn't start the product package.", 422);
   }
+}
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const project = await getLocalProject(id);
+  if (!project) return jsonError("Project not found", 404);
+  const job = await latestPackageJob(id);
+  return Response.json({ job });
 }

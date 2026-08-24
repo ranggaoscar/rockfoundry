@@ -50,7 +50,7 @@ test.describe("Normal user happy path", () => {
         timeout: 30_000,
       },
     );
-    await expect(page.getByText(/v1 · DRAFT/i)).toBeVisible({
+    await expect(page.getByText(/v1 · (DRAFT|IN_REVIEW)/i)).toBeVisible({
       timeout: 15_000,
     });
 

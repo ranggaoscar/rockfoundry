@@ -165,6 +165,14 @@ export default function ProjectWorkspace({
   const [thinkingElapsedSec, setThinkingElapsedSec] = useState(0);
   const [pageError, setPageError] = useState("");
   const [exportReady, setExportReady] = useState(false);
+  const [packageJob, setPackageJob] = useState<{
+    id: string;
+    status: string;
+    stage: string;
+    stageLabel: string;
+    completedStages: string[];
+    errorSummary?: string | null;
+  } | null>(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState("");
@@ -714,46 +722,45 @@ export default function ProjectWorkspace({
   }
 
   async function buildProductPackage() {
-    if (!projectId || !project || working) return;
-    setWorking(true);
+    if (!projectId || !project || working || packageJob?.status === "RUNNING") return;
     setPageError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/package`, {
-        method: "POST",
-      });
+      const response = await fetch(`/api/projects/${projectId}/package`, { method: "POST" });
       const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "RockFoundry couldn't build the product package.",
-        );
-      setProject((current) =>
-        current
-          ? { ...current, canonicalState: data.state, version: data.version }
-          : current,
-      );
-      setQuestion(null);
-      setExportReady(Boolean(data.downloadUrl));
-      setMessages((current) => [
-        ...current,
-        {
-          id: `package-${Date.now()}`,
-          role: "assistant",
-          text: "Product package is ready. Review the live design, revise it in plain language, then approve and download one handoff.",
-          detail: `${data.documents.length} product documents · ${data.design.screenCount} screens · live prototype ready`,
-        },
-      ]);
-      setSurface("design");
+      if (!response.ok) throw new Error(data.error || "RockFoundry couldn't start the product package.");
+      setPackageJob(data.job);
       setDrawer(null);
     } catch (cause) {
-      setPageError(
-        cause instanceof Error
-          ? cause.message
-          : "RockFoundry couldn't build the product package.",
-      );
-    } finally {
-      setWorking(false);
+      setPageError(cause instanceof Error ? cause.message : "RockFoundry couldn't start the product package.");
     }
   }
+
+  useEffect(() => {
+    if (!projectId || packageJob) return;
+    void fetch(`/api/projects/${projectId}/package`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => { if (data?.job) setPackageJob(data.job); })
+      .catch(() => undefined);
+  }, [packageJob, projectId]);
+
+  useEffect(() => {
+    if (!projectId || !packageJob || ["COMPLETED", "FAILED"].includes(packageJob.status)) return;
+    const poll = window.setInterval(async () => {
+      const response = await fetch(`/api/projects/${projectId}/package`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!data.job) return;
+      setPackageJob(data.job);
+      if (data.job.status === "COMPLETED") {
+        await fetchProject(projectId);
+        setExportReady(true);
+        setSurface("design");
+        setMessages((current) => current.some((message) => message.id === `package-${data.job.id}`) ? current : [...current, { id: `package-${data.job.id}`, role: "assistant", text: "Product package is ready. Review the design, revise it in plain language, then approve and download the handoff." }]);
+      }
+      if (data.job.status === "FAILED") setPageError(data.job.errorSummary || "Package generation failed. Retry the build.");
+    }, 1000);
+    return () => window.clearInterval(poll);
+  }, [packageJob, projectId]);
 
   async function renameProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

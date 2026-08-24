@@ -32,7 +32,7 @@
     "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/playwright/*.ts\" \"packages/core/src/**/*.{ts,tsx}\" \"packages/ai/src/**/*.{ts,tsx}\" \"packages/db/index.ts\" \"packages/db/paths.ts\" \"packages/db/tsconfig.json\" \"packages/db/prisma.config.ts\" \"package.json\" \"pnpm-workspace.yaml\" \"packages/*/package.json\" \"docs/**/*.md\" \"product/**/*.md\" \"design/*.md\" \"technical/*.md\" \"delivery/*.md\" \"decisions/*.md\" \"README*.md\" \"PRD.md\" \"PROJECT_MANIFEST.json\" \"SECURITY.md\" \"CHANGELOG.md\" \"CONTRIBUTING.md\"",
     "format": "prettier --write \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/playwright/*.ts\" \"packages/core/src/**/*.{ts,tsx}\" \"packages/ai/src/**/*.{ts,tsx}\" \"packages/db/index.ts\" \"packages/db/paths.ts\" \"packages/db/tsconfig.json\" \"packages/db/prisma.config.ts\" \"package.json\" \"pnpm-workspace.yaml\" \"packages/*/package.json\" \"docs/**/*.md\" \"product/**/*.md\" \"design/*.md\" \"technical/*.md\" \"delivery/*.md\" \"decisions/*.md\" \"README*.md\" \"PRD.md\" \"PROJECT_MANIFEST.json\" \"SECURITY.md\" \"CHANGELOG.md\" \"CONTRIBUTING.md\"",
     "typecheck": "pnpm --filter @rockfoundry/core build && pnpm --filter @rockfoundry/ai build && pnpm --filter @rockfoundry/db build && pnpm -r exec tsc --noEmit",
-    "test": "pnpm -r test",
+    "test": "pnpm --filter @rockfoundry/core test && pnpm --filter @rockfoundry/ai test && pnpm --filter @rockfoundry/db test && pnpm --filter web test",
     "test:core": "pnpm --filter @rockfoundry/core test",
     "eval:invention": "pnpm --filter @rockfoundry/core eval:invention",
     "eval:generalization": "pnpm --filter @rockfoundry/core eval:generalization",

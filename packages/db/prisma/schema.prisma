@@ -26,9 +26,29 @@ model Project {
   toolRuns       ToolRun[]
   agentRuns      AgentRun[]
   artifacts      Artifact[]
+  packageJobs    PackageJob[]
   revisions      ProjectStateRevision[]
 
   @@index([updatedAt])
+}
+
+model PackageJob {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectVersion Int
+  status         String   @default("QUEUED")
+  stage          String   @default("PREPARING_PRODUCT")
+  completedStages String  @default("[]")
+  progress      String   @default("{}")
+  errorSummary  String?
+  createdAt     DateTime @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+  heartbeatAt   DateTime?
+
+  @@index([projectId, createdAt])
+  @@index([status, heartbeatAt])
 }
 
 model ConversationMessage {

@@ -29,7 +29,10 @@ export function buildDesignSpec(
     productName: state.name,
     direction: {
       mood: "quiet-technical",
+      tone: "clear and restrained",
       density: state.studio.direction.density || "comfortable",
+      platform: "responsive web",
+      shell: "workspace shell",
       navigation: "sidebar",
       visualKeywords: ["hairline", "system-type", "low-elevation"],
       references: state.studio.direction.references,
@@ -57,6 +60,37 @@ export function buildDesignSpec(
       readiness.unresolved.length > 0
         ? readiness.unresolved.map((item) => `Assumption: ${item}`)
         : ["Default populated demo state"],
+    tokens: {
+      typography: "system scale",
+      spacing: "8px rhythm",
+      radius: "subtle",
+      surfaces: "quiet layered surfaces",
+      bordersElevation: "hairline borders, low elevation",
+      semanticStates: "clear neutral, success, warning, and error states",
+    },
+    layout: {
+      shellStructure: "shared shell with primary work surface",
+      contentWidth: "readable max width",
+      desktopNavigation: "persistent sidebar",
+      mobileNavigation: "compact menu",
+      responsiveBehavior: "stack content and preserve primary action",
+    },
+    componentsV2: [
+      { name: "app-shell", purpose: "Shared navigation and workspace frame", variants: ["desktop", "mobile"], stateNotes: "Navigation remains available on every route." },
+      { name: "primary-action", purpose: "Expose the confirmed next workflow action", variants: ["filled", "quiet"], stateNotes: "Disabled while unavailable." },
+    ],
+    screensV2: screens.map((screen) => ({
+      screenId: screen.id,
+      hierarchy: [screen.name, screen.purpose],
+      primaryAction: screen.primaryAction || "Review confirmed context.",
+      secondaryActions: [],
+      keyContent: screen.entityIds || [],
+      components: ["app-shell", "primary-action"],
+      emptyState: "No confirmed records yet.",
+      loadingState: "Loading confirmed context.",
+      errorState: "Unable to load this local prototype state.",
+      mobileAdaptation: "Stack content and keep the primary action visible.",
+    })),
   };
 }
 

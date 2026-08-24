@@ -1,5 +1,6 @@
 import {
   DesignArchitectureOutputSchema,
+  DesignQualityReviewSchema,
   InitialIdeaExtraction,
   InitialIdeaExtractionSchema,
   PrototypeGenerationOutputSchema,
@@ -22,6 +23,7 @@ import {
   SYSTEM_PROMPTS,
   TASK_MODEL_TIER,
   TASK_TEMPERATURE,
+  reasoningEffortForTask,
 } from "./prompts";
 
 function item(
@@ -38,6 +40,12 @@ export class MockGatewayProvider implements AiGatewayProvider {
     const taskType = req.taskType || "initial_idea_extraction";
     if (taskType === "initial_idea_extraction")
       return this.mockExtraction(req) as InferenceResponse<T>;
+    if (taskType === "design_quality_review")
+      return {
+        data: { verdict: "PASS", score: 86, assessments: [{ area: "grounding", assessment: "Prototype follows the supplied screen map." }], blockingProblems: [], improvements: [] } as T,
+        usage: { promptTokens: 100, completionTokens: 80, totalTokens: 180 },
+        metadata: { provider: "mock", model: "mock", latency: 80 },
+      };
     return {
       data: {
         mock: true,
@@ -383,7 +391,12 @@ export class AiGateway {
     schema: z.ZodType<T>,
     normalize: (data: unknown) => unknown = (data) => data,
   ): Promise<InferenceResponse<unknown>> {
-    const initial = await this.provider.complete<unknown>(request);
+    const taskType = request.taskType || "initial_idea_extraction";
+    const effectiveRequest = {
+      ...request,
+      reasoningEffort: reasoningEffortForTask(taskType, request.reasoningEffort),
+    };
+    const initial = await this.provider.complete<unknown>(effectiveRequest);
     const normalizedInitial = { ...initial, data: normalize(initial.data) };
     const initialValidation = schema.safeParse(normalizedInitial.data);
     if (initialValidation.success) return normalizedInitial;
@@ -398,7 +411,7 @@ export class AiGateway {
       message: issue.message,
     }));
     const repaired = await this.provider.complete<unknown>({
-      ...request,
+      ...effectiveRequest,
       messages: [
         ...request.messages,
         {
@@ -479,17 +492,58 @@ export class AiGateway {
     };
   }
 
+  async runDesignQualityReview(input: {
+    productSummary: string;
+    screenMap: unknown[];
+    designSpec: unknown;
+    prototype: { html: string; css: string; js: string };
+    quality: unknown;
+  }) {
+    const result = await this.completeWithSchemaRepair(
+      {
+        taskType: "design_quality_review",
+        messages: [
+          { role: "system", content: "Evaluate only fidelity, screen coverage, hierarchy, interactions, and design contract adherence. Do not invent product behavior. Return JSON only." },
+          { role: "user", content: JSON.stringify(input) },
+        ],
+        responseFormat: "json",
+        responseSchema: DesignQualityReviewSchema.toJSONSchema(),
+      },
+      DesignQualityReviewSchema,
+    );
+    return DesignQualityReviewSchema.parse(result.data);
+  }
+
+  async runPrototypeRepair(input: {
+    product: Record<string, unknown>;
+    screenMap: unknown[];
+    designSpec: unknown;
+    existingFiles: Array<{ path: string; content: string }>;
+    blockingProblems: string[];
+  }) {
+    const result = await this.runPrototypeGeneration({
+      product: input.product,
+      architecture: input.designSpec,
+      screenMap: input.screenMap,
+      existingFiles: input.existingFiles,
+      taskType: "prototype_repair",
+      revisionRequest: `Repair only these quality problems: ${input.blockingProblems.join("; ")}. Preserve routes, behavior, and Product Truth.`,
+    });
+    return result;
+  }
+
   async runPrototypeGeneration(input: {
     product: Record<string, unknown>;
     architecture: unknown;
     screenMap: unknown[];
     revisionRequest?: string;
     existingFiles?: Array<{ path: string; content: string }>;
+    taskType?: string;
   }) {
     const result = await this.completeWithSchemaRepair(
       {
-        taskType: "prototype_generation",
-        modelTier: "strong",
+        taskType: input.taskType || "prototype_generation",
+          modelTier: "strong",
         messages: [
           {
             role: "system",
