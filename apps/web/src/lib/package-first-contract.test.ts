@@ -37,6 +37,8 @@ test("PackageJob is deterministic and contains no AI prototype stage", async () 
   );
   assert.equal(providerCalls, 0);
   void neverResolvingProvider;
-  assert.ok(packageResult.metadata.fileCount >= 13);
+  assert.equal(packageResult.metadata.fileCount, 8);
   assert.ok(packageResult.documents.AGENT_HANDOFF.includes("Product Truth is authoritative"));
+  assert.ok(packageResult.buffer.length > 0);
+  assert.ok(packageResult.documents.DECISIONS.startsWith("# Confirmed Decisions"));
 });

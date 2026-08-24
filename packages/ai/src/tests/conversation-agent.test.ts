@@ -72,6 +72,7 @@ describe("Conversation Agent gateway", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
       response_format: { type: "json_schema" },
     });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe("test-model");
     vi.unstubAllGlobals();
   });
 

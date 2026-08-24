@@ -230,11 +230,11 @@ function HomeWorkspace() {
                   className="rf-idea-button"
                   type="submit"
                   disabled={!canSubmit}
-                  aria-label={indo ? "Mulai discovery" : "Start discovery"}
+                  aria-label={indo ? "Mulai" : "Start"}
                 >
                   <ArrowUp className="size-4 shrink-0" />
                   <span className="max-sm:hidden">
-                    {indo ? "Mulai discovery" : "Start discovery"}
+                    {indo ? "Mulai" : "Start"}
                   </span>
                 </button>
               </div>

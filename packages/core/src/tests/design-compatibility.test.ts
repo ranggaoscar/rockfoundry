@@ -101,7 +101,7 @@ describe("design schema compatibility", () => {
       "PRD",
       "READINESS",
     ]);
-    expect(result.metadata.fileCount).toBeGreaterThanOrEqual(10);
+    expect(result.metadata.fileCount).toBe(8);
     expect(result.documents.AGENT_HANDOFF).toContain("# Agent Handoff");
   });
 

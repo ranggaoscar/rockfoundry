@@ -112,6 +112,10 @@ export async function saveProjectState(
   expectedVersion?: number,
   description?: string,
   name?: string,
+  assistantMessage?: {
+    content: string;
+    metadata: Record<string, unknown>;
+  },
 ) {
   const parsed = ProjectStateSchema.parse({
     ...state,
@@ -137,8 +141,8 @@ export async function saveProjectState(
       unresolvedTopics: readiness.discovery.unresolvedTopics,
     },
   });
-  await prisma.$transaction([
-    prisma.project.update({
+  await prisma.$transaction(async (transaction) => {
+    await transaction.project.update({
       where: { id: projectId },
       data: {
         name: name?.trim() || nextState.name,
@@ -146,16 +150,38 @@ export async function saveProjectState(
         version,
         ...(description === undefined ? {} : { description }),
       },
-    }),
-    prisma.projectStateRevision.create({
+    });
+    await transaction.projectStateRevision.create({
       data: {
         projectId,
         version,
         state: JSON.stringify(nextState),
         reason: "canonical state update",
       },
-    }),
-  ]);
+    });
+    if (assistantMessage) {
+      const existing = await transaction.conversationMessage.findFirst({
+        where: {
+          projectId,
+          role: "assistant",
+          content: assistantMessage.content,
+        },
+      });
+      if (!existing) {
+        await transaction.conversationMessage.create({
+          data: {
+            projectId,
+            role: "assistant",
+            content: assistantMessage.content,
+            metadata: JSON.stringify({
+              source: "AGENT",
+              ...assistantMessage.metadata,
+            }),
+          },
+        });
+      }
+    }
+  });
   return { state: nextState, version };
 }
 

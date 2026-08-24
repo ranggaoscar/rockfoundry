@@ -118,14 +118,6 @@ function projectStatus(state: any) {
   return "Not ready";
 }
 
-function discoverySummary(state: any) {
-  const count = state?.discovery?.importantDecisionsRemaining;
-  if (!state?.discovery?.evaluated || typeof count !== "number")
-    return "Finding missing decisions";
-  if (count === 0) return "Critical decisions locked";
-  return `${count} high-risk decision${count === 1 ? "" : "s"} still open`;
-}
-
 function decisionDebtScore(state: any) {
   const score = state?.decisionDebt?.score;
   if (typeof score === "number")
@@ -311,6 +303,10 @@ export default function ProjectWorkspace({
   const [workbench, setWorkbench] = useState<Workbench>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [initialTurnStatus, setInitialTurnStatus] = useState<
+    "IDLE" | "RUNNING" | "COMPLETED" | "FAILED"
+  >("IDLE");
+  const [initialTurnError, setInitialTurnError] = useState("");
   const [thinkingElapsedSec, setThinkingElapsedSec] = useState(0);
   const [pageError, setPageError] = useState("");
   const [exportReady, setExportReady] = useState(false);
@@ -334,6 +330,7 @@ export default function ProjectWorkspace({
   const [collapsed, setCollapsed] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
   const pendingDesignRef = useRef(false);
+  const initialTurnStartedRef = useRef(false);
   const provider = useProviderStatus();
 
   const fetchProject = useCallback(async (id: string) => {
@@ -358,10 +355,120 @@ export default function ProjectWorkspace({
     return data.project as ProjectData;
   }, []);
 
+  const runInitialTurn = useCallback(
+    async (id: string, rawIdea: string, retry = false) => {
+      if (!rawIdea.trim()) return;
+      setInitialTurnError("");
+      setInitialTurnStatus("RUNNING");
+      setWorking(true);
+      try {
+        const response = await fetch(`/api/projects/${id}/extract`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rawIdea: rawIdea.trim(), retry }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+              "RockFoundry couldn't reach the configured AI provider. Retry or open Provider Settings.",
+          );
+        }
+        if (data.state && typeof data.version === "number") {
+          setProject((current) =>
+            current
+              ? { ...current, canonicalState: data.state, version: data.version }
+              : current,
+          );
+        }
+        setInitialTurnStatus(
+          data.status === "RUNNING"
+            ? "RUNNING"
+            : data.status === "FAILED"
+              ? "FAILED"
+              : "COMPLETED",
+        );
+        if (typeof data.message === "string" && data.message.trim()) {
+          setMessages((current) =>
+            current.some((message) => message.role === "assistant")
+              ? current
+              : [
+                  ...current,
+                  {
+                    id: `initial-assistant-${Date.now()}`,
+                    role: "assistant",
+                    text: data.message,
+                  },
+                ],
+          );
+        } else if (data.status === "RUNNING") {
+          const refreshed = await fetchProject(id);
+          setInitialTurnStatus(
+            refreshed.canonicalState?.generationMetadata?.initialConversation
+              ?.status === "COMPLETED"
+              ? "COMPLETED"
+              : "RUNNING",
+          );
+        }
+      } catch (cause) {
+        const message =
+          cause instanceof Error
+            ? cause.message
+            : "RockFoundry couldn't reach the configured AI provider. Retry or open Provider Settings.";
+        setInitialTurnStatus("FAILED");
+        setInitialTurnError(message);
+      } finally {
+        setWorking(false);
+      }
+    },
+    [fetchProject],
+  );
+
   useEffect(() => {
+    let cancelled = false;
     params.then(({ id }) => {
+      if (cancelled) return;
       setProjectId(id);
       fetchProject(id)
+        .then(async (loaded) => {
+          if (cancelled) return;
+          const statusResponse = await fetch(`/api/projects/${id}/extract`);
+          const status = statusResponse.ok
+            ? await statusResponse.json().catch(() => null)
+            : null;
+          if (cancelled) return;
+          if (status?.status === "COMPLETED") {
+            setInitialTurnStatus("COMPLETED");
+            if (typeof status.message === "string") {
+              setMessages((current) =>
+                current.some((message) => message.role === "assistant")
+                  ? current
+                  : [
+                      ...current,
+                      {
+                        id: `initial-assistant-${Date.now()}`,
+                        role: "assistant",
+                        text: status.message,
+                      },
+                    ],
+              );
+            }
+          } else if (
+            !initialTurnStartedRef.current &&
+            status?.status !== "FAILED"
+          ) {
+            initialTurnStartedRef.current = true;
+            void runInitialTurn(
+              id,
+              loaded.description || loaded.canonicalState?.rawIdea || "",
+            );
+          } else if (status?.status === "FAILED") {
+            setInitialTurnStatus("FAILED");
+            setInitialTurnError(
+              "RockFoundry belum berhasil memahami ide ini. Coba lagi atau buka Provider Settings.",
+            );
+          }
+        })
         .catch((cause) =>
           setPageError(
             cause instanceof Error
@@ -369,9 +476,58 @@ export default function ProjectWorkspace({
               : "RockFoundry couldn't load this project.",
           ),
         )
-        .finally(() => setLoading(false));
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
     });
-  }, [fetchProject, params]);
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchProject, params, runInitialTurn]);
+
+  useEffect(() => {
+    if (!projectId || initialTurnStatus !== "RUNNING") return;
+    let cancelled = false;
+    const poll = window.setInterval(async () => {
+      const response = await fetch(`/api/projects/${projectId}/extract`);
+      if (!response.ok || cancelled) return;
+      const status = await response.json().catch(() => null);
+      if (cancelled || !status) return;
+      if (status.status === "COMPLETED") {
+        setInitialTurnStatus("COMPLETED");
+        if (typeof status.message === "string") {
+          setMessages((current) =>
+            current.some((message) => message.role === "assistant")
+              ? current
+              : [
+                  ...current,
+                  {
+                    id: `initial-assistant-${Date.now()}`,
+                    role: "assistant",
+                    text: status.message,
+                  },
+                ],
+          );
+        }
+        if (status.state && typeof status.version === "number") {
+          setProject((current) =>
+            current
+              ? { ...current, canonicalState: status.state, version: status.version }
+              : current,
+          );
+        }
+      } else if (status.status === "FAILED") {
+        setInitialTurnStatus("FAILED");
+        setInitialTurnError(
+          "RockFoundry belum berhasil memahami ide ini. Coba lagi atau buka Provider Settings.",
+        );
+      }
+    }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [initialTurnStatus, projectId]);
 
   useEffect(() => {
     let active = true;
@@ -441,7 +597,7 @@ export default function ProjectWorkspace({
   const state = project?.canonicalState || {};
   const indo = isIndonesianProject(state);
   const thinkingStatus = thinkingCopy(thinkingElapsedSec, indo);
-  const debtScore = decisionDebtScore(state);
+  const initialTurnWorking = initialTurnStatus === "RUNNING";
   const packageReady = Boolean(
     exportReady || packageJob?.status === "COMPLETED",
   );
@@ -832,18 +988,23 @@ export default function ProjectWorkspace({
               type="button"
               className="rf-status-line hidden sm:block"
               onClick={() => setWorkbench("spec")}
-              title={`${readinessPlainLabel(state)}. Decision Debt is invention risk for coding agents (higher is worse).`}
+              title={readinessPlainLabel(state)}
             >
-              Decision Debt:{" "}
-              {debtScore !== null ? (
-                <span className="tabular-nums">{debtScore}</span>
-              ) : (
-                "-"
-              )}{" "}
-              ·{" "}
-              {indo
-                ? `${state.decisionDebt?.unresolvedHighRiskCount || 0} keputusan penting belum selesai`
-                : discoverySummary(state)}
+              {projectStatus(state) === "Safe to build"
+                ? indo
+                  ? "Siap untuk MVP"
+                  : "Ready for MVP"
+                : projectStatus(state) === "Draft only"
+                  ? indo
+                    ? "Draft spec"
+                    : "Spec draft"
+                  : state.decisionDebt?.unresolvedHighRiskCount > 0
+                    ? indo
+                      ? `${state.decisionDebt.unresolvedHighRiskCount} hal penting belum diputuskan`
+                      : `${state.decisionDebt.unresolvedHighRiskCount} important items remain open`
+                    : indo
+                      ? "Ide produk"
+                      : "Product idea"}
             </button>
           </div>
           <button
@@ -915,9 +1076,37 @@ export default function ProjectWorkspace({
                   />
                 );
               })}
-              {working ? (
+              {working || initialTurnWorking ? (
                 <div className="rf-typing" role="status" aria-live="polite">
-                  <span className="rf-pulse-dot" /> {thinkingStatus}
+                  <span className="rf-pulse-dot" />
+                  {initialTurnWorking
+                    ? indo
+                      ? "RockFoundry sedang memahami idenya…"
+                      : "RockFoundry is thinking through your idea…"
+                    : thinkingStatus}
+                </div>
+              ) : null}
+              {initialTurnStatus === "FAILED" ? (
+                <div className="rf-error" role="alert">
+                  <span>
+                    {initialTurnError ||
+                      (indo
+                        ? "Respons awal belum berhasil dibuat."
+                        : "The first response could not be generated yet.")}
+                  </span>
+                  <button
+                    className="rf-header-action"
+                    type="button"
+                    onClick={() =>
+                      void runInitialTurn(
+                        project.id,
+                        project.description || state.rawIdea || "",
+                        true,
+                      )
+                    }
+                  >
+                    {indo ? "Coba lagi" : "Retry"}
+                  </button>
                 </div>
               ) : null}
               {pageError ? (
@@ -1647,18 +1836,19 @@ function DocumentsContent({
   onDownload: () => void;
 }) {
   const status = state.readiness ? projectStatus(state) : "Draft";
+  const hasDesign = state.studio?.currentVersion > 0;
+  const hasReferences = Array.isArray(state.references) && state.references.length > 0;
+  const supportingReferences = hasReferences
+    ? "reference/BRD.md · reference/PRD.md · reference/ERD.md · reference/references.json"
+    : "reference/BRD.md · reference/PRD.md · reference/ERD.md";
   const core = [
     {
-      file: "BRD.md",
-      description: "Business model, actors, goals, scope, and rules.",
+      file: "PRODUCT_SPEC.md",
+      description: "Human-readable product overview, flows, rules, and unknowns.",
     },
     {
-      file: "PRD.md",
-      description: "Product behavior and accepted decisions.",
-    },
-    {
-      file: "ERD.md",
-      description: "Confirmed entities and relationships only.",
+      file: "AGENT_HANDOFF.md",
+      description: "Start-here implementation brief for a coding agent.",
     },
   ];
   const advanced = [
@@ -1671,18 +1861,9 @@ function DocumentsContent({
       description: "Every confirmed decision with provenance.",
     },
     {
-      file: "INVARIANTS.md",
-      description: "Constraints that stay true across the build.",
+      file: "reference/",
+      description: supportingReferences,
     },
-    {
-      file: "READINESS.md",
-      description: "Coverage, Decision Debt, and artifact gaps.",
-    },
-    {
-      file: "AGENT_HANDOFF.md",
-      description: "Start-here brief for the coding agent.",
-    },
-    { file: "decisions.json", description: "Machine-readable decision log." },
   ];
   return (
     <div className="space-y-5 px-5 py-5">
@@ -1692,9 +1873,6 @@ function DocumentsContent({
       </p>
       <p className="text-xs leading-5 text-muted-foreground">
         {readinessPlainLabel(state)}
-        {decisionDebtScore(state) !== null
-          ? ` · Decision Debt ${decisionDebtScore(state)}/100`
-          : ""}
       </p>
       <section className="space-y-2">
         <h3 className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
@@ -1736,7 +1914,7 @@ function DocumentsContent({
           ))}
         </div>
       </section>
-      {exportReady && (
+      {exportReady && hasDesign && (
         <section>
           <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
             Product design reference
@@ -1745,17 +1923,9 @@ function DocumentsContent({
             <div>design/DESIGN_SPEC.json</div>
             <div>design/SCREEN_MAP.json</div>
             <div>design/DESIGN_DECISIONS.md</div>
-            {state.studio?.currentVersion > 0 ? (
-              <>
-                <div>design/prototype/index.html</div>
-                <div>design/prototype/styles.css</div>
-                <div>design/prototype/app.js</div>
-              </>
-            ) : (
-              <div className="pt-1 text-xs">
-                Prototype optional — not included yet.
-              </div>
-            )}
+            <div className="pt-1 text-xs">
+              Prototype files are included when generated.
+            </div>
           </div>
         </section>
       )}

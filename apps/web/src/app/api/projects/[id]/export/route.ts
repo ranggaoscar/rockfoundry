@@ -50,15 +50,10 @@ export async function POST(
     );
     return Response.json({
       generated: [
-        "BRD",
-        "PRD",
-        "ERD",
-        "DO_NOT_INVENT",
-        "DECISIONS",
-        "INVARIANTS",
-        "READINESS",
-        "AGENT_HANDOFF",
-        "DECISIONS_JSON",
+        "PRODUCT_SPEC.md",
+        "AGENT_HANDOFF.md",
+        "DECISIONS.md",
+        "DO_NOT_INVENT.md",
       ],
       version: project.version,
       consistency,

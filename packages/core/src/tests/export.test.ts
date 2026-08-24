@@ -11,7 +11,7 @@ import { recordDecision } from "../decision-graph";
 import { evaluateDecisionDebt } from "../graph/decision-debt";
 
 describe("Agentic artifact export", () => {
-  it("creates one coding-agent handoff package with product, decisions, and design folders", async () => {
+  it("creates a concise public handoff package with conditional folders", async () => {
     const state = createInitialProjectState({
       id: "1",
       name: "Test Project",
@@ -20,17 +20,22 @@ describe("Agentic artifact export", () => {
     const result = await generateExport(state);
     const zip = await JSZip.loadAsync(result.buffer);
     expect(zip.file("README.md")).toBeTruthy();
-    expect(zip.file("product/BRD.md")).toBeTruthy();
-    expect(zip.file("product/PRD.md")).toBeTruthy();
-    expect(zip.file("product/ERD.md")).toBeTruthy();
-    expect(zip.file("decisions/decisions.json")).toBeTruthy();
-    expect(zip.file("decisions/DECISIONS.md")).toBeTruthy();
-    expect(zip.file("decisions/DO_NOT_INVENT.md")).toBeTruthy();
-    expect(zip.file("decisions/INVARIANTS.md")).toBeTruthy();
-    expect(zip.file("decisions/READINESS.md")).toBeTruthy();
+    expect(zip.file("PRODUCT_SPEC.md")).toBeTruthy();
     expect(zip.file("AGENT_HANDOFF.md")).toBeTruthy();
-    expect(await zip.file("README.md")?.async("string")).toContain(
-      "Start with AGENT_HANDOFF.md",
+    expect(zip.file("DECISIONS.md")).toBeTruthy();
+    expect(zip.file("DO_NOT_INVENT.md")).toBeTruthy();
+    expect(zip.file("product/BRD.md")).toBeNull();
+    expect(zip.file("decisions/DECISIONS.md")).toBeNull();
+    expect(zip.file("design/DESIGN_SPEC.json")).toBeNull();
+    expect(zip.file("reference/BRD.md")).toBeTruthy();
+    expect(zip.file("reference/PRD.md")).toBeTruthy();
+    expect(zip.file("reference/ERD.md")).toBeTruthy();
+    expect(zip.file("reference/references.json")).toBeNull();
+    expect(await zip.file("README.md")?.async("string")).toMatch(
+      /Read PRODUCT_SPEC\.md|PRODUCT_SPEC\.md/,
+    );
+    expect(await zip.file("PRODUCT_SPEC.md")?.async("string")).toMatch(
+      /Product overview|Target users|Open questions/i,
     );
   });
 
@@ -60,6 +65,31 @@ describe("Agentic artifact export", () => {
     expect(await zip.file("AGENT_HANDOFF.md")?.async("string")).toContain(
       "target implementation stack may differ",
     );
+    expect(await zip.file("PRODUCT_SPEC.md")?.async("string")).toMatch(
+      /product overview|data relationships|assumptions/i,
+    );
+  });
+
+  it("exports references only when canonical evidence exists", async () => {
+    const state = createInitialProjectState({
+      id: "reference-export",
+      name: "Reference project",
+      rawIdea: "Build a product with evidence",
+    });
+    state.references.push({
+      id: "ref-1",
+      type: "URL",
+      url: "https://example.com/reference",
+      status: "ANALYZED",
+      source: "REFERENCE_WEBSITE",
+      untrusted: true,
+      metadata: { title: "Example" },
+    });
+    const zip = await JSZip.loadAsync((await generateExport(state)).buffer);
+    expect(zip.file("reference/references.json")).toBeTruthy();
+    expect(await zip.file("reference/references.json")?.async("string")).toContain(
+      "https://example.com/reference",
+    );
   });
 
   it("puts unresolved high-risk decisions into DO_NOT_INVENT", () => {
@@ -71,6 +101,8 @@ describe("Agentic artifact export", () => {
     const docs = renderArtifacts(state);
     expect(docs.DO_NOT_INVENT).toContain("Do not invent");
     expect(docs.DO_NOT_INVENT.toLowerCase()).toContain("customer");
+    expect(docs.DECISIONS).toContain("Confirmed Decisions");
+    expect(docs.DECISIONS).not.toContain("PROPOSED");
     expect(docs.AGENT_HANDOFF).toContain("DO_NOT_INVENT.md");
   });
 });

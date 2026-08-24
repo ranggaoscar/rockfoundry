@@ -682,32 +682,30 @@ export class AiGateway {
     mode: string;
     riskContext: unknown[];
   }): Promise<ConversationAgentResponse> {
-    const result = await this.completeWithSchemaRepair(
-      {
-        taskType: "conversation_agent",
-        modelTier: "default",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Keep the response concise but useful.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              projectContext: input.project,
-              latestUserMessage: input.latestUserMessage,
-              mode: input.mode,
-              relevantRisks: input.riskContext,
-            }),
-          },
-        ],
-        temperature: 0.45,
-        responseFormat: "json",
-        responseSchema: ConversationAgentResponseJsonSchema,
-      },
-      ConversationAgentResponseSchema,
-    );
+    const result = await this.provider.complete<unknown>({
+      taskType: "conversation_agent",
+      modelTier: "default",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Keep the response concise but useful.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            projectContext: input.project,
+            latestUserMessage: input.latestUserMessage,
+            mode: input.mode,
+            relevantRisks: input.riskContext,
+          }),
+        },
+      ],
+      temperature: 0.45,
+      responseFormat: "json",
+      responseSchema: ConversationAgentResponseJsonSchema,
+      maxRetries: 0,
+    });
     return ConversationAgentResponseSchema.parse(result.data);
   }
 

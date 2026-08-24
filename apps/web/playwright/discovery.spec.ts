@@ -9,7 +9,7 @@ test.describe("V2 conversation workspace", () => {
 
     await page.goto("/");
     await page.locator("#idea-composer").fill(idea);
-    await page.getByRole("button", { name: /Mulai discovery|Start discovery/i }).click();
+    await page.getByRole("button", { name: /Mulai|Start/i }).click();
     await expect(page).toHaveURL(/\/project\//, { timeout: 30_000 });
     await expect(page.getByText(/CRM untuk 5 brand|CRM for 5 brand/i).first()).toBeVisible({
       timeout: 15_000,

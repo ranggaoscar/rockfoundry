@@ -50,7 +50,7 @@ export async function POST(
         status: consistency.status,
         unresolvedQuestions: state.openQuestions,
         assumptions: state.assumptions,
-        documents: ["BRD.md", "PRD.md", "ERD.md"],
+        documents: ["PRODUCT_SPEC.md", "AGENT_HANDOFF.md", "DO_NOT_INVENT.md"],
       },
       version: project.version,
       consistency,

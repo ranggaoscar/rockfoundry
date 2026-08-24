@@ -133,7 +133,7 @@ describe("Design Engine V2", () => {
   it("keeps legacy handoff/export structure valid", async () => {
     const result = await generateExport(createInitialProjectState({ id: "handoff", name: "Legacy", rawIdea: "Legacy" }));
     expect(result.documents).toMatchObject({ BRD: expect.any(String), PRD: expect.any(String), ERD: expect.any(String), AGENT_HANDOFF: expect.any(String) });
-    expect(result.metadata.fileCount).toBeGreaterThanOrEqual(10);
+    expect(result.metadata.fileCount).toBe(8);
     expect(result.documents.AGENT_HANDOFF).toContain("DO_NOT_INVENT.md");
     expect(result.documents.AGENT_HANDOFF).toContain("The approved prototype, when included");
   });
@@ -146,19 +146,13 @@ describe("Design Engine V2", () => {
     const names = Object.keys(zip.files);
     expect(names).toEqual(expect.arrayContaining([
       "README.md",
+      "PRODUCT_SPEC.md",
       "AGENT_HANDOFF.md",
-      "product/BRD.md",
-      "product/PRD.md",
-      "product/ERD.md",
-      "decisions/DO_NOT_INVENT.md",
-      "decisions/INVARIANTS.md",
-      "decisions/READINESS.md",
-      "design/DESIGN_SPEC.json",
-      "design/SCREEN_MAP.json",
-      "design/DESIGN_DECISIONS.md",
+      "DECISIONS.md",
+      "DO_NOT_INVENT.md",
     ]));
-    expect(names.some((name) => name.startsWith("design/prototype/"))).toBe(false);
-    expect(await zip.file("README.md")?.async("string")).toMatch(/prototype is optional/i);
+    expect(names.some((name) => name.startsWith("design/"))).toBe(false);
+    expect(await zip.file("README.md")?.async("string")).toMatch(/design\/ when present/i);
     expect(await zip.file("AGENT_HANDOFF.md")?.async("string")).toContain("Product Truth is authoritative");
   });
 
