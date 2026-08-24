@@ -178,7 +178,7 @@ export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> = 
   ambiguous_conversation: "medium",
   research: "high",
   screen_architecture: "max",
-  design_architecture: "max",
+  design_architecture: "high",
   prototype_generation: "high",
   design_quality_review: "high",
   prototype_repair: "high",

@@ -168,14 +168,15 @@ function PackageBuildStatus({
   onRetry: () => void;
 }) {
   const failed = job.status === "FAILED";
+  const designFailed = job.status === "DESIGN_FAILED";
   const queued = job.status === "QUEUED";
   return (
     <section className="mx-auto mt-10 w-full max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-left" aria-label="Package build status">
       <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        {failed ? "Pembuatan paket berhenti" : queued ? "Paket produk sedang disiapkan" : "Paket produk sedang dibuat"}
+        {failed ? "Pembuatan paket berhenti" : designFailed ? "Paket produk siap, prototype tertunda" : queued ? "Paket produk sedang disiapkan" : "Paket produk sedang dibuat"}
       </p>
       <p className="mt-2 text-sm text-muted-foreground">
-        {failed ? job.errorSummary || "Pembuatan paket gagal. Coba lagi." : queued ? "Menunggu worker..." : job.stageLabel}
+        {failed ? job.errorSummary || "Pembuatan paket gagal. Coba lagi." : designFailed ? job.errorSummary || "Dokumen dan struktur produk sudah siap. Prototype belum berhasil dibuat." : queued ? "Menunggu worker..." : job.stageLabel}
       </p>
       {!failed && (
         <ol className="mt-4 space-y-2 text-sm" aria-label="Tahapan pembuatan paket">
@@ -191,9 +192,9 @@ function PackageBuildStatus({
           })}
         </ol>
       )}
-      {failed && (
+      {(failed || designFailed) && (
         <button className="rf-primary-button mt-4" type="button" onClick={onRetry}>
-          Coba lagi
+          {designFailed ? "Coba lagi membuat prototype" : "Coba lagi"}
         </button>
       )}
     </section>
@@ -799,7 +800,7 @@ export default function ProjectWorkspace({
   }, [packageJob, projectId]);
 
   useEffect(() => {
-    if (!projectId || !packageJob || ["COMPLETED", "FAILED"].includes(packageJob.status)) return;
+    if (!projectId || !packageJob || ["COMPLETED", "FAILED", "DESIGN_FAILED"].includes(packageJob.status)) return;
     const poll = window.setInterval(async () => {
       const response = await fetch(`/api/projects/${projectId}/package`);
       if (!response.ok) return;
@@ -1043,7 +1044,7 @@ export default function ProjectWorkspace({
                     </button>
                   </div>
                 )}
-                {canBuildPackage && !working && packageJob && ["QUEUED", "RUNNING", "FAILED"].includes(packageJob.status) ? (
+                {canBuildPackage && !working && packageJob && ["QUEUED", "RUNNING", "FAILED", "DESIGN_FAILED"].includes(packageJob.status) ? (
                   <PackageBuildStatus job={packageJob} onRetry={() => void buildProductPackage()} />
                 ) : canBuildPackage && !working && !packageJob ? (
                   <div className="mx-auto mt-10 max-w-md text-center">

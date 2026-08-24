@@ -5,7 +5,7 @@ vi.mock("server-only", () => ({}));
 
 import { createInitialProjectState } from "@rockfoundry/core";
 import type { AiGateway } from "@rockfoundry/ai";
-import { DesignGenerationError, generateProjectDesign } from "./design";
+import { generateProjectDesign } from "./design";
 
 function readyState() {
   const state = createInitialProjectState({ id: "design-test", name: "Kasir", rawIdea: "Kasir sederhana" });
@@ -83,9 +83,9 @@ describe("generateProjectDesign executable review cases", () => {
     expect(result.generated.files).toEqual(generatedFiles);
     expect(gateway.runDesignQualityReview).toHaveBeenCalledTimes(1);
     expect(gateway.runPrototypeRepair).not.toHaveBeenCalled();
-    expect(injected.save).toHaveBeenCalledTimes(2);
+    expect(injected.save).toHaveBeenCalledTimes(3);
     expect(injected.persist).toHaveBeenCalledTimes(1);
-    const metadataSave = injected.save.mock.calls[1][1];
+    const metadataSave = injected.save.mock.calls[2][1];
     expect(metadataSave.generationMetadata.designQualityReview).toMatchObject({ verdict: "PASS", score: 92 });
     expect(metadataSave.generationMetadata.repairAttempted).toBe(false);
     expect(metadataSave.generationMetadata.finalDesignStatus).toBe("IN_REVIEW");
@@ -100,7 +100,7 @@ describe("generateProjectDesign executable review cases", () => {
     expect(result.generated.files).toEqual(repairedFiles);
     expect(gateway.runPrototypeRepair).toHaveBeenCalledTimes(1);
     expect(injected.persist).toHaveBeenCalledTimes(1);
-    const metadataSave = injected.save.mock.calls[1][1];
+    const metadataSave = injected.save.mock.calls[2][1];
     expect(metadataSave.generationMetadata.designQualityReview).toMatchObject({ verdict: "REPAIR" });
     expect(metadataSave.generationMetadata.repairAttempted).toBe(true);
     expect(metadataSave.generationMetadata.finalDesignStatus).toBe("NEEDS_REVIEW");
@@ -114,9 +114,9 @@ describe("generateProjectDesign executable review cases", () => {
     const result = await generateProjectDesign("design-test", state, 1, undefined, injected);
     expect(result.generated.files).toEqual(generatedFiles);
     expect(gateway.runPrototypeRepair).toHaveBeenCalledTimes(1);
-    expect(injected.save).toHaveBeenCalledTimes(2);
+    expect(injected.save).toHaveBeenCalledTimes(3);
     expect(injected.persist).toHaveBeenCalledTimes(1);
-    const metadataSave = injected.save.mock.calls[1][1];
+    const metadataSave = injected.save.mock.calls[2][1];
     expect(metadataSave.generationMetadata.designQualityReview).toMatchObject({ verdict: "REPAIR", score: 92 });
     expect(metadataSave.generationMetadata.repairAttempted).toBe(true);
     expect(metadataSave.generationMetadata.finalDesignStatus).toBe("NEEDS_REVIEW");
@@ -160,7 +160,7 @@ describe("generateProjectDesign executable review cases", () => {
     const gateway = realGateway("REPAIR", repairedFiles);
     const injected = realDeps(state, gateway);
     await generateProjectDesign("design-test", state, 7, undefined, injected);
-    const metadataSave = injected.save.mock.calls[1][1];
+    const metadataSave = injected.save.mock.calls[2][1];
     expect(metadataSave.generationMetadata).toMatchObject({
       designQualityReview: { verdict: "REPAIR", score: 92 },
       repairAttempted: true,
@@ -168,15 +168,22 @@ describe("generateProjectDesign executable review cases", () => {
     });
   });
 
-  it("surfaces provider architecture failure as a typed generation error", async () => {
+  it("uses the deterministic baseline when design architecture times out", async () => {
     const state = readyState();
-    const gateway = { runDesignArchitecture: vi.fn(async () => { throw new Error("provider unavailable"); }) } as unknown as MockGateway;
-    const injected = { ...deps(state, gateway), providerSettings: { mode: "openai-compatible" } as any };
-    await expect(generateProjectDesign("design-test", state, 1, undefined, injected)).rejects.toSatisfy(
-      (error: unknown) => error instanceof DesignGenerationError && error.task === "design_architecture",
+    const gateway = realGateway("PASS");
+    gateway.runDesignArchitecture.mockRejectedValueOnce(
+      Object.assign(new Error("timeout after 120000ms"), { name: "TimeoutError" }),
     );
-    expectNoPersistence(injected);
-    expect(gateway.runDesignArchitecture).toHaveBeenCalledTimes(1);
+    const injected = realDeps(state, gateway);
+    const result = await generateProjectDesign("design-test", state, 1, undefined, injected);
+    expect(result.architectureResolution).toMatchObject({ source: "BASELINE_FALLBACK", failure: { category: "TIMEOUT" } });
+    expect(gateway.runPrototypeGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      architecture: expect.objectContaining({ designSpec: result.generated.designSpec }),
+    }));
+    const fallbackSave = injected.save.mock.calls[1][1];
+    expect(fallbackSave.generationMetadata.designArchitecture).toMatchObject({
+      source: "BASELINE_FALLBACK", failureCategory: "TIMEOUT",
+    });
   });
 });
 

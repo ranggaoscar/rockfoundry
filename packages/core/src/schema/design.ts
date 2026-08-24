@@ -2,9 +2,11 @@ import { z } from "zod";
 
 export const DesignStatusSchema = z.enum([
   "NOT_STARTED",
+  "GENERATING",
   "DRAFT",
   "IN_REVIEW",
   "NEEDS_REVIEW",
+  "FAILED",
   "APPROVED",
 ]);
 export type DesignStatus = z.infer<typeof DesignStatusSchema>;

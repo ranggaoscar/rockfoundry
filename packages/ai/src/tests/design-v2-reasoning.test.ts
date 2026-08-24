@@ -5,7 +5,7 @@ import { TASK_REASONING_EFFORT, reasoningEffortForTask } from "../prompts";
 describe("Design V2 reasoning policy", () => {
   it("uses one task policy without mutating provider fallback", () => {
     expect(TASK_REASONING_EFFORT.screen_architecture).toBe("max");
-    expect(TASK_REASONING_EFFORT.design_architecture).toBe("max");
+    expect(TASK_REASONING_EFFORT.design_architecture).toBe("high");
     expect(TASK_REASONING_EFFORT.prototype_generation).toBe("high");
     expect(TASK_REASONING_EFFORT.design_quality_review).toBe("high");
     expect(TASK_REASONING_EFFORT.prototype_repair).toBe("high");

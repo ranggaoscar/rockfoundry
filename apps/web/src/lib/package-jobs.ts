@@ -1,7 +1,8 @@
 import { prisma } from "@rockfoundry/db";
-import { generateExport, validateConsistency } from "@rockfoundry/core";
+import { buildDesignSpec, deriveScreenMap, generateExport, validateConsistency } from "@rockfoundry/core";
 import { toPackageFailureMetadata } from "@rockfoundry/ai";
 import {
+  DesignGenerationError,
   designGenerationUserMessage,
   generateProjectDesign,
   logDesignGenerationFailure,
@@ -28,7 +29,7 @@ function safeStageDescription(stage: string) {
     PREPARING_PRODUCT: "Menyiapkan keputusan produk",
     GENERATING_DOCUMENTS: "Menyusun dokumen",
     BUILDING_SCREEN_MAP: "Merancang layar aplikasi",
-    DESIGN_ARCHITECTURE: "Menyusun arah desain",
+    DESIGN_ARCHITECTURE: "Menyusun arah desain dasar",
     PROTOTYPE_GENERATION: "Membuat prototype",
     QUALITY_REVIEW: "Memeriksa kualitas tampilan",
     FINALIZING_HANDOFF: "Menyiapkan handoff",
@@ -104,10 +105,12 @@ export async function runPackageJob(jobId: string, alreadyClaimed = false) {
   }
   const job = await prisma.packageJob.findUnique({ where: { id: jobId } });
   if (!job) return;
-  const completed: string[] = [];
+  let completed: string[] = [];
+  try { completed = JSON.parse(job.completedStages); } catch {}
   const timings: Record<string, number | null> = {
-    documentMs: null, screenArchitectureMs: null, designArchitectureMs: null,
-    prototypeMs: null, qualityReviewMs: null, repairMs: null, totalMs: null,
+    documentMs: null, screenMapMs: null, baselineDesignSpecMs: null,
+    designArchitectureAiMs: null, prototypeMs: null, qualityReviewMs: null,
+    repairMs: null, handoffMs: null, totalMs: null,
   };
   const totalStarted = Date.now();
   const stopHeartbeat = startPackageJobHeartbeat(prisma, jobId);
@@ -115,49 +118,68 @@ export async function runPackageJob(jobId: string, alreadyClaimed = false) {
     const project = await getLocalProject(job.projectId);
     if (!project || project.version !== job.projectVersion) throw new Error("Project changed after package was queued.");
     let state = parseProjectState(project);
-    await advance(jobId, "GENERATING_DOCUMENTS", completed);
-    const documentStarted = Date.now();
-    const generated = await generateExport(state);
-    timings.documentMs = Date.now() - documentStarted;
-    const consistency = validateConsistency(state);
-    for (const [type, content] of Object.entries(generated.documents)) {
+    if (!completed.includes("DESIGN_ARCHITECTURE")) {
+      await advance(jobId, "GENERATING_DOCUMENTS", completed);
+      const documentStarted = Date.now();
+      const generated = await generateExport(state);
+      timings.documentMs = Date.now() - documentStarted;
+      const consistency = validateConsistency(state);
+      for (const [type, content] of Object.entries(generated.documents)) {
+        await prisma.artifact.upsert({
+          where: { projectId_type_version: { projectId: job.projectId, type, version: job.projectVersion } },
+          create: { projectId: job.projectId, type, status: consistency.status === "BLOCKING" ? "DRAFT" : "READY", content, version: job.projectVersion },
+          update: { status: consistency.status === "BLOCKING" ? "DRAFT" : "READY", content, generatedAt: new Date() },
+        });
+      }
+      completed.push("GENERATING_DOCUMENTS");
+      await advance(jobId, "BUILDING_SCREEN_MAP", completed, timings);
+      const screenStarted = Date.now();
+      const screenMap = state.studio.screenMap.length ? state.studio.screenMap : deriveScreenMap(state);
+      timings.screenMapMs = Date.now() - screenStarted;
       await prisma.artifact.upsert({
-        where: { projectId_type_version: { projectId: job.projectId, type, version: job.projectVersion } },
-        create: { projectId: job.projectId, type, status: consistency.status === "BLOCKING" ? "DRAFT" : "READY", content, version: job.projectVersion },
-        update: { status: consistency.status === "BLOCKING" ? "DRAFT" : "READY", content, generatedAt: new Date() },
+        where: { projectId_type_version: { projectId: job.projectId, type: "SCREEN_MAP", version: job.projectVersion } },
+        create: { projectId: job.projectId, type: "SCREEN_MAP", status: "READY", content: JSON.stringify(screenMap, null, 2), version: job.projectVersion },
+        update: { status: "READY", content: JSON.stringify(screenMap, null, 2), generatedAt: new Date() },
       });
+      completed.push("BUILDING_SCREEN_MAP");
+      await advance(jobId, "DESIGN_ARCHITECTURE", completed, timings);
+      const baselineStarted = Date.now();
+      const baseline = buildDesignSpec(state, screenMap);
+      timings.baselineDesignSpecMs = Date.now() - baselineStarted;
+      await prisma.artifact.upsert({
+        where: { projectId_type_version: { projectId: job.projectId, type: "DESIGN_SPEC", version: job.projectVersion } },
+        create: { projectId: job.projectId, type: "DESIGN_SPEC", status: "READY", content: JSON.stringify(baseline, null, 2), version: job.projectVersion },
+        update: { status: "READY", content: JSON.stringify(baseline, null, 2), generatedAt: new Date() },
+      });
+      completed.push("DESIGN_ARCHITECTURE");
     }
-    completed.push("GENERATING_DOCUMENTS");
-    const screenStarted = Date.now();
-    await advance(jobId, "BUILDING_SCREEN_MAP", completed, timings);
-    timings.screenArchitectureMs = Date.now() - screenStarted;
-    completed.push("BUILDING_SCREEN_MAP");
-    const designStarted = Date.now();
-    await advance(jobId, "DESIGN_ARCHITECTURE", completed, timings);
-    completed.push("DESIGN_ARCHITECTURE");
-    timings.designArchitectureMs = Date.now() - designStarted;
-    const prototypeStarted = Date.now();
     await advance(jobId, "PROTOTYPE_GENERATION", completed, timings);
     const design = await generateProjectDesign(job.projectId, state, job.projectVersion);
     state = design.state;
-    timings.prototypeMs = Date.now() - prototypeStarted;
+    timings.designArchitectureAiMs = design.timings.designArchitectureAiMs;
+    timings.prototypeMs = design.timings.prototypeMs;
     completed.push("PROTOTYPE_GENERATION");
-    const reviewStarted = Date.now();
     await advance(jobId, "QUALITY_REVIEW", completed, timings);
-    timings.qualityReviewMs = Date.now() - reviewStarted;
     completed.push("QUALITY_REVIEW");
+    const handoffStarted = Date.now();
     await advance(jobId, "FINALIZING_HANDOFF", completed, timings);
     await saveProjectState(job.projectId, state, design.version);
+    timings.handoffMs = Date.now() - handoffStarted;
     completed.push("FINALIZING_HANDOFF");
     timings.totalMs = Date.now() - totalStarted;
     await prisma.packageJob.update({ where: { id: jobId }, data: { status: "COMPLETED", stage: "COMPLETED", completedStages: JSON.stringify([...completed, "COMPLETED"]), progress: JSON.stringify({ stageLabel: safeStageDescription("COMPLETED"), timings }), completedAt: new Date(), heartbeatAt: new Date() } });
   } catch (error) {
     const failure = buildPackageFailureMetadata(error, job.stage, timings);
+    const designFailed =
+      error instanceof DesignGenerationError &&
+      ["prototype_generation", "prototype_validation", "quality_review", "prototype_repair"].includes(error.task);
     await prisma.packageJob.update({
       where: { id: jobId },
       data: {
-        status: "FAILED",
-        errorSummary: designGenerationUserMessage(error),
+        status: designFailed ? "DESIGN_FAILED" : "FAILED",
+        errorSummary: designFailed
+          ? "Dokumen dan struktur produk sudah siap. Prototype belum berhasil dibuat."
+          : designGenerationUserMessage(error),
         progress: JSON.stringify({ stageLabel: safeStageDescription(failure.stage), timings, failure }),
         completedStages: JSON.stringify(completed),
         heartbeatAt: new Date(),

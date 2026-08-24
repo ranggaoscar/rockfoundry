@@ -1,6 +1,8 @@
 import { prisma } from "@rockfoundry/db";
 import {
   applyGeneratedDesign,
+  buildDesignSpec,
+  type DesignSpec,
   applyVisualRevision,
   approveDesign,
   classifyDesignRevision,
@@ -140,26 +142,59 @@ function designProductContext(state: ProjectState) {
   };
 }
 
+type ArchitectureResolution = {
+  designSpec: DesignSpec;
+  summary: string;
+  assumptions: string[];
+  source: "AI" | "BASELINE_FALLBACK";
+  attemptMs: number;
+  failure?: ReturnType<typeof classifyDesignGenerationFailure>;
+};
+
 async function generateWithRealProvider(
   state: ProjectState,
   input: { request?: string; existing?: DesignGenerationResult } = {},
   gateway = getAiGateway(),
-): Promise<DesignGenerationResult> {
+): Promise<DesignGenerationResult & { architectureResolution: ArchitectureResolution; prototypeMs: number }> {
   const product = designProductContext(state);
   const screenMap = state.studio.screenMap.length
     ? state.studio.screenMap
     : deriveScreenMap(state);
-  let architecture;
+  const baseline = buildDesignSpec(state, screenMap);
+  const architectureStarted = Date.now();
+  let architecture: ArchitectureResolution;
   try {
-    architecture = await gateway.runDesignArchitecture({ product, screenMap });
+    const response = await gateway.runDesignArchitecture({ product, screenMap });
+    architecture = {
+      designSpec: response.architecture.designSpec,
+      summary: response.architecture.summary,
+      assumptions: response.architecture.assumptions,
+      source: "AI",
+      attemptMs: Date.now() - architectureStarted,
+    };
   } catch (error) {
-    throw new DesignGenerationError("design_architecture", error);
+    const failure = classifyDesignGenerationFailure(
+      new DesignGenerationError("design_architecture", error),
+    );
+    architecture = {
+      designSpec: baseline,
+      summary: "Deterministic baseline design direction derived from Product Truth and Screen Map.",
+      assumptions: [],
+      source: "BASELINE_FALLBACK",
+      attemptMs: Date.now() - architectureStarted,
+      failure,
+    };
   }
   let prototype;
+  const prototypeStarted = Date.now();
   try {
     prototype = await gateway.runPrototypeGeneration({
       product,
-      architecture: architecture.architecture,
+      architecture: {
+        designSpec: architecture.designSpec,
+        summary: architecture.summary,
+        assumptions: architecture.assumptions,
+      },
       screenMap,
       revisionRequest: input.request,
       existingFiles: input.existing?.files,
@@ -168,16 +203,20 @@ async function generateWithRealProvider(
     throw new DesignGenerationError("prototype_generation", error);
   }
   try {
-    return DesignGenerationResultSchema.parse({
-      designSpec: architecture.architecture.designSpec,
-      screenMap,
-      files: prototype.prototype.files,
-      summary: prototype.prototype.summary || architecture.architecture.summary,
-      assumptions: [
-        ...architecture.architecture.assumptions,
-        ...prototype.prototype.assumptions,
-      ],
-    });
+    return {
+      ...DesignGenerationResultSchema.parse({
+        designSpec: architecture.designSpec,
+        screenMap,
+        files: prototype.prototype.files,
+        summary: prototype.prototype.summary || architecture.summary,
+        assumptions: [
+          ...architecture.assumptions,
+          ...prototype.prototype.assumptions,
+        ],
+      }),
+      architectureResolution: architecture,
+      prototypeMs: Date.now() - prototypeStarted,
+    };
   } catch (error) {
     throw new DesignGenerationError("prototype_validation", error);
   }
@@ -202,6 +241,20 @@ export async function generateProjectDesign(
     settings.mode === "openai-compatible"
       ? await generateWithRealProvider(state, { request }, deps.gateway)
       : generateMockPrototype(state, { request });
+  const architectureResolution: ArchitectureResolution =
+    "architectureResolution" in generated
+      ? (generated.architectureResolution as ArchitectureResolution)
+      : {
+          source: "BASELINE_FALLBACK",
+          attemptMs: 0,
+          designSpec: generated.designSpec,
+          summary: generated.summary,
+          assumptions: generated.assumptions,
+        };
+  const prototypeGenerationMs =
+    "prototypeMs" in generated && typeof generated.prototypeMs === "number"
+      ? generated.prototypeMs
+      : 0;
   let reviewed = generated;
   const validation = validatePrototypeFiles(reviewed.files, reviewed.screenMap);
   if (!validation.accepted)
@@ -263,15 +316,27 @@ export async function generateProjectDesign(
         status: designStatus,
     request,
   });
-  const saved = await (deps.save || saveProjectState)(projectId, next, version);
+  let saved = await (deps.save || saveProjectState)(projectId, next, version);
   await (deps.persist || persistDesignArtifacts)(
     projectId,
     saved.state.studio.currentVersion,
     reviewed,
     saved.state.studio.status,
   );
+  saved = await (deps.save || saveProjectState)(projectId, {
+    ...saved.state,
+    generationMetadata: {
+      ...saved.state.generationMetadata,
+      designArchitecture: {
+        source: architectureResolution.source,
+        ...(architectureResolution.failure
+          ? { failureCategory: architectureResolution.failure.category }
+          : {}),
+      },
+    },
+  }, saved.version);
   if (qualityReview || repairAttempted) {
-    await (deps.save || saveProjectState)(projectId, {
+    saved = await (deps.save || saveProjectState)(projectId, {
       ...saved.state,
       generationMetadata: {
         ...saved.state.generationMetadata,
@@ -281,7 +346,13 @@ export async function generateProjectDesign(
       },
     }, saved.version);
   }
-  return { ...saved, generated: reviewed, validation };
+  return {
+    ...saved,
+    generated: reviewed,
+    validation,
+    architectureResolution,
+    timings: { designArchitectureAiMs: architectureResolution.attemptMs, prototypeMs: prototypeGenerationMs },
+  };
 }
 
 export async function reviseProjectDesign(

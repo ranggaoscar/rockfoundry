@@ -169,7 +169,7 @@ function rawWorkflows(rawIdea: string) {
 
 function rawBoundaries(rawIdea: string) {
   const values = rawIdea.match(
-    /\b(?:branch|cabang|brand|location|lokasi|unit|team|tim|organization|organisasi|department|departemen|group|kelompok|across|lintas|per)\b/gi,
+    /\b(?:branch|cabang|brand|location|lokasi|unit|team|tim|organization|organisasi|department|departemen|group|kelompok|warehouse|gudang|across|lintas|per)\b/gi,
   );
   return uniqueFacts(
     (values || []).map((value) => ({
@@ -372,6 +372,7 @@ export function extractStructuralContext(
   const boundaries = uniqueFacts([
     ...rawBoundaries(state.rawIdea),
     ...locations,
+    ...roles.filter((item) => /warehouse|gudang|branch|cabang|team|tim/i.test(item.value)),
   ]);
   const productIdentityAmbiguous =
     /\b(?:mencari pekerjaan|cari kerja|job search|lowongan kerja|job marketplace)\b/i.test(

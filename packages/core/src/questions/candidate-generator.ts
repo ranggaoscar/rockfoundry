@@ -13,6 +13,7 @@ import {
   primaryContextNoun,
 } from "./context-extractor";
 import { rankDecisionCandidates } from "./candidate-ranker";
+import { deriveProductShape, isCandidateEligible } from "./product-shape";
 
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -266,7 +267,9 @@ function genericQuestionCopy(
 export function generateGenericDecisionCandidates(state: ProjectState) {
   const context = extractStructuralContext(state);
   const gaps = detectArtifactGapSignals(state, context);
-  const candidates = buildGenericCandidates(context, gaps);
+  const candidates = buildGenericCandidates(context, gaps).filter((candidate) =>
+    isCandidateEligible(candidate.topic, deriveProductShape(state)),
+  );
   return rankDecisionCandidates(state, candidates, context, gaps);
 }
 

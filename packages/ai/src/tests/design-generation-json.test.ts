@@ -227,7 +227,7 @@ describe("Design generation JSON transport", () => {
     for (const call of fetchMock.mock.calls) {
       expect(JSON.parse(call[1].body)).toMatchObject({
         model: "design-model",
-        reasoning_effort: "max",
+        reasoning_effort: "high",
         response_format: { type: "json_schema", json_schema: { strict: true } },
       });
     }
