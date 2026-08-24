@@ -136,4 +136,64 @@ describe("Decision Debt discovery", () => {
     expect(readiness.discovery.evaluated).toBe(false);
     expect(readiness.discovery.importantDecisionsRemaining).toBeNull();
   });
+
+  it("does not let a high-risk-clear but incomplete discovery become build ready", () => {
+    const state = createInitialProjectState({
+      id: "five-answers-not-ready",
+      name: "CRM",
+      rawIdea: "CRM untuk tim sales dengan customer dan quotation.",
+    });
+    state.decisions = Array.from({ length: 5 }, (_, index) => ({
+      id: `accepted-${index}`,
+      topic: `topic-${index}`,
+      decision: "chosen",
+      affects: [],
+      status: "ACCEPTED" as const,
+      confidence: "EXPLICIT" as const,
+      source: "USER" as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    state.decisionDebt = { ...state.decisionDebt, unresolvedHighRiskCount: 0 };
+
+    expect(evaluateReadinessDirectly(state).level).not.toBe("BUILD_READY");
+  });
+
+  it("grounds a vague product idea before asking deep operational rules", () => {
+    const state = createInitialProjectState({
+      id: "office-social",
+      name: "Office social app",
+      rawIdea:
+        "saya punya ide untuk bikin aplikasi platform social media untuk anak kantor, menurut mu gimana?",
+    });
+    const [first] = new QuestionEngine().generateQuestions(state, [], 1);
+
+    expect(first?.topic).toBe("foundation_primary_user");
+    expect(first?.text).toMatch(/siapa.*utama.*memakai/i);
+    expect(first?.text).not.toMatch(/aplikasi platform social media ditangani/i);
+    expect(first?.topic).not.toMatch(
+      /lifecycle|history|duplicate|ownership|assignment/,
+    );
+  });
+
+  it("does not treat five accepted decisions as build readiness while high-risk discovery remains", () => {
+    const state = project(
+      "CRM for 5 marble brands with sales per brand, owner visibility, leads, and quotations.",
+    );
+    state.decisions = Array.from({ length: 5 }, (_, index) => ({
+      id: `accepted-${index}`,
+      topic: `accepted_topic_${index}`,
+      decision: "confirmed",
+      status: "ACCEPTED" as const,
+      reason: "fixture",
+      source: "USER" as const,
+      confidence: "EXPLICIT" as const,
+      affects: [],
+    }));
+
+    const readiness = evaluateReadinessDirectly(state);
+    expect(readiness.discovery.importantDecisionsRemaining).toBeGreaterThan(0);
+    expect(readiness.decisionDebt.unresolvedHighRiskCount).toBeGreaterThan(0);
+    expect(readiness.level).not.toBe("BUILD_READY");
+  });
 });

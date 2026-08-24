@@ -12,7 +12,10 @@ import {
 } from "./crm-catalog";
 import { detectDiscoveryDomain, evaluateDiscovery } from "./requirements";
 import { validateQuestionQuality } from "./quality";
-import { genericQuestionForTopic } from "./candidate-generator";
+import {
+  genericQuestionForTopic,
+  recommendationForQuestion,
+} from "./candidate-generator";
 import { isIndonesianText } from "./language";
 
 function isIndonesian(state: ProjectState) {
@@ -28,7 +31,79 @@ function hasDecision(state: ProjectState, topic: string) {
 }
 
 function question(input: Question): Question {
-  return input;
+  return { ...input, ...recommendationForQuestion(input) };
+}
+
+function foundationQuestion(state: ProjectState): Question | null {
+  const genericProductOnly = /^(?:saya punya ide untuk )?(?:bikin|buat|membuat|build|create)?\s*(?:aplikasi|application|app|platform|website|web app|mobile app|system|sistem|software|social media platform)(?:\s+(?:platform|social media))*\s*(?:untuk|for)?\s*(?:anak kantor|office workers|teams?)?(?:,?\s*(?:menurut mu gimana|what do you think))?[,?.!\s]*$/i.test(
+    state.rawIdea.trim(),
+  );
+  const needsFoundation =
+    genericProductOnly &&
+    state.targetUsers.length === 0 &&
+    state.roles.length === 0 &&
+    state.entities.length === 0 &&
+    state.workflows.length === 0;
+  if (!needsFoundation) return null;
+  const indo = isIndonesian(state);
+  const hasPrimaryUser = state.targetUsers.length > 0 || state.roles.length > 0;
+  const hasWorkObject = state.entities.length > 0;
+  const hasOutcome = state.objectives.length > 0 || state.workflows.length > 0;
+  if (!hasPrimaryUser) {
+    return question({
+      id: "foundation-primary-user",
+      topic: "foundation_primary_user",
+      category: "PRODUCT",
+      text: indo
+        ? "Siapa yang paling utama akan memakai aplikasi ini setiap hari?"
+        : "Who is the primary person expected to use this product every day?",
+      contextReferences: ["rawIdea"],
+      relatedRequirementIds: ["foundation_primary_user"],
+      affects: ["actors", "product scope", "workflow"],
+      answerType: "FREE_TEXT",
+      priority: 10,
+      reasonAsked: indo
+        ? "Kita perlu tahu pengguna utama sebelum membahas aturan kerja yang lebih detail."
+        : "We need the primary user before discussing deeper operating rules.",
+    });
+  }
+  if (!hasWorkObject) {
+    return question({
+      id: "foundation-primary-object",
+      topic: "foundation_primary_object",
+      category: "DATA",
+      text: indo
+        ? "Hal utama apa yang dibuat, dibagikan, atau dikelola pengguna di aplikasi ini?"
+        : "What is the main thing users create, share, or manage in this product?",
+      contextReferences: ["rawIdea", "targetUsers"],
+      relatedRequirementIds: ["foundation_primary_object"],
+      affects: ["data", "workflow", "screens"],
+      answerType: "FREE_TEXT",
+      priority: 10,
+      reasonAsked: indo
+        ? "Objek utama perlu jelas agar pertanyaan berikutnya tidak menebak-nebak."
+        : "The main object must be clear so later questions do not guess.",
+    });
+  }
+  if (!hasOutcome) {
+    return question({
+      id: "foundation-primary-outcome",
+      topic: "foundation_primary_outcome",
+      category: "WORKFLOW",
+      text: indo
+        ? "Hasil apa yang paling penting ingin dicapai pengguna lewat aplikasi ini?"
+        : "What is the most important outcome users should achieve with this product?",
+      contextReferences: ["rawIdea", "entities", "targetUsers"],
+      relatedRequirementIds: ["foundation_primary_outcome"],
+      affects: ["workflow", "scope", "screens"],
+      answerType: "FREE_TEXT",
+      priority: 10,
+      reasonAsked: indo
+        ? "Hasil utama membantu menyusun alur inti sebelum aturan detail."
+        : "The primary outcome anchors the core workflow before detailed rules.",
+    });
+  }
+  return null;
 }
 
 function affectedFor(topic: string) {
@@ -180,6 +255,19 @@ function canonicalDecision(topic: string, answer: string, optionId?: string) {
     if (/no|tidak|nggak|only after/.test(value)) return "no_pre_reservation";
   }
   return answer.trim() || "user_defined";
+}
+
+function applyFoundationFact(state: ProjectState, topic: string, answer: string) {
+  const value = answer.trim();
+  if (!value) return;
+  if (topic === "foundation_primary_user" && !state.targetUsers.includes(value))
+    state.targetUsers.push(value);
+  if (topic === "foundation_primary_object" && !state.entities.includes(value))
+    state.entities.push(value);
+  if (topic === "foundation_primary_outcome") {
+    if (!state.objectives.includes(value)) state.objectives.push(value);
+    if (!state.workflows.includes(value)) state.workflows.push(value);
+  }
 }
 
 function applyCanonicalRule(
@@ -971,6 +1059,10 @@ export class QuestionEngine {
     _topUnresolved: RequirementNode[] = [],
     maxCount = 5,
   ): Question[] {
+    if (detectDiscoveryDomain(state) === "GENERAL") {
+      const foundation = foundationQuestion(state);
+      if (foundation) return [foundation];
+    }
     const evaluation = evaluateDiscovery(state);
     const questions: Question[] = [];
     for (const requirement of evaluation.topUnresolved) {
@@ -1044,6 +1136,7 @@ export class QuestionEngine {
         .replace(/-/g, "_");
     const decision = canonicalDecision(topic, answerText, option?.id);
     const currentVersion = Number(parsed.generationMetadata._version || 1);
+    const isFoundation = topic.startsWith("foundation_");
 
     parsed.generationMetadata[`answer_${questionId}_${Date.now()}`] = {
       answer: answerText,
@@ -1051,6 +1144,18 @@ export class QuestionEngine {
       timestamp: new Date().toISOString(),
       previousVersion: currentVersion,
     };
+
+    if (isFoundation) {
+      applyFoundationFact(parsed, topic, answerText);
+      parsed.discovery.activeQuestionId = undefined;
+      return {
+        updatedState: parsed,
+        revision: {
+          version: currentVersion,
+          createdAt: new Date().toISOString(),
+        },
+      };
+    }
 
     if (decision === "undecided") {
       if (!parsed.openQuestions.includes(question?.text || questionId))

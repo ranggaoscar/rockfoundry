@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import {
   evaluateDecisionDebt,
+  evaluateReadinessDirectly,
   generateExport,
   validateConsistency,
 } from "@rockfoundry/core";
@@ -25,9 +26,16 @@ export async function POST(
     const { id } = await params;
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
+    const currentState = parseProjectState(project);
+    const readiness = evaluateReadinessDirectly(currentState);
+    if (readiness.level !== "BUILD_READY")
+      return jsonError(
+        "Selesaikan keputusan penting sebelum membuat paket produk.",
+        422,
+      );
     const design = await generateProjectDesign(
       id,
-      parseProjectState(project),
+      currentState,
       project.version,
     );
     const state = design.state;

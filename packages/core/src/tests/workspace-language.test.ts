@@ -230,6 +230,64 @@ describe("workspace language and question presentation", () => {
     expect(examples.retention_deletion).toMatch(/berapa lama|dihapus/i);
   });
 
+  it("renders CRM decisions in simple Indonesian without canonical English headings", () => {
+    const state = createInitialProjectState({
+      id: "crm-presentation-id",
+      name: "CRM Marmer",
+      rawIdea:
+        "Saya mau bikin CRM untuk lima brand marmer. Sales per brand, owner lihat semua, dan quotation harus jelas asal brandnya.",
+    });
+    state.targetUsers = ["sales", "owner"];
+    state.entities = ["pelanggan", "penawaran", "brand"];
+    state.workflows = ["mencatat lead dan follow-up"];
+    const engine = new QuestionEngine();
+
+    for (const topic of [
+      "customer_identity",
+      "sales_visibility",
+      "lead_ownership",
+      "quotation_branding",
+      "duplicate_handling",
+    ]) {
+      const question = engine.generateRevisionQuestion(state, topic)!;
+      const impact = engine.processAnswer(
+        state,
+        question.id,
+        question.options?.[0]?.id || "company_wide",
+        question,
+      ).impact;
+      const visible = `${impact?.headline} ${impact?.detail}`;
+      expect(visible).not.toMatch(
+        /Customer identity across brands|Sales visibility boundaries|Quotation brand and ownership|Duplicate customer handling|identity boundary|visibility boundary|duplicate semantics|ownership boundary/i,
+      );
+    }
+  });
+
+  it("marks only grounded recommendations and never recommends clarification", () => {
+    const state = createInitialProjectState({
+      id: "grounded-recommendation",
+      name: "Kasir Warteg",
+      rawIdea:
+        "Saya mau membuat aplikasi kasir untuk warteg. Ada kasir, pemilik, dan pesanan.",
+    });
+    state.entities = ["pesanan"];
+    state.roles = ["kasir", "pemilik"];
+    state.workflows = ["mencatat pesanan"];
+
+    const question = genericQuestionForTopic(state, "ownership_boundary");
+    expect(question?.recommendedOptionId).toBe("assigned_role_owns");
+    expect(question?.recommendationReason).toBeTruthy();
+    expect(question?.options?.some((option) => option.id === question?.recommendedOptionId)).toBe(true);
+    expect(question?.recommendedOptionId).not.toBe("needs_clarification");
+
+    const unsupported = createInitialProjectState({
+      id: "unsupported-recommendation",
+      name: "Empty",
+      rawIdea: "Build a tool",
+    });
+    expect(genericQuestionForTopic(unsupported, "ownership_boundary")).toBeNull();
+  });
+
   it("rejects a second answer to a stale question id at the engine queue level", () => {
     const state = createInitialProjectState({
       id: "crm",

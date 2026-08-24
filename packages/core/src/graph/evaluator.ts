@@ -74,12 +74,22 @@ export function evaluateReadinessDirectly(
       ),
     ),
   );
+  const preliminaryDebt = evaluateDecisionDebt(state);
+  const requiresFoundation =
+    /\b(?:application|aplikasi|platform|website|web app|mobile app|system|sistem|software|social media platform)\b/i.test(
+      state.rawIdea,
+    );
+  const foundationGrounded =
+    !requiresFoundation ||
+    (state.targetUsers.length > 0 &&
+      state.entities.length > 0 &&
+      (state.objectives.length > 0 || state.workflows.length > 0));
   const level =
-    blocking.length > 0
+    blocking.length > 0 ||
+    preliminaryDebt.unresolvedHighRiskCount > 0 ||
+    !foundationGrounded
       ? "NOT_READY"
-      : score >= 72 &&
-          unresolved <= 2 &&
-          discovery.importantDecisionsRemaining === 0
+      : discovery.importantDecisionsRemaining === 0
         ? "BUILD_READY"
         : score >= 38
           ? "DRAFT_READY"

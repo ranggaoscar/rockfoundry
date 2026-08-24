@@ -654,6 +654,39 @@ function genericOptions(
   return [...options, clarify];
 }
 
+export function recommendationForQuestion(input: Question): Pick<
+  Question,
+  "recommendedOptionId" | "recommendationReason"
+> {
+  const optionByTopic: Record<string, string> = {
+    customer_identity: "company_wide",
+    sales_visibility: "owner_all_sales_brand_scoped",
+    lead_ownership: "owning_brand_sales",
+    quotation_branding: "quotation_uses_owning_brand",
+    duplicate_handling: "merge_with_review",
+    slab_identity: "individual_slab",
+    warehouse_transfer: "destination_confirmed",
+    movement_history: "full_history",
+    reservation: "reservation_supported",
+    ownership_boundary: "assigned_role_owns",
+    assignment_behavior: "reassignable_with_history",
+    visibility_boundary: "owner_all_others_scoped",
+    lifecycle_transitions: "rich_lifecycle",
+    duplicate_semantics: "flag_for_review",
+    history_auditability: "full_change_history",
+  };
+  const candidate = input.recommendation ? optionByTopic[input.topic || ""] : undefined;
+  const recommendedOptionId = input.options?.some(
+    (option) => option.id === candidate && option.id !== "needs_clarification",
+  )
+    ? candidate
+    : undefined;
+  return {
+    recommendedOptionId,
+    recommendationReason: recommendedOptionId ? input.recommendation : undefined,
+  };
+}
+
 export function genericQuestionForTopic(
   state: ProjectState,
   topic: string,
@@ -663,7 +696,8 @@ export function genericQuestionForTopic(
   );
   if (!candidate) return null;
   const copy = genericQuestionCopy(state, candidate);
-  return {
+  const options = genericOptions(state, candidate);
+  const base: Question = {
     id: `generic-${slug(candidate.topic)}`,
     topic: candidate.topic,
     category: candidate.category,
@@ -672,9 +706,10 @@ export function genericQuestionForTopic(
     relatedRequirementIds: [candidate.topic],
     affects: candidate.affects,
     answerType: "SINGLE_CHOICE",
-    options: genericOptions(state, candidate),
+    options,
     recommendation: copy.recommendation,
     priority: candidate.priority,
     reasonAsked: copy.recommendation,
   };
+  return { ...base, ...recommendationForQuestion(base) };
 }

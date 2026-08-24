@@ -24,6 +24,9 @@ export const QuestionSchema = z.object({
   ]),
   options: z.array(QuestionOptionSchema).optional(),
 
+  // Presentation-only advice. Canonical decision values remain user-selected.
+  recommendedOptionId: z.string().optional(),
+  recommendationReason: z.string().optional(),
   recommendation: z.string().optional(),
   tradeoffs: z.string().optional(),
 

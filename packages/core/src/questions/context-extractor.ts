@@ -215,9 +215,12 @@ function isInternalIdentifier(value: string) {
   return false;
 }
 
+const GENERIC_PRODUCT_NOUN = /^(?:(?:application|app|aplikasi|platform|website|web app|mobile app|system|sistem|software)(?:\s+(?:platform|social media|app|aplikasi|untuk anak kantor|for office workers|for teams?))*|social media platform)$/i;
+
 function isWeakContextToken(value: string) {
   return (
     isInternalIdentifier(value) ||
+    GENERIC_PRODUCT_NOUN.test(value.trim()) ||
     /^(?:membuat|buat|bikin|create|make|build|manage|track|handle|record|records|workflow|ownership|visibility|assignment|history|completion)$/i.test(
       value.trim(),
     )

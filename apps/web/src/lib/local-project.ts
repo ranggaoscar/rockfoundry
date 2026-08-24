@@ -91,6 +91,14 @@ export function publicMessage(message: {
       typeof metadata.recommendation === "string"
         ? metadata.recommendation
         : undefined,
+    recommendedOptionId:
+      typeof metadata.recommendedOptionId === "string"
+        ? metadata.recommendedOptionId
+        : undefined,
+    recommendationReason:
+      typeof metadata.recommendationReason === "string"
+        ? metadata.recommendationReason
+        : undefined,
     detail: typeof metadata.detail === "string" ? metadata.detail : undefined,
     category:
       typeof metadata.category === "string" ? metadata.category : undefined,

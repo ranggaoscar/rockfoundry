@@ -39,6 +39,8 @@ type Question = {
   answerType?: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "FREE_TEXT" | "BOOLEAN";
   options?: QuestionOption[];
   recommendation?: string;
+  recommendedOptionId?: string;
+  recommendationReason?: string;
   reasonAsked: string;
   topic?: string;
   category?: string;
@@ -57,6 +59,8 @@ type Message = {
   detail?: string;
   options?: QuestionOption[];
   recommendation?: string;
+  recommendedOptionId?: string;
+  recommendationReason?: string;
   questionId?: string;
   topic?: string;
   category?: string;
@@ -316,15 +320,11 @@ export default function ProjectWorkspace({
   const state = project?.canonicalState || {};
   const indo = isIndonesianProject(state);
   const debtScore = decisionDebtScore(state);
-  const acceptedDecisionCount = Array.isArray(state.decisions)
-    ? state.decisions.filter((decision: any) => decision.status === "ACCEPTED")
-        .length
-    : 0;
   const canBuildPackage =
     Boolean(project?.description) &&
-    (state.discovery?.importantDecisionsRemaining === 0 ||
-      state.decisionDebt?.unresolvedHighRiskCount === 0 ||
-      acceptedDecisionCount >= 5);
+    state.readiness === "BUILD_READY" &&
+    state.discovery?.importantDecisionsRemaining === 0 &&
+    state.decisionDebt?.unresolvedHighRiskCount === 0;
 
   const visibleMessages = useMemo(() => {
     if (
@@ -877,7 +877,9 @@ export default function ProjectWorkspace({
               ) : (
                 "—"
               )}{" "}
-              · {discoverySummary(state)}
+              · {indo
+                ? `${state.decisionDebt?.unresolvedHighRiskCount || 0} keputusan penting belum selesai`
+                : discoverySummary(state)}
             </button>
           </div>
           <button
@@ -982,15 +984,16 @@ export default function ProjectWorkspace({
                 {canBuildPackage && !working && (
                   <div className="mx-auto mt-10 max-w-md text-center">
                     <p className="text-sm leading-6 text-muted-foreground">
-                      Your key product decisions are ready. Build one package
-                      with documents, a Screen Map, and a live prototype.
+                      {indo
+                        ? "Keputusan penting sudah siap. Buat satu paket berisi dokumen, Screen Map, dan prototype."
+                        : "Your key product decisions are ready. Build one package with documents, a Screen Map, and a live prototype."}
                     </p>
                     <button
                       className="rf-primary-button mt-4"
                       type="button"
                       onClick={() => void buildProductPackage()}
                     >
-                      Build product package
+                      {indo ? "Buat paket produk" : "Build product package"}
                     </button>
                   </div>
                 )}
@@ -1206,6 +1209,11 @@ function MessageRow({
             )}
           </div>
         )}
+        {message.recommendationReason && message.recommendedOptionId && (
+          <p className="mt-3 text-[13px] leading-5 text-muted-foreground">
+            {message.recommendationReason}
+          </p>
+        )}
         {message.options && (
           <div className="mt-4 space-y-2">
             {message.options.map((option) => (
@@ -1219,6 +1227,11 @@ function MessageRow({
               >
                 <span>
                   <span className="font-medium">{option.label}</span>
+                  {message.recommendedOptionId === option.id && (
+                    <span className="ml-2 inline-flex rounded-full border border-foreground/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      {language === "id" ? "Rekomendasi Agent" : "Agent recommendation"}
+                    </span>
+                  )}
                   {option.description && (
                     <span className="mt-0.5 block text-[12px] leading-5 text-muted-foreground">
                       {option.description}

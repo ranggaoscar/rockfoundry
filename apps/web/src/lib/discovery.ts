@@ -26,6 +26,8 @@ export function questionMetadata(question: Question) {
     category: question.category,
     options: question.options || [],
     recommendation: question.recommendation,
+    recommendedOptionId: question.recommendedOptionId,
+    recommendationReason: question.recommendationReason,
     detail: question.reasonAsked,
   };
 }

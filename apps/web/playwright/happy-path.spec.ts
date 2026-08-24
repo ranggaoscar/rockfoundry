@@ -15,9 +15,9 @@ test.describe("Normal user happy path", () => {
     await expect(page).toHaveURL(/\/project\//, { timeout: 30_000 });
 
     const packageButton = page.getByRole("button", {
-      name: "Build product package",
+      name: /Buat paket produk|Build product package/i,
     });
-    for (let index = 0; index < 8; index += 1) {
+    for (let index = 0; index < 20; index += 1) {
       if (await packageButton.isVisible().catch(() => false)) break;
       const option = page.locator(".rf-option").first();
       if (await option.isVisible({ timeout: 20_000 }).catch(() => false)) {

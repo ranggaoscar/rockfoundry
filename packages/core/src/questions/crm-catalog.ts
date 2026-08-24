@@ -181,10 +181,58 @@ export function describeDecisionImpact(input: {
       if (lower.includes("acceptance")) return "kriteria penerimaan";
       return item.toLowerCase();
     });
-    return {
-      headline: `Sudah diputuskan — ${indoTitle}.`,
-      detail: `Ini memengaruhi ${indoAffects.join(", ")}.`,
+    const plainDecision: Record<string, { headline: string; detail: string }> = {
+      customer_identity: {
+        headline: "Sudah diputuskan. Pelanggan yang sama akan dikenali konsisten di beberapa brand.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      sales_visibility: {
+        headline: "Sudah diputuskan. Akses data penjualan dibatasi sesuai peran dan brand.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      lead_ownership: {
+        headline: "Sudah diputuskan. Penanggung jawab lead sudah jelas sejak lead masuk.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      quotation_branding: {
+        headline: "Sudah diputuskan. Penawaran memakai brand yang menangani lead tersebut.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      duplicate_handling: {
+        headline: "Sudah diputuskan. Data pelanggan ganda akan diperiksa sebelum digabung.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      duplicate_semantics: {
+        headline: "Sudah diputuskan. Data ganda akan ditandai sebelum digabung.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      history_auditability: {
+        headline: "Sudah diputuskan. Perubahan penting akan tetap tercatat.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      lifecycle_transitions: {
+        headline: "Sudah diputuskan. Alur status utama sudah ditentukan.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      visibility_boundary: {
+        headline: "Sudah. Akses data mengikuti orang yang berwenang.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      ownership_boundary: {
+        headline: "Sudah diputuskan. Penanggung jawab pekerjaan sudah jelas.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
+      assignment_behavior: {
+        headline: "Sudah. Tanggung jawab bisa dialihkan tanpa kehilangan riwayat.",
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      },
     };
+    return (
+      plainDecision[input.topic] || {
+        headline: `Sudah diputuskan — ${indoTitle}.`,
+        detail: "Aturan ini akan dipakai Agent saat menyusun produk nanti.",
+      }
+    );
   }
   const headline = `Locked for now — ${title}.`;
   const detail = `This affects ${readableAffects.join(", ").toLowerCase()}.`;
