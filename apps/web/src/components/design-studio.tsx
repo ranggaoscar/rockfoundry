@@ -4,7 +4,6 @@ import {
   FormEvent,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -57,6 +56,12 @@ const VIEWPORTS = {
   Tablet: 768,
   Mobile: 390,
 } as const;
+
+const DESIGN_PROGRESS = [
+  ["DESIGN_ARCHITECTURE", "Structuring screens", "Menyusun layar"],
+  ["PROTOTYPE_GENERATION", "Building prototype", "Membangun prototype"],
+  ["QUALITY_REVIEW", "Reviewing result", "Meninjau hasil"],
+] as const;
 
 export function DesignStudio({
   projectId,
@@ -269,14 +274,6 @@ export function DesignStudio({
     void send(composer);
   }
 
-  const grouped = useMemo(() => {
-    const groups = new Map<string, Screen[]>();
-    for (const screen of baseline?.screenMap || studio?.screenMap || []) {
-      const key = screen.actorIds[0] || "product";
-      groups.set(key, [...(groups.get(key) || []), screen]);
-    }
-    return [...groups.entries()];
-  }, [baseline?.screenMap, studio?.screenMap]);
 
   const effectiveScreens = baseline?.screenMap || studio?.screenMap || [];
   const prototypeFailed = designJob?.status === "FAILED";
@@ -291,30 +288,25 @@ export function DesignStudio({
   return (
     <div className="rf-studio">
       <aside className="rf-studio-screens">
-        <p className="rf-studio-kicker">Screen Map</p>
-        {grouped.length === 0 && (
-          <p className="text-[13px] text-muted-foreground">
+        {effectiveScreens.length === 0 ? (
+          <p className="text-[0.8rem] text-muted-foreground">
             {language === "id"
-              ? "Screen Map muncul dari Product Truth."
-              : "Screen Map is derived from Product Truth."}
+              ? "Screen map muncul setelah spec terkunci."
+              : "The screen map appears after the spec locks."}
           </p>
+        ) : (
+          effectiveScreens.map((screen) => (
+            <a
+              key={screen.id}
+              className="rf-studio-screen"
+              href={previewUrl + screen.route}
+              target="rf-preview"
+            >
+              <span>{screen.name}</span>
+              <span className="rf-studio-source">{screen.route}</span>
+            </a>
+          ))
         )}
-        {grouped.map(([actor, screens]) => (
-          <div key={actor}>
-            <p className="rf-studio-actor">{actor.replaceAll("_", " ")}</p>
-            {screens.map((screen) => (
-              <a
-                key={screen.id}
-                className="rf-studio-screen"
-                href={previewUrl + screen.route}
-                target="rf-preview"
-              >
-                <span>{screen.name}</span>
-                <span className="rf-studio-source">{screen.source}</span>
-              </a>
-            ))}
-          </div>
-        ))}
       </aside>
 
       <section className="rf-studio-preview">
@@ -335,9 +327,7 @@ export function DesignStudio({
             {studio?.currentVersion
               ? `v${studio.currentVersion} · ${studio.status}`
               : baseline
-                ? language === "id"
-                  ? "Baseline · READY"
-                  : "Baseline · READY"
+                ? "Baseline · READY"
                 : language === "id"
                   ? "Belum ada paket"
                   : "No package yet"}
@@ -349,7 +339,7 @@ export function DesignStudio({
               {baseline ? "Baseline DesignSpec" : "Design Readiness"}
             </p>
             {baseline ? (
-              <p className="text-sm leading-6 text-muted-foreground">
+              <p className="mt-2 max-w-[48ch] text-[0.95rem] leading-6 text-muted-foreground">
                 {baseline.summary}
               </p>
             ) : (
@@ -357,54 +347,76 @@ export function DesignStudio({
                 {readiness?.score ?? 0}% · {readiness?.level || "BLOCKED"}
               </p>
             )}
-            <p>
+            <p className="mt-2 text-[0.875rem] text-muted-foreground">
               {effectiveScreens.length > 0
                 ? `${effectiveScreens.length} ${language === "id" ? "layar terpetakan" : "screens mapped"}`
                 : language === "id"
                   ? "Screen Map belum tersedia"
                   : "Screen Map is not available yet"}
             </p>
-            {prototypeFailed && (
+            {prototypeFailed ? (
               <p className="rf-studio-note">
                 {language === "id"
                   ? "Prototype belum berhasil dibuat."
                   : "Prototype could not be created yet."}
               </p>
-            )}
-            {(readiness?.unresolved.length || 0) > 0 && !baseline && (
-              <p>
-                Prototype can use {readiness?.unresolved.length} unresolved
-                assumptions.
-              </p>
-            )}
-            {showPrototypeAction && (
+            ) : null}
+            {designBusy ? (
+              <ol className="mt-4 space-y-1.5 text-[0.875rem]" role="status">
+                {DESIGN_PROGRESS.map(([key, en, id]) => {
+                  const current = designJob?.stage === key;
+                  const complete =
+                    DESIGN_PROGRESS.findIndex((item) => item[0] === designJob?.stage) >
+                    DESIGN_PROGRESS.findIndex((item) => item[0] === key);
+                  return (
+                    <li
+                      key={key}
+                      className={
+                        complete || current
+                          ? "text-foreground"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      <span className="mr-2" aria-hidden="true">
+                        {complete ? "✓" : current ? "●" : "○"}
+                      </span>
+                      {language === "id" ? id : en}
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : null}
+            {showPrototypeAction ? (
               <>
                 <button
                   type="button"
-                  className="rf-studio-primary"
+                  className="rf-studio-primary mt-4"
                   disabled={!effectivePackageReady || designBusy}
                   onClick={() => void generate()}
                 >
                   {prototypeActionLabel}
                 </button>
-                <p className="text-xs leading-5 text-muted-foreground">
+                <p className="mt-2 max-w-[42ch] text-[0.75rem] leading-5 text-muted-foreground">
                   {language === "id"
-                    ? "Opsional — buat referensi visual interaktif berdasarkan Product Truth dan Screen Map."
-                    : "Optional — create an interactive visual reference based on Product Truth and the Screen Map."}
+                    ? "Opsional. Prototype jadi referensi visual dari Product Spec dan Screen Map."
+                    : "Optional. The prototype becomes a visual reference from the Product Spec and Screen Map."}
                 </p>
               </>
-            )}
-            {designJob && ["QUEUED", "RUNNING"].includes(designJob.status) && (
-              <p role="status">{designJob.stageLabel}</p>
-            )}
-            {!effectivePackageReady && (
-              <p className="text-xs text-muted-foreground">
-                {language === "id"
-                  ? "Buat Product Package dulu sebelum prototype."
-                  : "Build the Product Package before creating a prototype."}
+            ) : null}
+            {designJob && ["QUEUED", "RUNNING"].includes(designJob.status) ? (
+              <p className="rf-progress-row" role="status">
+                <span className="rf-pulse-dot" />
+                {designJob.stageLabel}
               </p>
-            )}
-            {stage && <p>{stage}</p>}
+            ) : null}
+            {!effectivePackageReady ? (
+              <p className="mt-3 text-[0.75rem] text-muted-foreground">
+                {language === "id"
+                  ? "Draft Spec sudah cukup untuk mulai design. Asumsi yang belum jelas akan ditampilkan."
+                  : "A draft spec is enough to start design. Unresolved assumptions stay visible."}
+              </p>
+            ) : null}
+            {stage ? <p className="rf-progress-row">{stage}</p> : null}
           </div>
         ) : (
           <div className="rf-studio-frame-wrap">

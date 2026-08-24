@@ -43,16 +43,6 @@ export async function runDesignGenerationJob(jobId: string, alreadyClaimed = fal
     if (!project || project.version !== job.projectVersion)
       throw new Error("PROJECT_VERSION_CONFLICT");
     const state = parseProjectState(project);
-    const packageJob = await prisma.packageJob.findFirst({
-      where: {
-        projectId: job.projectId,
-        projectVersion: job.projectVersion,
-        status: "COMPLETED",
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!packageJob && state.studio.currentVersion === 0)
-      throw new Error("PACKAGE_NOT_READY");
 
     const result = await designModule.generateProjectDesign(
       job.projectId,

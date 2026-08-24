@@ -16,6 +16,7 @@ export * from "./agent/actions";
 export * from "./agent/runner";
 export * from "./agent/policy";
 export * from "./tools/registry";
+export * from "./agent/conversation";
 export * from "./eval/invention-harness";
 export * from "./eval/generalization";
 export * from "./export/derived";

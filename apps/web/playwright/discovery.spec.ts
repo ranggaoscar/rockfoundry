@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("Decision Debt discovery", () => {
-  test("asks a contextual question, records two answer styles, and survives reload", async ({
+test.describe("V2 conversation workspace", () => {
+  test("answers CRM context naturally and survives reload without questionnaire calls", async ({
     page,
   }) => {
     const idea =
@@ -9,101 +9,37 @@ test.describe("Decision Debt discovery", () => {
 
     await page.goto("/");
     await page.locator("#idea-composer").fill(idea);
-    // The composer action is language-aware: "Mulai discovery" for Indonesian
-    // ideas, "Start discovery" otherwise. Pressing Enter also submits.
-    await page
-      .getByRole("button", { name: /Mulai discovery|Start discovery/i })
-      .click();
+    await page.getByRole("button", { name: /Mulai discovery|Start discovery/i }).click();
     await expect(page).toHaveURL(/\/project\//, { timeout: 30_000 });
-    await expect(page.getByText("5-Brand Marble CRM").first()).toBeVisible({
+    await expect(page.getByText(/CRM untuk 5 brand|CRM for 5 brand/i).first()).toBeVisible({
       timeout: 15_000,
     });
+    await expect(page.locator(".rf-option")).toHaveCount(0);
 
-    await expect(
-      page.getByText(
-        /customer yang sama masuk lewat dua brand|same customer contacts two brands/i,
-      ),
-    ).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/I have the starting idea/i)).toHaveCount(0);
-
-    const answerResponse = page.waitForResponse(
+    const questionRequests: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/questions")) questionRequests.push(request.url());
+    });
+    await page.locator("#project-composer").fill(
+      "Untuk MVP fokus ke owner dan sales, tapi jangan pakai approval dulu.",
+    );
+    const responsePromise = page.waitForResponse(
       (response) =>
-        response.url().includes("/questions") &&
+        response.url().includes("/conversation") &&
         response.request().method() === "POST",
     );
-    await page
-      .getByRole("button", { name: /Satu customer lintas brand/i })
-      .click();
-    const response = await answerResponse;
-    const answerPayload = await response.json();
-    expect(response.status()).toBe(200);
-    expect(answerPayload).toEqual(
-      expect.objectContaining({
-        question: expect.objectContaining({ topic: "sales_visibility" }),
-      }),
-    );
-
-    await expect(
-      page.getByRole("button", {
-        name: /Sales per brand, owner lihat semua|Brand-scoped sales, owner sees all/i,
-      }),
-    ).toBeVisible({ timeout: 20_000 });
-
-    await page
-      .locator("#project-composer")
-      .fill("Sales per brand, owner melihat semuanya.");
     await page.locator("#project-composer").press("Enter");
-
-    await expect(
-      page.getByText(
-        /Lead bisa datang dari WhatsApp|Leads can arrive from WhatsApp/i,
-      ),
-    ).toBeVisible({ timeout: 20_000 });
-
-    const projectUrl = page.url();
-    const projectId = projectUrl.split("/").pop();
-    const reopened = await page.request.get(`/api/projects/${projectId}`);
-    expect(reopened.ok()).toBeTruthy();
-    const payload = await reopened.json();
-    expect(payload.project.canonicalState.decisions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          topic: "customer_identity",
-          decision: "company_wide",
-        }),
-        expect.objectContaining({
-          topic: "sales_visibility",
-          decision: "owner_all_sales_brand_scoped",
-        }),
-      ]),
-    );
-    expect(
-      payload.project.canonicalState.discovery.importantDecisionsRemaining,
-    ).toBe(3);
+    const response = await responsePromise;
+    expect(response.status()).toBe(200);
+    const payload = await response.json();
+    expect(payload.question).toBeNull();
+    expect(payload.message).toMatch(/CRM|brand|owner|sales/i);
+    expect(questionRequests).toEqual([]);
 
     await page.reload();
-    await expect(
-      page
-        .getByText(/Satu customer lintas brand|One customer across brands/i)
-        .first(),
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(
-      page.getByText(
-        /Lead bisa datang dari WhatsApp|Leads can arrive from WhatsApp/i,
-      ),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/high-risk decisions? still open|Debt/i),
-    ).toBeVisible();
-
-    await page.getByRole("button", { name: "Rename project" }).click();
-    await page.locator("#project-name").fill("Marble CRM discovery");
-    await page.locator("#project-name").press("Enter");
-    await expect(
-      page.getByRole("button", { name: "Rename project" }),
-    ).toContainText("Marble CRM discovery");
-    await page.reload();
-    await expect(page.getByText("Marble CRM discovery").first()).toBeVisible();
+    await expect(page.getByText(/fokus ke owner dan sales|CRM|brand/i).last()).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test("settings opens as a drawer and never 404s", async ({ page }) => {

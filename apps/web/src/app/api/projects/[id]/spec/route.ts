@@ -1,0 +1,61 @@
+export const dynamic = "force-dynamic";
+
+import { NextRequest } from "next/server";
+import { generateExport, validateConsistency } from "@rockfoundry/core";
+import { prisma } from "@rockfoundry/db";
+import {
+  getLocalProject,
+  jsonError,
+  parseProjectState,
+} from "@/lib/local-project";
+
+export async function POST(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const project = await getLocalProject(id);
+    if (!project) return jsonError("Project not found", 404);
+    const state = parseProjectState(project);
+    const generated = await generateExport(state);
+    const consistency = validateConsistency(state);
+    await prisma.$transaction(
+      Object.entries(generated.documents).map(([type, content]) =>
+        prisma.artifact.upsert({
+          where: {
+            projectId_type_version: {
+              projectId: id,
+              type,
+              version: project.version,
+            },
+          },
+          create: {
+            projectId: id,
+            type,
+            status: consistency.status === "BLOCKING" ? "DRAFT" : "READY",
+            content,
+            version: project.version,
+          },
+          update: {
+            status: consistency.status === "BLOCKING" ? "DRAFT" : "READY",
+            content,
+            generatedAt: new Date(),
+          },
+        }),
+      ),
+    );
+    return Response.json({
+      spec: {
+        status: consistency.status,
+        unresolvedQuestions: state.openQuestions,
+        assumptions: state.assumptions,
+        documents: ["BRD.md", "PRD.md", "ERD.md"],
+      },
+      version: project.version,
+      consistency,
+    });
+  } catch {
+    return jsonError("RockFoundry couldn't create the draft spec.", 422);
+  }
+}

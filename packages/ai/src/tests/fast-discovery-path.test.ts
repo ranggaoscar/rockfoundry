@@ -2,41 +2,33 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-describe("fast initial discovery path", () => {
-  it("keeps normal INITIAL_DISCOVERY on a single extraction call without model planner", () => {
+describe("V2 initial conversation path", () => {
+  it("uses the Conversation Agent and does not construct a canonical question", () => {
     const discoverySource = readFileSync(
       resolve(process.cwd(), "../../apps/web/src/lib/discovery.ts"),
-      "utf8",
-    );
-    const plannerSource = readFileSync(
-      resolve(process.cwd(), "../../apps/web/src/lib/agent-planner.ts"),
       "utf8",
     );
     const conversationSource = readFileSync(
       resolve(process.cwd(), "../../apps/web/src/lib/conversation.ts"),
       "utf8",
     );
-    const aiSource = readFileSync(
-      resolve(process.cwd(), "src/index.ts"),
+    const agentSource = readFileSync(
+      resolve(process.cwd(), "../../apps/web/src/lib/conversation-agent.ts"),
+      "utf8",
+    );
+    const routeSource = readFileSync(
+      resolve(process.cwd(), "../../apps/web/src/app/api/projects/[id]/conversation/route.ts"),
       "utf8",
     );
 
-    expect(discoverySource).toContain("fast_initial_v1");
-    expect(discoverySource).toContain("runInitialExtraction");
+    expect(discoverySource).toContain("conversation_agent_v2");
+    expect(discoverySource).toContain("runConversationAgent");
     expect(discoverySource).toContain("providerCalls: 1");
-    expect(discoverySource).not.toContain("createModelDiscoveryPlanner");
-    expect(discoverySource).not.toContain("AgentRunner");
-    expect(discoverySource).not.toContain("runPlannerAction");
-
-    // Research/agentic infrastructure remains available outside initial discovery.
-    expect(plannerSource).toContain("createModelDiscoveryPlanner");
-    expect(plannerSource).toContain("runPlannerAction");
-    expect(conversationSource).toContain("createModelDiscoveryPlanner");
-    expect(conversationSource).toContain("RESEARCH_REQUEST");
-
-    // Initial extraction uses request-level medium reasoning.
-    expect(aiSource).toMatch(
-      /runInitialExtraction[\s\S]*reasoningEffort:\s*"medium"/,
-    );
+    expect(conversationSource).not.toContain("QuestionEngine");
+    expect(conversationSource).not.toContain("canonicalQuestion");
+    expect(agentSource).toContain("runConversationAgent");
+    expect(agentSource).toContain("generateGenericDecisionCandidates");
+    expect(routeSource).toContain("question: null");
+    expect(routeSource).not.toContain("QuestionEngine");
   });
 });

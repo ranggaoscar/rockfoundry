@@ -1,9 +1,11 @@
 import {
+  ConversationAgentResponseSchema,
   DesignArchitectureOutputSchema,
   DesignQualityReviewSchema,
   InitialIdeaExtraction,
   InitialIdeaExtractionSchema,
   PrototypeGenerationOutputSchema,
+  type ConversationAgentResponse,
 } from "@rockfoundry/core";
 import { z } from "zod";
 import {
@@ -35,12 +37,232 @@ function item(
   return { value, confidence, evidenceText: value, extractionReason };
 }
 
+function mockConversationAgent(
+  request: InferenceRequest<unknown>,
+): ConversationAgentResponse {
+  const payloadText = request.messages.at(-1)?.content || "";
+  let payload: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(payloadText);
+    if (parsed && typeof parsed === "object") payload = parsed as Record<string, unknown>;
+  } catch {
+    payload = { latestUserMessage: payloadText };
+  }
+  const latest = String(payload.latestUserMessage || "").trim();
+  const projectContext = payload.projectContext;
+  const context =
+    typeof projectContext === "string"
+      ? projectContext.toLowerCase()
+      : projectContext && typeof projectContext === "object"
+        ? JSON.stringify(projectContext).toLowerCase()
+        : String(payload.summary || "").toLowerCase();
+  const text = `${context} ${latest}`.toLowerCase();
+  const base = {
+    quickReplies: [],
+    stateDelta: { explicitFacts: [], confirmedDecisions: [], corrections: [] },
+    proposals: [],
+    assumptions: [],
+    unresolvedRisks: [],
+  } satisfies Pick<ConversationAgentResponse, "quickReplies" | "stateDelta" | "proposals" | "assumptions" | "unresolvedRisks">;
+
+  if (/owner|warung|usaha kecil/.test(text) && /uang|cash|keuangan|finance/.test(text)) {
+    return {
+      ...base,
+      message: "Sip, berarti MVP ini cukup owner-only. Mulai dari transaksi masuk dan keluar, kategori, saldo kas, dan histori. Belum perlu role atau approval.",
+      mode: "CLARIFICATION",
+      stateDelta: {
+        explicitFacts: [{ path: "roles", value: "owner", evidence: latest }],
+        confirmedDecisions: [],
+        corrections: [],
+      },
+      suggestedNextAction: { type: "CREATE_SPEC" },
+    };
+  }
+  if (/uang|cash|keuangan|finance|catat/.test(text)) {
+    return {
+      ...base,
+      message: "Kalau tujuannya sederhana, gua mulai dari transaksi masuk dan keluar, kategori, saldo kas, dan histori. Untuk menjaga MVP tetap kecil, belum perlu role atau approval.",
+      mode: "BRAINSTORM",
+      suggestedNextAction: {
+        type: "ASK_CONTEXTUAL_QUESTION",
+        question: "Ini buat keuangan pribadi atau usaha kecil?",
+        quickReplies: [
+          { label: "Keuangan pribadi", value: "personal" },
+          { label: "Usaha kecil", value: "small_business" },
+        ],
+      },
+    };
+  }
+  if (/groom|anjing|pet|dog/.test(text)) {
+    if (/beberapa layanan|satu booking|keduanya|gabung/.test(latest.toLowerCase())) {
+      return {
+        ...base,
+        message: "Oke, satu booking bisa memuat beberapa layanan. Simpan layanan sebagai daftar di booking, lalu jadwal dan status penitipan tetap terlihat sebagai satu kunjungan.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "features", value: "booking multi-layanan", evidence: latest },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+        },
+        suggestedNextAction: { type: "CREATE_SPEC" },
+      };
+    }
+    if (/jadwal|staf|pemilik hewan|booking/.test(latest.toLowerCase())) {
+      return {
+        ...base,
+        message: "Berarti jadwal adalah pusat operasionalnya: staf perlu melihat slot, layanan, dan status setiap anjing. Untuk MVP, satu booking bisa menyimpan layanan yang dipilih tanpa approval berlapis.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "roles", value: "staf", evidence: latest },
+            { path: "workflows", value: "booking layanan", evidence: latest },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+        },
+        suggestedNextAction: {
+          type: "ASK_CONTEXTUAL_QUESTION",
+          question: "Apakah satu booking boleh berisi grooming dan penitipan sekaligus?",
+          quickReplies: [],
+        },
+      };
+    }
+    return {
+      ...base,
+      message: "Untuk grooming dan penitipan anjing, inti produknya kemungkinan jadwal layanan, profil hewan, dan status penitipan.",
+      mode: "BRAINSTORM",
+      suggestedNextAction: {
+        type: "ASK_CONTEXTUAL_QUESTION",
+        question: "Pemilik hewan biasanya booking grooming, penitipan, atau keduanya sekaligus?",
+        quickReplies: [
+          { label: "Grooming", value: "grooming" },
+          { label: "Penitipan", value: "boarding" },
+          { label: "Bisa keduanya", value: "combined" },
+        ],
+      },
+    };
+  }
+  if (/festival|vendor|event|acara/.test(text)) {
+    if (/mengubah status|panitia yang|administrasi/.test(latest.toLowerCase())) {
+      return {
+        ...base,
+        message: "Berarti panitia menjadi pemilik status kelengkapan vendor. Perubahan status perlu tercatat, sedangkan vendor cukup melihat apa yang masih kurang dari berkas mereka.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "roles", value: "panitia", evidence: latest },
+            { path: "workflows", value: "review kelengkapan vendor", evidence: latest },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+        },
+        suggestedNextAction: { type: "CREATE_SPEC" },
+      };
+    }
+    if (/lengkap|booth|panitia|vendor/.test(latest.toLowerCase())) {
+      return {
+        ...base,
+        message: "Berarti MVP perlu daftar kelengkapan vendor dan penempatan booth yang bisa dilihat panitia. Pisahkan status administrasi dari lokasi supaya perubahan booth tidak menghapus bukti kelengkapan.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "workflows", value: "review kelengkapan vendor", evidence: latest },
+            { path: "workflows", value: "atur penempatan booth", evidence: latest },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+        },
+        suggestedNextAction: {
+          type: "ASK_CONTEXTUAL_QUESTION",
+          question: "Siapa yang boleh mengubah status kelengkapan vendor?",
+          quickReplies: [],
+        },
+      };
+    }
+    return {
+      ...base,
+      message: "Untuk festival, produk ini sebaiknya mulai dari daftar vendor, status kelengkapan mereka, dan peta kebutuhan panitia. Jangan langsung jadi project-management suite.",
+      mode: "BRAINSTORM",
+      suggestedNextAction: {
+        type: "ASK_CONTEXTUAL_QUESTION",
+        question: "Panitia paling perlu mengontrol kelengkapan vendor atau penempatan booth?",
+        quickReplies: [
+          { label: "Kelengkapan vendor", value: "compliance" },
+          { label: "Penempatan booth", value: "booth" },
+        ],
+      },
+    };
+  }
+  if (/crm|marmer|marble|brand|sales/.test(text)) {
+    if (/sales hanya|owner semua|brand sendiri|scoped/.test(latest.toLowerCase())) {
+      return {
+        ...base,
+        message: "Oke, batas aksesnya jelas: sales hanya melihat brand sendiri, owner melihat seluruh brand. Itu cukup sebagai aturan MVP tanpa menambah approval atau assignment kompleks.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "permissions", value: "sales brand-scoped, owner global", evidence: latest },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+        },
+        suggestedNextAction: { type: "CREATE_SPEC" },
+      };
+    }
+    if (/histori|riwayat|customer lintas|owner|sales/.test(latest.toLowerCase())) {
+      return {
+        ...base,
+        message: "Kalau histori customer harus tetap jelas lintas brand, simpan satu profil customer lalu hubungkan lead dan quotation ke brand masing-masing. Owner bisa melihat lintas brand, sementara sales tetap scoped.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "workflows", value: "histori customer lintas brand", evidence: latest },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+        },
+        suggestedNextAction: { type: "CREATE_SPEC" },
+      };
+    }
+    return {
+      ...base,
+      message: "Untuk CRM lima brand, inti MVP-nya adalah lead, follow-up, quotation, dan batas akses sales versus owner. Customer lintas brand perlu diputuskan karena itu akan memengaruhi histori dan pencarian.",
+      mode: "BRAINSTORM",
+      suggestedNextAction: {
+        type: "ASK_CONTEXTUAL_QUESTION",
+        question: "Kalau customer yang sama datang ke dua brand, histori sebaiknya tetap satu atau terpisah?",
+        quickReplies: [
+          { label: "Satu histori", value: "shared_identity" },
+          { label: "Terpisah per brand", value: "separate_records" },
+        ],
+      },
+    };
+  }
+  return {
+    ...base,
+    message: `Gua tangkap idenya: ${latest || "produk ini"}. Kita mulai dari hasil utama yang ingin dicapai pengguna, lalu sisihkan kompleksitas yang belum perlu untuk MVP.`,
+    mode: "BRAINSTORM",
+    suggestedNextAction: {
+      type: "ASK_CONTEXTUAL_QUESTION",
+      question: "Siapa yang paling sering memakai produk ini?",
+      quickReplies: [],
+    },
+  };
+}
 export class MockGatewayProvider implements AiGatewayProvider {
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
     await new Promise((resolve) => setTimeout(resolve, 80));
     const taskType = req.taskType || "initial_idea_extraction";
     if (taskType === "initial_idea_extraction")
       return this.mockExtraction(req) as InferenceResponse<T>;
+    if (taskType === "conversation_agent")
+      return {
+        data: mockConversationAgent(req) as T,
+        usage: { promptTokens: 180, completionTokens: 180, totalTokens: 360 },
+        metadata: { provider: "mock", model: "mock", latency: 80 },
+      };
     if (taskType === "design_quality_review")
       return {
         data: { verdict: "PASS", score: 86, assessments: [{ area: "grounding", assessment: "Prototype follows the supplied screen map." }], blockingProblems: [], improvements: [] } as T,
@@ -356,6 +578,10 @@ const PrototypeGenerationResponseSchema = z.toJSONSchema(
   PrototypeGenerationOutputSchema,
 );
 
+const ConversationAgentResponseJsonSchema = z.toJSONSchema(
+  ConversationAgentResponseSchema,
+);
+
 type SafeZodError = z.ZodError & { topLevelKeys?: string[] };
 
 function annotateZodError(error: z.ZodError, data: unknown): SafeZodError {
@@ -448,6 +674,41 @@ export class AiGateway {
       responseFormat: "json",
     });
     return result;
+  }
+
+  async runConversationAgent(input: {
+    project: Record<string, unknown>;
+    latestUserMessage: string;
+    mode: string;
+    riskContext: unknown[];
+  }): Promise<ConversationAgentResponse> {
+    const result = await this.completeWithSchemaRepair(
+      {
+        taskType: "conversation_agent",
+        modelTier: "default",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Keep the response concise but useful.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              projectContext: input.project,
+              latestUserMessage: input.latestUserMessage,
+              mode: input.mode,
+              relevantRisks: input.riskContext,
+            }),
+          },
+        ],
+        temperature: 0.45,
+        responseFormat: "json",
+        responseSchema: ConversationAgentResponseJsonSchema,
+      },
+      ConversationAgentResponseSchema,
+    );
+    return ConversationAgentResponseSchema.parse(result.data);
   }
 
   async runDesignArchitecture(input: {

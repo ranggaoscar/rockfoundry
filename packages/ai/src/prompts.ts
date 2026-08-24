@@ -175,6 +175,7 @@ RULES:
 
 export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> = {
   initial_idea_extraction: "medium",
+  conversation_agent: "medium",
   ambiguous_conversation: "medium",
   research: "high",
   screen_architecture: "max",
@@ -188,10 +189,9 @@ export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> = 
 export function reasoningEffortForTask(taskType: string, override?: string) {
   return override || TASK_REASONING_EFFORT[taskType];
 }
-
-// Task type to model tier mapping
 export const TASK_MODEL_TIER: Record<string, "cheap" | "default" | "strong"> = {
   initial_idea_extraction: "default",
+  conversation_agent: "default",
   contextual_question_enrichment: "default",
   ambiguity_analysis: "strong",
   contradiction_review: "strong",
@@ -201,9 +201,9 @@ export const TASK_MODEL_TIER: Record<string, "cheap" | "default" | "strong"> = {
   final_consistency_review: "strong",
 };
 
-// Task type to temperature mapping
 export const TASK_TEMPERATURE: Record<string, number> = {
   initial_idea_extraction: 0.1,
+  conversation_agent: 0.45,
   contextual_question_enrichment: 0.3,
   ambiguity_analysis: 0.2,
   contradiction_review: 0.1,
@@ -213,9 +213,9 @@ export const TASK_TEMPERATURE: Record<string, number> = {
   final_consistency_review: 0.1,
 };
 
-// Task timeout mapping (in ms)
 export const TASK_TIMEOUT: Record<string, number> = {
   initial_idea_extraction: 120000,
+  conversation_agent: 90000,
   design_architecture: 120000,
   prototype_generation: 180000,
   contextual_question_enrichment: 60000,
@@ -230,6 +230,7 @@ export const TASK_TIMEOUT: Record<string, number> = {
 // Task max retries
 export const TASK_MAX_RETRIES: Record<string, number> = {
   initial_idea_extraction: 2,
+  conversation_agent: 1,
   design_architecture: 1,
   prototype_generation: 1,
   contextual_question_enrichment: 2,

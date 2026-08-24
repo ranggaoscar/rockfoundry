@@ -4,7 +4,6 @@ import { NextRequest } from "next/server";
 import {
   getLocalProject,
   jsonError,
-  parseProjectState,
 } from "@/lib/local-project";
 import {
   enqueueDesignGenerationJob,
@@ -20,16 +19,6 @@ export async function POST(
     const { id } = await params;
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
-    const state = parseProjectState(project);
-    const packageJob = await prisma.packageJob.findFirst({
-      where: {
-        projectId: id,
-        projectVersion: project.version,
-        status: "COMPLETED",
-      },
-    });
-    if (!packageJob && state.studio.currentVersion === 0)
-      return jsonError("Selesaikan Product Package sebelum membuat prototype.", 422);
     const enqueued = await enqueueDesignGenerationJob(prisma, id, project.version);
     return Response.json(
       {
