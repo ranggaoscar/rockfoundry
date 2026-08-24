@@ -28,6 +28,11 @@ import {
   TASK_TEMPERATURE,
   reasoningEffortForTask,
 } from "./prompts";
+import {
+  classifyDesignFailure,
+  formatDesignFailureDiagnostics,
+} from "./failure";
+import { ApiError } from "./gateway";
 
 function item(
   value: string,
@@ -578,9 +583,80 @@ const PrototypeGenerationResponseSchema = z.toJSONSchema(
   PrototypeGenerationOutputSchema,
 );
 
-const ConversationAgentResponseJsonSchema = z.toJSONSchema(
+export const ConversationAgentResponseJsonSchema = z.toJSONSchema(
   ConversationAgentResponseSchema,
 );
+
+function portableConversationSchema(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const schema = { ...source };
+  delete schema.$schema;
+  delete schema.default;
+  for (const keyword of [
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "pattern",
+    "format",
+  ]) {
+    delete schema[keyword];
+  }
+  if (schema.oneOf && Array.isArray(schema.oneOf)) {
+    schema.anyOf = schema.oneOf;
+    delete schema.oneOf;
+  }
+  if (schema.const !== undefined) {
+    schema.enum = [schema.const];
+    delete schema.const;
+  }
+  if (schema.properties && typeof schema.properties === "object") {
+    const originalRequired = new Set(
+      Array.isArray(source.required)
+        ? source.required.filter((key): key is string => typeof key === "string")
+        : [],
+    );
+    const properties = Object.fromEntries(
+      Object.entries(schema.properties as Record<string, unknown>).map(
+        ([key, child]) => {
+          const portable = portableConversationSchema(child);
+          return [
+            key,
+            originalRequired.has(key)
+              ? portable
+              : { anyOf: [portable, { type: "null" }] },
+          ];
+        },
+      ),
+    );
+    schema.properties = properties;
+    schema.required = Object.keys(properties);
+    schema.additionalProperties = false;
+  }
+  for (const key of ["items", "anyOf", "allOf"]) {
+    const child = schema[key];
+    if (Array.isArray(child)) schema[key] = child.map(portableConversationSchema);
+    else if (child && typeof child === "object")
+      schema[key] = portableConversationSchema(child);
+  }
+  return schema;
+}
+
+function normalizeConversationData(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeConversationData);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== null)
+      .map(([key, child]) => [key, normalizeConversationData(child)]),
+  );
+}
+
+export const PortableConversationAgentResponseJsonSchema =
+  portableConversationSchema(ConversationAgentResponseJsonSchema);
 
 type SafeZodError = z.ZodError & { topLevelKeys?: string[] };
 
@@ -682,7 +758,7 @@ export class AiGateway {
     mode: string;
     riskContext: unknown[];
   }): Promise<ConversationAgentResponse> {
-    const result = await this.provider.complete<unknown>({
+    const baseRequest: InferenceRequest<unknown> = {
       taskType: "conversation_agent",
       modelTier: "default",
       messages: [
@@ -703,10 +779,102 @@ export class AiGateway {
       ],
       temperature: 0.45,
       responseFormat: "json",
-      responseSchema: ConversationAgentResponseJsonSchema,
+      responseSchema: PortableConversationAgentResponseJsonSchema,
       maxRetries: 0,
-    });
-    return ConversationAgentResponseSchema.parse(result.data);
+      providerDiagnostics: this.provider.diagnostics,
+    };
+
+    const repair = async (data: unknown, validation: z.ZodError) => {
+      const issues = validation.issues.map((issue) => ({
+        path: issue.path.join("."),
+        code: issue.code,
+        message: issue.message,
+      }));
+      console.warn(
+        `${this.providerDiagnostic("repair") } schemaIssues=${issues.map((issue) => `${issue.path || "<root>"}:${issue.code}`).join("|")}`,
+      );
+      const repaired = await this.provider.complete({
+        ...baseRequest,
+        responseSchema: undefined,
+        messages: [
+          ...baseRequest.messages,
+          {
+            role: "user",
+            content: JSON.stringify({
+              instruction:
+                "Repair the previous JSON object to match the Conversation Agent contract. Preserve the natural visible message exactly when present. Do not invent product facts or accepted decisions. Return a JSON object only.",
+              validationIssues: issues,
+              previousJson: data,
+            }),
+          },
+        ],
+      });
+      const parsedRepair = ConversationAgentResponseSchema.safeParse(
+        normalizeConversationData(repaired.data),
+      );
+      if (!parsedRepair.success) {
+        const diagnostic = classifyDesignFailure(parsedRepair.error, {
+          task: "conversation_agent",
+        });
+        console.warn(
+          `${this.providerDiagnostic("repair")} ${formatDesignFailureDiagnostics(diagnostic)}`,
+        );
+        throw parsedRepair.error;
+      }
+      console.warn(`${this.providerDiagnostic("repair")} result=validated`);
+      return parsedRepair.data;
+    };
+
+    let strictResult: InferenceResponse<unknown> | undefined;
+    try {
+      strictResult = await this.provider.complete(baseRequest);
+      const parsedStrict = ConversationAgentResponseSchema.safeParse(
+        normalizeConversationData(strictResult.data),
+      );
+      if (parsedStrict.success) return parsedStrict.data;
+      return repair(strictResult.data, parsedStrict.error);
+    } catch (strictError) {
+      const strictDiagnostic = classifyDesignFailure(strictError, {
+        task: "conversation_agent",
+      });
+      console.warn(
+        `${this.providerDiagnostic("strict_schema")} ${formatDesignFailureDiagnostics(strictDiagnostic)}`,
+      );
+      if (
+        !(strictError instanceof ApiError) ||
+        strictError.statusCode < 400 ||
+        strictError.statusCode >= 500
+      ) {
+        throw strictError;
+      }
+    }
+
+    let jsonObjectResult: InferenceResponse<unknown>;
+    try {
+      jsonObjectResult = await this.provider.complete({
+        ...baseRequest,
+        responseSchema: undefined,
+      });
+    } catch (fallbackError) {
+      const diagnostic = classifyDesignFailure(fallbackError, {
+        task: "conversation_agent",
+      });
+      console.warn(
+        `${this.providerDiagnostic("json_object_fallback")} ${formatDesignFailureDiagnostics(diagnostic)}`,
+      );
+      throw fallbackError;
+    }
+
+    const parsedFallback = ConversationAgentResponseSchema.safeParse(
+      normalizeConversationData(jsonObjectResult.data),
+    );
+    if (parsedFallback.success) return parsedFallback.data;
+    return repair(jsonObjectResult.data, parsedFallback.error);
+  }
+
+  private providerDiagnostic(stage: string) {
+    const diagnostics = this.provider.diagnostics;
+    return `task=conversation_agent provider=${diagnostics?.provider || "unknown"}${diagnostics?.model ? ` model=${diagnostics.model}` : ""} stage=${stage}`;
   }
 
   async runDesignArchitecture(input: {

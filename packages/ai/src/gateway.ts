@@ -58,7 +58,12 @@ export class NineRouterGateway implements AiGatewayProvider {
     private readonly apiKey: string,
     private readonly models: { default: string; cheap: string; strong: string },
     private readonly reasoningEffort?: string,
+    private readonly providerName = "9router",
   ) {}
+
+  get diagnostics() {
+    return { provider: this.providerName, model: this.models.default } as const;
+  }
 
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
     const taskType = req.taskType || "initial_idea_extraction";
@@ -72,6 +77,7 @@ export class NineRouterGateway implements AiGatewayProvider {
         return await this.attemptRequest(req, timeout);
       } catch (error) {
         lastError = error as Error;
+        const diagnostic = this.safeDiagnostic(req, "provider_request");
 
         // Don't retry if it's a schema validation error (bad request from us)
         if (error instanceof z.ZodError) {
@@ -84,6 +90,9 @@ export class NineRouterGateway implements AiGatewayProvider {
           error.statusCode >= 400 &&
           error.statusCode < 500
         ) {
+          console.warn(
+            `${diagnostic} status=${error.statusCode} error=provider_request_rejected`,
+          );
           throw error;
         }
 
@@ -96,7 +105,7 @@ export class NineRouterGateway implements AiGatewayProvider {
             retryInMs: backoff,
           });
           console.warn(
-            `AI request failed: ${formatDesignFailureDiagnostics(diagnostics)}`,
+            `${diagnostic} ${formatDesignFailureDiagnostics(diagnostics)}`,
           );
           await new Promise((resolve) => setTimeout(resolve, backoff));
         }
@@ -104,6 +113,13 @@ export class NineRouterGateway implements AiGatewayProvider {
     }
 
     throw lastError || new Error("AI request failed after all retries");
+  }
+
+  private safeDiagnostic(req: InferenceRequest<unknown>, stage: string) {
+    const defaults = this.diagnostics;
+    const provider = req.providerDiagnostics?.provider || defaults.provider;
+    const model = req.providerDiagnostics?.model || defaults.model;
+    return `task=${req.taskType || "unknown"} provider=${provider}${model ? ` model=${model}` : ""} stage=${stage}`;
   }
 
   private async attemptRequest<T>(
@@ -190,7 +206,7 @@ export class NineRouterGateway implements AiGatewayProvider {
           totalTokens: data.usage?.total_tokens,
         },
         metadata: {
-          provider: "9router",
+          provider: this.providerName,
           model,
           latency,
         },
@@ -223,6 +239,7 @@ export class OpenAICompatibleGateway extends NineRouterGateway {
       apiKey,
       { default: model, cheap: model, strong: model },
       reasoningEffort,
+      "openai-compatible",
     );
   }
 }

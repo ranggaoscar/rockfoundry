@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+export type ProviderDiagnostics = {
+  provider: string;
+  model?: string;
+};
+
 export interface InferenceRequest<T> {
   messages: { role: "system" | "user" | "assistant"; content: string }[];
   modelTier?: "cheap" | "default" | "strong";
@@ -10,6 +15,7 @@ export interface InferenceRequest<T> {
   reasoningEffort?: string;
   taskType?: string;
   maxRetries?: number;
+  providerDiagnostics?: ProviderDiagnostics;
 }
 
 export interface InferenceResponse<T> {
@@ -28,4 +34,5 @@ export interface InferenceResponse<T> {
 
 export interface AiGatewayProvider {
   complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>>;
+  readonly diagnostics?: ProviderDiagnostics;
 }
