@@ -1,6 +1,11 @@
 import { prisma } from "@rockfoundry/db";
 import { generateExport, validateConsistency } from "@rockfoundry/core";
-import { generateProjectDesign } from "./design";
+import { toPackageFailureMetadata } from "@rockfoundry/ai";
+import {
+  designGenerationUserMessage,
+  generateProjectDesign,
+  logDesignGenerationFailure,
+} from "./design";
 import { getLocalProject, parseProjectState, saveProjectState } from "./local-project";
 import { startPackageJobHeartbeat } from "./package-job-claims";
 
@@ -62,6 +67,18 @@ export function publicPackageJob(job: {
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     completedAt: job.completedAt,
+  };
+}
+
+export function buildPackageFailureMetadata(
+  error: unknown,
+  stage: string,
+  timings: Record<string, number | null>,
+) {
+  const diagnostics = logDesignGenerationFailure(error);
+  return {
+    ...toPackageFailureMetadata(diagnostics, stage),
+    timings,
   };
 }
 
@@ -135,7 +152,17 @@ export async function runPackageJob(jobId: string, alreadyClaimed = false) {
     timings.totalMs = Date.now() - totalStarted;
     await prisma.packageJob.update({ where: { id: jobId }, data: { status: "COMPLETED", stage: "COMPLETED", completedStages: JSON.stringify([...completed, "COMPLETED"]), progress: JSON.stringify({ stageLabel: safeStageDescription("COMPLETED"), timings }), completedAt: new Date(), heartbeatAt: new Date() } });
   } catch (error) {
-    await prisma.packageJob.update({ where: { id: jobId }, data: { status: "FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 240) : "Package generation failed.", completedStages: JSON.stringify(completed), heartbeatAt: new Date() } });
+    const failure = buildPackageFailureMetadata(error, job.stage, timings);
+    await prisma.packageJob.update({
+      where: { id: jobId },
+      data: {
+        status: "FAILED",
+        errorSummary: designGenerationUserMessage(error),
+        progress: JSON.stringify({ stageLabel: safeStageDescription(failure.stage), timings, failure }),
+        completedStages: JSON.stringify(completed),
+        heartbeatAt: new Date(),
+      },
+    });
   } finally {
     stopHeartbeat();
   }

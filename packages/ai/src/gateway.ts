@@ -5,6 +5,10 @@ import {
   InferenceResponse,
 } from "./schema";
 import { TASK_TIMEOUT, TASK_MAX_RETRIES } from "./prompts";
+import {
+  classifyDesignFailure,
+  formatDesignFailureDiagnostics,
+} from "./failure";
 
 /** Keep OpenAI-compatible roots canonical so callers can safely supply either
  * `https://host` or `https://host/v1` without producing `/v1/v1/...`. */
@@ -85,8 +89,14 @@ export class NineRouterGateway implements AiGatewayProvider {
 
         if (attempt < maxRetries) {
           const backoff = Math.min(1000 * Math.pow(2, attempt), 10000);
+          const diagnostics = classifyDesignFailure(error, {
+            task: taskType,
+            attempt: attempt + 1,
+            maxAttempts: maxRetries + 1,
+            retryInMs: backoff,
+          });
           console.warn(
-            `AI request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${backoff}ms...`,
+            `AI request failed: ${formatDesignFailureDiagnostics(diagnostics)}`,
           );
           await new Promise((resolve) => setTimeout(resolve, backoff));
         }
@@ -189,7 +199,10 @@ export class NineRouterGateway implements AiGatewayProvider {
       if (error instanceof ApiError) throw error;
       if (error instanceof z.ZodError) throw error;
       if (error instanceof DOMException && error.name === "AbortError") {
-        throw new Error(`AI request timed out after ${timeout}ms`);
+        const timeoutError = new Error(`AI request timed out after ${timeout}ms`);
+        timeoutError.name = "TimeoutError";
+        Object.assign(timeoutError, { timeoutMs: timeout });
+        throw timeoutError;
       }
       throw error;
     } finally {

@@ -14,6 +14,7 @@ import {
 
 export * from "./schema";
 export * from "./gateway";
+export * from "./failure";
 export * from "./prompts";
 export * from "./env";
 export * from "./public-demo";

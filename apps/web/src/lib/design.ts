@@ -19,8 +19,11 @@ import { getAiGateway } from "./ai-provider";
 import { saveProjectState } from "./local-project";
 import { createServerToolRegistry } from "./server-tools";
 import { AgentRunner } from "@rockfoundry/core";
-import { ApiError } from "@rockfoundry/ai";
-import { z } from "zod";
+import {
+  classifyDesignFailure,
+  formatDesignFailureDiagnostics,
+  safeDesignFailureMessage,
+} from "@rockfoundry/ai";
 
 export class DesignGenerationError extends Error {
   constructor(
@@ -33,52 +36,28 @@ export class DesignGenerationError extends Error {
   }
 }
 
+export function classifyDesignGenerationFailure(error: unknown) {
+  const failure =
+    error instanceof DesignGenerationError
+      ? error
+      : new DesignGenerationError("prototype_generation", error);
+  return classifyDesignFailure(failure.cause, { task: failure.task });
+}
+
 export function logDesignGenerationFailure(error: unknown) {
   const failure =
     error instanceof DesignGenerationError
       ? error
       : new DesignGenerationError("prototype_generation", error);
-  const cause = failure.cause;
-  const category =
-    cause instanceof ApiError
-      ? "provider HTTP"
-      : cause instanceof z.ZodError
-        ? "Zod schema"
-        : failure.task === "prototype_validation"
-          ? "prototype validation"
-          : cause instanceof Error && /timed out/i.test(cause.message)
-            ? "timeout"
-            : cause instanceof Error &&
-                /parse JSON|invalid JSON/i.test(cause.message)
-              ? "JSON parse"
-              : "unknown";
-  const detail =
-    cause instanceof ApiError
-      ? `HTTP ${cause.statusCode}`
-      : cause instanceof Error && /timed out/i.test(cause.message)
-        ? cause.message
-        : undefined;
+  const diagnostics = classifyDesignFailure(failure.cause, { task: failure.task });
   console.error(
-    `[design-generation] ${failure.task} failed: ${category}${detail ? ` (${detail})` : ""}`,
+    `[design-generation] ${formatDesignFailureDiagnostics(diagnostics)}`,
   );
-  if (cause instanceof z.ZodError) {
-    const safeCause = cause as z.ZodError & { topLevelKeys?: string[] };
-    console.error(
-      `[design-generation] issues: ${safeCause.issues
-        .map((issue) => {
-          const path = issue.path.join(".") || "<root>";
-          const expected =
-            "expected" in issue && typeof issue.expected === "string"
-              ? ` (${issue.expected})`
-              : "";
-          return `${path}: ${issue.code}${expected}`;
-        })
-        .join(", ")}`,
-    );
-    console.error(
-      `[design-generation] topLevelKeys: ${(safeCause.topLevelKeys || []).join(",")}`,
-    );
-  }
+  return diagnostics;
+}
+
+export function designGenerationUserMessage(error: unknown) {
+  return safeDesignFailureMessage(classifyDesignGenerationFailure(error));
 }
 
 const ARTIFACT_TYPES = [
@@ -188,16 +167,20 @@ async function generateWithRealProvider(
   } catch (error) {
     throw new DesignGenerationError("prototype_generation", error);
   }
-  return DesignGenerationResultSchema.parse({
-    designSpec: architecture.architecture.designSpec,
-    screenMap,
-    files: prototype.prototype.files,
-    summary: prototype.prototype.summary || architecture.architecture.summary,
-    assumptions: [
-      ...architecture.architecture.assumptions,
-      ...prototype.prototype.assumptions,
-    ],
-  });
+  try {
+    return DesignGenerationResultSchema.parse({
+      designSpec: architecture.architecture.designSpec,
+      screenMap,
+      files: prototype.prototype.files,
+      summary: prototype.prototype.summary || architecture.architecture.summary,
+      assumptions: [
+        ...architecture.architecture.assumptions,
+        ...prototype.prototype.assumptions,
+      ],
+    });
+  } catch (error) {
+    throw new DesignGenerationError("prototype_validation", error);
+  }
 }
 
 export async function generateProjectDesign(
@@ -230,13 +213,18 @@ export async function generateProjectDesign(
   if (settings.mode === "openai-compatible") {
     const gateway = deps.gateway || getAiGateway();
     const files = Object.fromEntries(reviewed.files.map((file) => [file.path, file.content]));
-    const review = await gateway.runDesignQualityReview({
-      productSummary: JSON.stringify({ name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows }),
-      screenMap: reviewed.screenMap,
-      designSpec: reviewed.designSpec,
-      prototype: { html: files["index.html"] || "", css: files["styles.css"] || "", js: files["app.js"] || "" },
-      quality,
-    });
+    let review;
+    try {
+      review = await gateway.runDesignQualityReview({
+        productSummary: JSON.stringify({ name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows }),
+        screenMap: reviewed.screenMap,
+        designSpec: reviewed.designSpec,
+        prototype: { html: files["index.html"] || "", css: files["styles.css"] || "", js: files["app.js"] || "" },
+        quality,
+      });
+    } catch (error) {
+      throw new DesignGenerationError("quality_review", error);
+    }
     qualityReview = {
       verdict: review.verdict,
       score: review.score,

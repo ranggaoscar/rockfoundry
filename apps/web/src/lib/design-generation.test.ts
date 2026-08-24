@@ -144,7 +144,7 @@ describe("generateProjectDesign executable review cases", () => {
     const gateway = realGateway("PASS");
     gateway.runDesignQualityReview.mockRejectedValueOnce(new Error("review unavailable"));
     const injected = realDeps(state, gateway);
-    await expect(generateProjectDesign("design-test", state, 1, undefined, injected)).rejects.toThrow("review unavailable");
+    await expect(generateProjectDesign("design-test", state, 1, undefined, injected)).rejects.toMatchObject({ task: "quality_review" });
     expectNoPersistence(injected);
     expect(gateway.runDesignQualityReview).toHaveBeenCalledTimes(1);
     expect(gateway.runPrototypeRepair).not.toHaveBeenCalled();
