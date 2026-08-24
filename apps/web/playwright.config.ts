@@ -1,4 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const port = Number(process.env.PLAYWRIGHT_PORT || 3100);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`;
@@ -8,6 +11,10 @@ const managedProvider = process.env.PLAYWRIGHT_MANAGED_PROVIDER === "true";
 // Playwright's spawned local server; production runtime never sets it.
 const mockSearch = process.env.PLAYWRIGHT_MOCK_SEARCH !== "false";
 const plannerFailure = process.env.PLAYWRIGHT_PLANNER_FAILURE === "true";
+const isolatedDataDir = process.env.PLAYWRIGHT_BASE_URL
+  ? undefined
+  : fs.mkdtempSync(path.join(os.tmpdir(), "rockfoundry-playwright-"));
+if (isolatedDataDir) process.env.PLAYWRIGHT_ISOLATED_DATA_DIR = isolatedDataDir;
 type PlaywrightEnvironment = Record<string, string | undefined>;
 
 export function resolvePlaywrightProviderEnvironment(
@@ -41,13 +48,25 @@ export function createPlaywrightWebServer(
   const port = Number(env.PLAYWRIGHT_PORT || 3100);
   const publicDemo = env.PLAYWRIGHT_PUBLIC_DEMO === "true";
   const mockSearch = env.PLAYWRIGHT_MOCK_SEARCH !== "false";
+  const parentEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+  delete parentEnv.ROCKFOUNDRY_DATABASE_URL;
+  const dataDir = env.ROCKFOUNDRY_DATA_DIR || isolatedDataDir;
+  const childEnv: Record<string, string> = {
+    ...parentEnv,
+    ...(dataDir ? { ROCKFOUNDRY_DATA_DIR: dataDir } : {}),
+    ...(dataDir ? { ROCKFOUNDRY_EXPORTS_DIR: path.join(dataDir, "exports") } : {}),
+  };
   return {
-    command: `pnpm exec next dev --hostname 127.0.0.1 --port ${port}`,
+    command: `pnpm --filter @rockfoundry/db exec prisma migrate deploy && pnpm exec next dev --hostname 127.0.0.1 --port ${port}`,
     url: env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`,
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
-      ...process.env,
+      ...childEnv,
       ROCKFOUNDRY_PUBLIC_DEMO: publicDemo ? "true" : "false",
       PLAYWRIGHT_MOCK_SEARCH: mockSearch ? "true" : "false",
       ...resolvePlaywrightProviderEnvironment(env),
@@ -68,6 +87,7 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry",
   },
+  globalTeardown: "./playwright/global-teardown.ts",
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : createPlaywrightWebServer(),

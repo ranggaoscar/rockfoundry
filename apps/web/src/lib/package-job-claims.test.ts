@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { PrismaLibSql } = require("@prisma/adapter-libsql") as any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const { PrismaClient } = require("@prisma/client") as any;
-import { claimNextPackageJob, enqueuePackageJob, isPackageJobVersionCurrent, recoverStalePackageJobs } from "./package-job-claims";
+import { claimNextPackageJob, enqueuePackageJob, isPackageJobVersionCurrent, recoverStalePackageJobs, startPackageJobHeartbeat } from "./package-job-claims";
 
  test("worker module import is side-effect free and bootstrap is idempotent", async () => {
   const worker = await import("./package-worker");
@@ -68,6 +68,28 @@ async function closeDb(db: any, dir: string) {
   }
 }
 
+function fakeTimers() {
+  let callback: (() => void | Promise<void>) | undefined;
+  let cleared = false;
+  return {
+    timers: {
+      setInterval(next: () => void | Promise<void>) {
+        callback = next;
+        return "heartbeat";
+      },
+      clearInterval() {
+        cleared = true;
+      },
+    },
+    async tick() {
+      await callback?.();
+    },
+    wasCleared() {
+      return cleared;
+    },
+  };
+}
+
 test("claims a queued job with a DB compare-and-set", async () => {
   const { db, dir } = await tempDb();
   try {
@@ -93,6 +115,63 @@ test("marks stale running jobs failed and leaves fresh jobs alone", async () => 
     assert.equal(result.count, 1);
     assert.equal((await db.packageJob.findUnique({ where: { id: "stale" } }))?.status, "FAILED");
     assert.equal((await db.packageJob.findUnique({ where: { id: "fresh" } }))?.status, "RUNNING");
+  } finally { await closeDb(db, dir); }
+});
+
+test("active heartbeat refresh keeps a long-running job from stale recovery", async () => {
+  const { db, dir } = await tempDb();
+  try {
+    await db.packageJob.create({ data: { id: "heartbeat-active", projectId: "p1", projectVersion: 1, status: "RUNNING", heartbeatAt: new Date(Date.now() - 121_000) } });
+    const fake = fakeTimers();
+    const stop = startPackageJobHeartbeat(db, "heartbeat-active", 15_000, fake.timers);
+    await fake.tick();
+    const refreshed = await db.packageJob.findUnique({ where: { id: "heartbeat-active" } });
+    assert.ok(refreshed?.heartbeatAt && Date.now() - refreshed.heartbeatAt.getTime() < 120_000);
+    assert.equal((await recoverStalePackageJobs(db)).count, 0);
+    assert.equal((await db.packageJob.findUnique({ where: { id: "heartbeat-active" } }))?.status, "RUNNING");
+    stop();
+  } finally { await closeDb(db, dir); }
+});
+
+test("stopped heartbeat allows a dead job to become stale and fail", async () => {
+  const { db, dir } = await tempDb();
+  try {
+    await db.packageJob.create({ data: { id: "heartbeat-stopped", projectId: "p1", projectVersion: 1, status: "RUNNING", heartbeatAt: new Date(Date.now() - 121_000) } });
+    const fake = fakeTimers();
+    const stop = startPackageJobHeartbeat(db, "heartbeat-stopped", 15_000, fake.timers);
+    stop();
+    await fake.tick();
+    assert.equal((await recoverStalePackageJobs(db)).count, 1);
+    assert.equal((await db.packageJob.findUnique({ where: { id: "heartbeat-stopped" } }))?.status, "FAILED");
+  } finally { await closeDb(db, dir); }
+});
+
+test("heartbeat stops after terminal completion or failure", async () => {
+  const { db, dir } = await tempDb();
+  try {
+    for (const [id, status] of [["heartbeat-completed", "COMPLETED"], ["heartbeat-failed", "FAILED"]] as const) {
+      await db.packageJob.create({ data: { id, projectId: "p1", projectVersion: 1, status: "RUNNING", heartbeatAt: new Date() } });
+      const fake = fakeTimers();
+      startPackageJobHeartbeat(db, id, 15_000, fake.timers);
+      await db.packageJob.update({ where: { id }, data: { status } });
+      await fake.tick();
+      assert.equal(fake.wasCleared(), true);
+    }
+  } finally { await closeDb(db, dir); }
+});
+
+test("heartbeat cannot revive a failed job", async () => {
+  const { db, dir } = await tempDb();
+  try {
+    const oldHeartbeat = new Date(Date.now() - 121_000);
+    await db.packageJob.create({ data: { id: "heartbeat-no-revive", projectId: "p1", projectVersion: 1, status: "RUNNING", heartbeatAt: oldHeartbeat } });
+    const fake = fakeTimers();
+    startPackageJobHeartbeat(db, "heartbeat-no-revive", 15_000, fake.timers);
+    await db.packageJob.update({ where: { id: "heartbeat-no-revive" }, data: { status: "FAILED" } });
+    await fake.tick();
+    const failed = await db.packageJob.findUnique({ where: { id: "heartbeat-no-revive" } });
+    assert.equal(failed?.status, "FAILED");
+    assert.equal(failed?.heartbeatAt?.getTime(), oldHeartbeat.getTime());
   } finally { await closeDb(db, dir); }
 });
 

@@ -2,6 +2,7 @@ import { prisma } from "@rockfoundry/db";
 import { generateExport, validateConsistency } from "@rockfoundry/core";
 import { generateProjectDesign } from "./design";
 import { getLocalProject, parseProjectState, saveProjectState } from "./local-project";
+import { startPackageJobHeartbeat } from "./package-job-claims";
 
 export const PACKAGE_STAGES = [
   "PREPARING_PRODUCT",
@@ -92,6 +93,7 @@ export async function runPackageJob(jobId: string, alreadyClaimed = false) {
     prototypeMs: null, qualityReviewMs: null, repairMs: null, totalMs: null,
   };
   const totalStarted = Date.now();
+  const stopHeartbeat = startPackageJobHeartbeat(prisma, jobId);
   try {
     const project = await getLocalProject(job.projectId);
     if (!project || project.version !== job.projectVersion) throw new Error("Project changed after package was queued.");
@@ -134,6 +136,8 @@ export async function runPackageJob(jobId: string, alreadyClaimed = false) {
     await prisma.packageJob.update({ where: { id: jobId }, data: { status: "COMPLETED", stage: "COMPLETED", completedStages: JSON.stringify([...completed, "COMPLETED"]), progress: JSON.stringify({ stageLabel: safeStageDescription("COMPLETED"), timings }), completedAt: new Date(), heartbeatAt: new Date() } });
   } catch (error) {
     await prisma.packageJob.update({ where: { id: jobId }, data: { status: "FAILED", errorSummary: error instanceof Error ? error.message.slice(0, 240) : "Package generation failed.", completedStages: JSON.stringify(completed), heartbeatAt: new Date() } });
+  } finally {
+    stopHeartbeat();
   }
 }
 

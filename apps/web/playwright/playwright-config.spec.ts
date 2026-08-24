@@ -20,7 +20,7 @@ test.describe("Playwright webServer configuration", () => {
       OPENAI_COMPATIBLE_MODEL: "",
     });
     expect(webServer.command).toBe(
-      "pnpm exec next dev --hostname 127.0.0.1 --port 3100",
+      "pnpm --filter @rockfoundry/db exec prisma migrate deploy && pnpm exec next dev --hostname 127.0.0.1 --port 3100",
     );
     expect(webServer.command).not.toContain("cmd.exe");
     expect(webServer.command).not.toContain(" set ");

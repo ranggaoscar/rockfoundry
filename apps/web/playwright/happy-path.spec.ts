@@ -45,6 +45,12 @@ test.describe("Normal user happy path", () => {
 
     await expect(packageButton).toBeVisible({ timeout: 20_000 });
     await packageButton.click();
+    await expect(
+      page.getByRole("region", { name: "Package build status" }),
+    ).toBeVisible({ timeout: 5_000 });
+    await expect(
+      page.getByText(/Paket produk sedang (disiapkan|dibuat)/i),
+    ).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('iframe[title="Product prototype"]')).toBeVisible(
       {
         timeout: 30_000,

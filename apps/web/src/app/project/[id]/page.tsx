@@ -78,6 +78,15 @@ type Activity = {
 type Drawer = "context" | "documents" | "settings" | null;
 type WorkspaceSurface = "discover" | "map" | "design" | "handoff";
 
+const PACKAGE_PROGRESS_STAGES = [
+  ["GENERATING_DOCUMENTS", "Menyusun dokumen"],
+  ["BUILDING_SCREEN_MAP", "Merancang layar aplikasi"],
+  ["DESIGN_ARCHITECTURE", "Menyusun arah desain"],
+  ["PROTOTYPE_GENERATION", "Membuat prototype"],
+  ["QUALITY_REVIEW", "Memeriksa kualitas tampilan"],
+  ["FINALIZING_HANDOFF", "Menyiapkan handoff"],
+] as const;
+
 function isIndonesianProject(state: any) {
   return /\b(saya|mau|ingin|bikin|buat|membuat|dengan|untuk|dan|yang|aplikasi|supaya|agar|pesanan|pembayaran|kasir|warteg)\b/i.test(
     String(state?.rawIdea || state?.normalizedSummary || ""),
@@ -143,6 +152,52 @@ function readinessPlainLabel(state: any) {
   if (status === "Draft only")
     return "Build readiness: good for a draft, not a locked MVP";
   return "Build readiness: too much Decision Debt to build safely";
+}
+
+function PackageBuildStatus({
+  job,
+  onRetry,
+}: {
+  job: {
+    status: string;
+    stage: string;
+    stageLabel: string;
+    completedStages: string[];
+    errorSummary?: string | null;
+  };
+  onRetry: () => void;
+}) {
+  const failed = job.status === "FAILED";
+  const queued = job.status === "QUEUED";
+  return (
+    <section className="mx-auto mt-10 w-full max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-left" aria-label="Package build status">
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+        {failed ? "Pembuatan paket berhenti" : queued ? "Paket produk sedang disiapkan" : "Paket produk sedang dibuat"}
+      </p>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {failed ? job.errorSummary || "Pembuatan paket gagal. Coba lagi." : queued ? "Menunggu worker..." : job.stageLabel}
+      </p>
+      {!failed && (
+        <ol className="mt-4 space-y-2 text-sm" aria-label="Tahapan pembuatan paket">
+          {PACKAGE_PROGRESS_STAGES.map(([stage, label]) => {
+            const complete = job.completedStages.includes(stage);
+            const current = !complete && job.stage === stage;
+            return (
+              <li key={stage} className={complete || current ? "text-foreground" : "text-muted-foreground/70"}>
+                <span className="mr-2 inline-block w-4 text-center" aria-hidden="true">{complete ? "✓" : current ? "●" : "○"}</span>
+                {label}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {failed && (
+        <button className="rf-primary-button mt-4" type="button" onClick={onRetry}>
+          Coba lagi
+        </button>
+      )}
+    </section>
+  );
 }
 
 export default function ProjectWorkspace({
@@ -988,7 +1043,9 @@ export default function ProjectWorkspace({
                     </button>
                   </div>
                 )}
-                {canBuildPackage && !working && (
+                {canBuildPackage && !working && packageJob && ["QUEUED", "RUNNING", "FAILED"].includes(packageJob.status) ? (
+                  <PackageBuildStatus job={packageJob} onRetry={() => void buildProductPackage()} />
+                ) : canBuildPackage && !working && !packageJob ? (
                   <div className="mx-auto mt-10 max-w-md text-center">
                     <p className="text-sm leading-6 text-muted-foreground">
                       {indo
@@ -1003,7 +1060,7 @@ export default function ProjectWorkspace({
                       {indo ? "Buat paket produk" : "Build product package"}
                     </button>
                   </div>
-                )}
+                ) : null}
                 {!question &&
                   !working &&
                   messages.length > 2 &&
