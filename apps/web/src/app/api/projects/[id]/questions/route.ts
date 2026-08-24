@@ -15,6 +15,7 @@ import {
 } from "@/lib/local-project";
 import { persistQuestionMessage, persistUserMessage } from "@/lib/discovery";
 import { mapNaturalAnswer } from "@/lib/conversation";
+import { getPackageEligibility } from "@/lib/package-readiness";
 import { z } from "zod";
 
 const AnswerSchema = z
@@ -66,6 +67,7 @@ export async function GET(
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
     const readiness = evaluateReadinessDirectly(state);
+    const packageEligibility = getPackageEligibility(readiness);
     const engine = new QuestionEngine();
     const reviseTopic = req.nextUrl.searchParams.get("revise");
     const question = reviseTopic
@@ -86,6 +88,7 @@ export async function GET(
         unresolvedTopics: readiness.discovery.unresolvedTopics,
       },
       blockers: readiness.blocking,
+      ...packageEligibility,
       mode: reviseTopic ? "revise" : "answer",
     });
   } catch {
@@ -122,13 +125,20 @@ export async function POST(
       current.discovery.activeQuestionId = revisionQuestion.id;
       const saved = await saveProjectState(id, current, project.version);
       await persistQuestionMessage(id, revisionQuestion);
+      const readiness = evaluateReadinessDirectly(saved.state);
       return Response.json({
         state: saved.state,
         version: saved.version,
         question: revisionQuestion,
         mode: "revise",
-        decisionDebt: saved.state.decisionDebt,
-        discovery: saved.state.discovery,
+        readiness: {
+          level: readiness.level,
+          score: readiness.score,
+          breakdown: readiness.breakdown,
+        },
+        decisionDebt: readiness.decisionDebt,
+        discovery: readiness.discovery,
+        ...getPackageEligibility(readiness),
       });
     }
 
@@ -196,6 +206,8 @@ export async function POST(
       processed.updatedState,
       project.version,
     );
+    const finalReadiness = evaluateReadinessDirectly(saved.state);
+    const packageEligibility = getPackageEligibility(finalReadiness);
 
     await persistUserMessage(id, displayAnswer, {
       questionId: currentQuestion.id,
@@ -209,7 +221,7 @@ export async function POST(
     const nextQuestion: Question | null = deterministicNextQuestion;
     if (nextQuestion) {
       await persistQuestionMessage(id, nextQuestion);
-    } else if (saved.state.discovery.importantDecisionsRemaining === 0) {
+    } else if (packageEligibility.canBuildPackage) {
       await prisma.conversationMessage.create({
         data: {
           projectId: id,
@@ -228,12 +240,13 @@ export async function POST(
       impact: processed.impact,
       question: nextQuestion,
       readiness: {
-        level: saved.state.readiness,
-        score: saved.state.readinessScore,
-        breakdown: saved.state.readinessBreakdown,
+        level: finalReadiness.level,
+        score: finalReadiness.score,
+        breakdown: finalReadiness.breakdown,
       },
-      decisionDebt: saved.state.decisionDebt,
-      discovery: saved.state.discovery,
+      decisionDebt: finalReadiness.decisionDebt,
+      discovery: finalReadiness.discovery,
+      ...packageEligibility,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT")

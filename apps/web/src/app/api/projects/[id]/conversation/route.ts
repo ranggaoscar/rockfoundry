@@ -1,7 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { QuestionEngine, type Question } from "@rockfoundry/core";
+import {
+  evaluateReadinessDirectly,
+  QuestionEngine,
+  type Question,
+} from "@rockfoundry/core";
 import {
   getLocalProject,
   jsonError,
@@ -15,6 +19,7 @@ import {
   runConversationTurn,
 } from "@/lib/conversation";
 import { persistQuestionMessage, persistUserMessage } from "@/lib/discovery";
+import { getPackageEligibility } from "@/lib/package-readiness";
 import { z } from "zod";
 
 const Input = z.object({
@@ -86,6 +91,7 @@ export async function POST(
         : null;
     state.discovery.activeQuestionId = (question as Question | null)?.id;
     const saved = await saveProjectState(id, state, project.version);
+    const readiness = evaluateReadinessDirectly(saved.state);
     if (question) await persistQuestionMessage(id, question);
     if (intent === "HANDOFF_REQUEST")
       await persistConversationMessage(
@@ -108,6 +114,7 @@ export async function POST(
             ? activity.action.toolName
             : undefined,
       })),
+      ...getPackageEligibility(readiness),
     });
   } catch (error) {
     if (error instanceof z.ZodError)

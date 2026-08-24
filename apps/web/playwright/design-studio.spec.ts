@@ -43,7 +43,7 @@ test.describe("Design Studio", () => {
 
     await expect(packageButton).toBeVisible({ timeout: 20_000 });
     await packageButton.click();
-    await expect(page.getByText(/Baseline DesignSpec/i)).toBeVisible({
+    await expect(page.getByText("Baseline DesignSpec", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
     await expect(

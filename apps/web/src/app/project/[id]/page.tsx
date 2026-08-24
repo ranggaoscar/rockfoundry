@@ -77,6 +77,10 @@ type Activity = {
 };
 type Drawer = "context" | "documents" | "settings" | null;
 type WorkspaceSurface = "discover" | "map" | "design" | "handoff";
+type PackageEligibility = {
+  canBuildPackage: boolean;
+  packageBlockers: string[];
+};
 
 const PACKAGE_PROGRESS_STAGES = [
   ["GENERATING_DOCUMENTS", "Menyusun dokumen"],
@@ -168,21 +172,47 @@ function PackageBuildStatus({
   const failed = job.status === "FAILED";
   const queued = job.status === "QUEUED";
   return (
-    <section className="mx-auto mt-10 w-full max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-left" aria-label="Package build status">
+    <section
+      className="mx-auto mt-10 w-full max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-left"
+      aria-label="Package build status"
+    >
       <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        {failed ? "Pembuatan paket berhenti" : queued ? "Paket produk sedang disiapkan" : "Paket produk sedang dibuat"}
+        {failed
+          ? "Pembuatan paket berhenti"
+          : queued
+            ? "Paket produk sedang disiapkan"
+            : "Paket produk sedang dibuat"}
       </p>
       <p className="mt-2 text-sm text-muted-foreground">
-        {failed ? job.errorSummary || "Pembuatan paket gagal. Coba lagi." : queued ? "Menunggu worker..." : job.stageLabel}
+        {failed
+          ? job.errorSummary || "Pembuatan paket gagal. Coba lagi."
+          : queued
+            ? "Menunggu worker..."
+            : job.stageLabel}
       </p>
       {!failed && (
-        <ol className="mt-4 space-y-2 text-sm" aria-label="Tahapan pembuatan paket">
+        <ol
+          className="mt-4 space-y-2 text-sm"
+          aria-label="Tahapan pembuatan paket"
+        >
           {PACKAGE_PROGRESS_STAGES.map(([stage, label]) => {
             const complete = job.completedStages.includes(stage);
             const current = !complete && job.stage === stage;
             return (
-              <li key={stage} className={complete || current ? "text-foreground" : "text-muted-foreground/70"}>
-                <span className="mr-2 inline-block w-4 text-center" aria-hidden="true">{complete ? "✓" : current ? "●" : "○"}</span>
+              <li
+                key={stage}
+                className={
+                  complete || current
+                    ? "text-foreground"
+                    : "text-muted-foreground/70"
+                }
+              >
+                <span
+                  className="mr-2 inline-block w-4 text-center"
+                  aria-hidden="true"
+                >
+                  {complete ? "✓" : current ? "●" : "○"}
+                </span>
                 {label}
               </li>
             );
@@ -190,12 +220,80 @@ function PackageBuildStatus({
         </ol>
       )}
       {failed && (
-        <button className="rf-primary-button mt-4" type="button" onClick={onRetry}>
+        <button
+          className="rf-primary-button mt-4"
+          type="button"
+          onClick={onRetry}
+        >
           Coba lagi
         </button>
       )}
     </section>
   );
+}
+
+function PackageReadyActions({
+  language,
+  onDownload,
+  onProductMap,
+  onPrototype,
+}: {
+  language: "id" | "en";
+  onDownload: () => void;
+  onProductMap: () => void;
+  onPrototype: () => void;
+}) {
+  const indo = language === "id";
+  return (
+    <section
+      className="mx-auto mt-8 w-full max-w-3xl rounded-2xl border border-border/70 bg-card/60 p-5 text-left"
+      aria-label={indo ? "Paket produk siap" : "Product package ready"}
+    >
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
+        {indo ? "PAKET PRODUK SIAP" : "PRODUCT PACKAGE READY"}
+      </p>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        {indo
+          ? "Dokumen dan handoff sudah siap ditinjau. Prototype bersifat opsional."
+          : "The documents and handoff are ready to review. The prototype is optional."}
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          className="rf-primary-button"
+          type="button"
+          onClick={onDownload}
+        >
+          Download Handoff
+        </button>
+        <button
+          className="rf-header-action"
+          type="button"
+          onClick={onProductMap}
+        >
+          {indo ? "Lihat Product Map" : "View Product Map"}
+        </button>
+        <button
+          className="rf-header-action"
+          type="button"
+          onClick={onPrototype}
+        >
+          {indo ? "Buat prototype dengan AI" : "Build prototype with AI"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function packageEligibilityFromResponse(data: any): PackageEligibility | null {
+  if (typeof data?.canBuildPackage !== "boolean") return null;
+  return {
+    canBuildPackage: data.canBuildPackage,
+    packageBlockers: Array.isArray(data.packageBlockers)
+      ? data.packageBlockers.filter(
+          (item: unknown): item is string => typeof item === "string",
+        )
+      : [],
+  };
 }
 
 export default function ProjectWorkspace({
@@ -218,6 +316,10 @@ export default function ProjectWorkspace({
   const [thinkingElapsedSec, setThinkingElapsedSec] = useState(0);
   const [pageError, setPageError] = useState("");
   const [exportReady, setExportReady] = useState(false);
+  const [packageEligibility, setPackageEligibility] =
+    useState<PackageEligibility | null>(null);
+  const [prototypeLaunchRequested, setPrototypeLaunchRequested] =
+    useState(false);
   const [packageJob, setPackageJob] = useState<{
     id: string;
     status: string;
@@ -247,7 +349,9 @@ export default function ProjectWorkspace({
       );
     const data = await response.json();
     setProject(data.project);
-    setExportReady(Boolean(data.project.canonicalState?.studio?.currentVersion > 0));
+    setExportReady(
+      Boolean(data.project.canonicalState?.studio?.currentVersion > 0),
+    );
     setActivity(data.activity || []);
     setMessages(
       data.messages?.length
@@ -308,6 +412,8 @@ export default function ProjectWorkspace({
     if (!response.ok) return;
     const data = await response.json();
     setQuestion(data.questions?.[0] || null);
+    const eligibility = packageEligibilityFromResponse(data);
+    if (eligibility) setPackageEligibility(eligibility);
     if (data.readiness || data.decisionDebt) {
       setProject((current) =>
         current
@@ -382,11 +488,8 @@ export default function ProjectWorkspace({
   const state = project?.canonicalState || {};
   const indo = isIndonesianProject(state);
   const debtScore = decisionDebtScore(state);
-  const canBuildPackage =
-    Boolean(project?.description) &&
-    state.readiness === "BUILD_READY" &&
-    state.discovery?.importantDecisionsRemaining === 0 &&
-    state.decisionDebt?.unresolvedHighRiskCount === 0;
+  const canBuildPackage = packageEligibility?.canBuildPackage === true;
+  const packageBlockers = packageEligibility?.packageBlockers || [];
 
   const visibleMessages = useMemo(() => {
     if (
@@ -453,6 +556,8 @@ export default function ProjectWorkspace({
             }
           : current,
       );
+      const eligibility = packageEligibilityFromResponse(data);
+      if (eligibility) setPackageEligibility(eligibility);
       const nextQuestion = data.question || null;
       setQuestion(nextQuestion);
       if (nextQuestion) {
@@ -529,6 +634,8 @@ export default function ProjectWorkspace({
           ? { ...current, canonicalState: data.state, version: data.version }
           : current,
       );
+      const eligibility = packageEligibilityFromResponse(data);
+      if (eligibility) setPackageEligibility(eligibility);
       const nextQuestion = data.question || null;
       setQuestion(nextQuestion);
       setMessages((current) => [
@@ -582,6 +689,8 @@ export default function ProjectWorkspace({
           ? { ...current, canonicalState: data.state, version: data.version }
           : current,
       );
+      const eligibility = packageEligibilityFromResponse(data);
+      if (eligibility) setPackageEligibility(eligibility);
       const nextQuestion = data.question || null;
       setQuestion(nextQuestion);
       if (nextQuestion) {
@@ -657,6 +766,8 @@ export default function ProjectWorkspace({
           ? { ...current, canonicalState: data.state, version: data.version }
           : current,
       );
+      const eligibility = packageEligibilityFromResponse(data);
+      if (eligibility) setPackageEligibility(eligibility);
       const nextQuestion = data.question || null;
       setQuestion(nextQuestion);
       const affects = Array.isArray(data.decision?.affects)
@@ -776,23 +887,38 @@ export default function ProjectWorkspace({
   }
 
   async function buildProductPackage() {
-    if (!projectId || !project || working || packageJob?.status === "RUNNING") return;
+    if (
+      !projectId ||
+      !project ||
+      working ||
+      ["QUEUED", "RUNNING"].includes(packageJob?.status || "")
+    )
+      return;
     setPageError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/package`, { method: "POST" });
+      const response = await fetch(`/api/projects/${projectId}/package`, {
+        method: "POST",
+      });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "RockFoundry couldn't start the product package.");
+      if (!response.ok)
+        throw new Error(
+          data.error || "RockFoundry couldn't start the product package.",
+        );
       setPackageJob(data.job);
       setDrawer(null);
     } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : "RockFoundry couldn't start the product package.");
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't start the product package.",
+      );
     }
   }
 
   useEffect(() => {
     if (!projectId || packageJob) return;
     void fetch(`/api/projects/${projectId}/package`)
-      .then((response) => response.ok ? response.json() : null)
+      .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (!data?.job) return;
         setPackageJob(data.job);
@@ -805,7 +931,12 @@ export default function ProjectWorkspace({
   }, [packageJob, projectId]);
 
   useEffect(() => {
-    if (!projectId || !packageJob || ["COMPLETED", "FAILED"].includes(packageJob.status)) return;
+    if (
+      !projectId ||
+      !packageJob ||
+      ["COMPLETED", "FAILED"].includes(packageJob.status)
+    )
+      return;
     const poll = window.setInterval(async () => {
       const response = await fetch(`/api/projects/${projectId}/package`);
       if (!response.ok) return;
@@ -816,9 +947,24 @@ export default function ProjectWorkspace({
         await fetchProject(projectId);
         setExportReady(true);
         setSurface("design");
-        setMessages((current) => current.some((message) => message.id === `package-${data.job.id}`) ? current : [...current, { id: `package-${data.job.id}`, role: "assistant", text: "Product package is ready. Review the design, revise it in plain language, then approve and download the handoff." }]);
+        setMessages((current) =>
+          current.some((message) => message.id === `package-${data.job.id}`)
+            ? current
+            : [
+                ...current,
+                {
+                  id: `package-${data.job.id}`,
+                  role: "assistant",
+                  text: "Product package is ready. Review the design, revise it in plain language, then approve and download the handoff.",
+                },
+              ],
+        );
       }
-      if (data.job.status === "FAILED") setPageError(data.job.errorSummary || "Package generation failed. Retry the build.");
+      if (data.job.status === "FAILED")
+        setPageError(
+          data.job.errorSummary ||
+            "Package generation failed. Retry the build.",
+        );
     }, 1000);
     return () => window.clearInterval(poll);
   }, [packageJob, projectId]);
@@ -945,7 +1091,8 @@ export default function ProjectWorkspace({
               ) : (
                 "—"
               )}{" "}
-              · {indo
+              ·{" "}
+              {indo
                 ? `${state.decisionDebt?.unresolvedHighRiskCount || 0} keputusan penting belum selesai`
                 : discoverySummary(state)}
             </button>
@@ -984,26 +1131,51 @@ export default function ProjectWorkspace({
 
         <div className="relative flex min-h-0 flex-1 flex-col">
           {surface === "design" ? (
-            <DesignStudio
-              projectId={project.id}
-              studio={state.studio}
-              packageReady={Boolean(exportReady || packageJob?.status === "COMPLETED")}
-              language={indo ? "id" : "en"}
-              onDownloadHandoff={() =>
-                window.location.assign(`/api/projects/${projectId}/export`)
-              }
-              onState={(nextState, version) =>
-                setProject((current) =>
-                  current
-                    ? {
-                        ...current,
-                        canonicalState: nextState,
-                        version,
-                      }
-                    : current,
-                )
-              }
-            />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {packageJob?.status === "COMPLETED" && (
+                <PackageReadyActions
+                  language={indo ? "id" : "en"}
+                  onDownload={() =>
+                    window.location.assign(`/api/projects/${projectId}/export`)
+                  }
+                  onProductMap={() => {
+                    setSurface("map");
+                    setDrawer("context");
+                  }}
+                  onPrototype={() => {
+                    setPrototypeLaunchRequested(true);
+                    setSurface("design");
+                    setDrawer(null);
+                  }}
+                />
+              )}
+              <DesignStudio
+                projectId={project.id}
+                studio={state.studio}
+                packageReady={Boolean(
+                  exportReady || packageJob?.status === "COMPLETED",
+                )}
+                showDownloadHandoff={packageJob?.status !== "COMPLETED"}
+                showPrototypeAction={packageJob?.status !== "COMPLETED"}
+                autoGenerate={prototypeLaunchRequested}
+                onAutoGenerateHandled={() => setPrototypeLaunchRequested(false)}
+                language={indo ? "id" : "en"}
+                onDownloadHandoff={() =>
+                  window.location.assign(`/api/projects/${projectId}/export`)
+                }
+                onState={(nextState, version) =>
+                  setProject((current) =>
+                    current
+                      ? {
+                          ...current,
+                          canonicalState: nextState,
+                          version,
+                        }
+                      : current,
+                  )
+                }
+              />
+            </div>
           ) : (
             <>
               <div
@@ -1051,14 +1223,49 @@ export default function ProjectWorkspace({
                     </button>
                   </div>
                 )}
-                {canBuildPackage && !working && packageJob && ["QUEUED", "RUNNING", "FAILED"].includes(packageJob.status) ? (
-                  <PackageBuildStatus job={packageJob} onRetry={() => void buildProductPackage()} />
+                {packageJob &&
+                !working &&
+                ["QUEUED", "RUNNING", "FAILED"].includes(packageJob.status) ? (
+                  <PackageBuildStatus
+                    job={packageJob}
+                    onRetry={() => void buildProductPackage()}
+                  />
+                ) : packageJob?.status === "COMPLETED" ? (
+                  <PackageReadyActions
+                    language={indo ? "id" : "en"}
+                    onDownload={() =>
+                      window.location.assign(
+                        `/api/projects/${projectId}/export`,
+                      )
+                    }
+                    onProductMap={() => {
+                      setSurface("map");
+                      setDrawer("context");
+                    }}
+                    onPrototype={() => {
+                      setPrototypeLaunchRequested(true);
+                      setSurface("design");
+                      setDrawer(null);
+                    }}
+                  />
                 ) : canBuildPackage && !working && !packageJob ? (
-                  <div className="mx-auto mt-10 max-w-md text-center">
-                    <p className="text-sm leading-6 text-muted-foreground">
+                  <section
+                    className="mx-auto mt-10 max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-center"
+                    aria-label={
+                      indo
+                        ? "Paket produk siap dibuat"
+                        : "Product package ready to build"
+                    }
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
                       {indo
-                        ? "Keputusan penting sudah siap. Buat paket Product Truth, Screen Map, baseline DesignSpec, dan handoff untuk coding agent."
-                        : "Your key product decisions are ready. Build the Product Truth package, Screen Map, baseline DesignSpec, and coding-agent handoff."}
+                        ? "PAKET PRODUK SIAP DIBUAT"
+                        : "PRODUCT PACKAGE READY TO BUILD"}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {indo
+                        ? "Keputusan penting sudah cukup untuk menyusun dokumen dan handoff."
+                        : "The important decisions are sufficient to assemble the documents and handoff."}
                     </p>
                     <button
                       className="rf-primary-button mt-4"
@@ -1067,16 +1274,43 @@ export default function ProjectWorkspace({
                     >
                       {indo ? "Buat paket produk" : "Build product package"}
                     </button>
-                  </div>
+                  </section>
                 ) : null}
                 {!question &&
                   !working &&
                   messages.length > 2 &&
-                  !canBuildPackage && (
-                    <div className="mx-auto mt-10 max-w-md text-center text-xs text-muted-foreground">
-                      Keep describing the product or answer the remaining
-                      decisions.
-                    </div>
+                  packageEligibility &&
+                  !canBuildPackage &&
+                  !packageJob && (
+                    <section
+                      className="mx-auto mt-10 max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-left"
+                      aria-label={
+                        indo
+                          ? "Paket produk belum siap"
+                          : "Product package blocker"
+                      }
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
+                        {indo
+                          ? "PAKET PRODUK BELUM SIAP"
+                          : "PRODUCT PACKAGE NOT READY"}
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        {indo
+                          ? "Selesaikan blocker berikut sebelum membuat paket produk:"
+                          : "Resolve these blockers before building the product package:"}
+                      </p>
+                      <ul className="mt-3 space-y-2 text-sm leading-5 text-muted-foreground">
+                        {packageBlockers.map((blocker) => (
+                          <li
+                            key={blocker}
+                            className="border-l-2 border-border pl-3"
+                          >
+                            {blocker}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
                   )}
               </div>
 
@@ -1301,7 +1535,9 @@ function MessageRow({
                   <span className="font-medium">{option.label}</span>
                   {message.recommendedOptionId === option.id && (
                     <span className="ml-2 inline-flex rounded-full border border-foreground/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      {language === "id" ? "Rekomendasi Agent" : "Agent recommendation"}
+                      {language === "id"
+                        ? "Rekomendasi Agent"
+                        : "Agent recommendation"}
                     </span>
                   )}
                   {option.description && (
@@ -1832,7 +2068,9 @@ function DocumentsContent({
                 <div>design/prototype/app.js</div>
               </>
             ) : (
-              <div className="pt-1 text-xs">Prototype optional — not included yet.</div>
+              <div className="pt-1 text-xs">
+                Prototype optional — not included yet.
+              </div>
             )}
           </div>
         </section>

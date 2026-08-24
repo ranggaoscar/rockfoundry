@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type Screen = {
   id: string;
@@ -59,6 +66,10 @@ export function DesignStudio({
   language = "en",
   onState,
   onDownloadHandoff,
+  showDownloadHandoff = true,
+  showPrototypeAction = true,
+  autoGenerate = false,
+  onAutoGenerateHandled,
 }: {
   projectId: string;
   studio?: Studio;
@@ -67,6 +78,10 @@ export function DesignStudio({
   language?: "id" | "en";
   onState: (state: unknown, version: number) => void;
   onDownloadHandoff: () => void;
+  showDownloadHandoff?: boolean;
+  showPrototypeAction?: boolean;
+  autoGenerate?: boolean;
+  onAutoGenerateHandled?: () => void;
 }) {
   const [stage, setStage] = useState("");
   const [working, setWorking] = useState(false);
@@ -75,7 +90,8 @@ export function DesignStudio({
   const [viewport, setViewport] = useState<keyof typeof VIEWPORTS>("Desktop");
   const [composer, setComposer] = useState("");
   const [impactNote, setImpactNote] = useState("");
-  const [remotePackageDesign, setRemotePackageDesign] = useState<PackageDesign | null>(null);
+  const [remotePackageDesign, setRemotePackageDesign] =
+    useState<PackageDesign | null>(null);
   const [designJob, setDesignJob] = useState<DesignJob | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [remoteReadiness, setRemoteReadiness] = useState<Studio["readiness"]>();
@@ -84,7 +100,8 @@ export function DesignStudio({
   const baseline = remotePackageDesign || packageDesign || null;
   const hasDesign = Boolean(studio && studio.currentVersion > 0);
   const effectivePackageReady = packageReady || Boolean(baseline) || hasDesign;
-  const designBusy = working || ["QUEUED", "RUNNING"].includes(designJob?.status || "");
+  const designBusy =
+    working || ["QUEUED", "RUNNING"].includes(designJob?.status || "");
 
   useEffect(() => {
     let cancelled = false;
@@ -105,7 +122,9 @@ export function DesignStudio({
   useEffect(() => {
     if (!designJob || !["QUEUED", "RUNNING"].includes(designJob.status)) return;
     const poll = window.setInterval(async () => {
-      const response = await fetch(`/api/projects/${projectId}/design/generate`);
+      const response = await fetch(
+        `/api/projects/${projectId}/design/generate`,
+      );
       if (!response.ok) return;
       const data = await response.json();
       if (!data.job) return;
@@ -116,8 +135,15 @@ export function DesignStudio({
         if (!snapshot.ok) return;
         const next = await snapshot.json();
         if (next.packageDesign) setRemotePackageDesign(next.packageDesign);
-        if (next.state && typeof next.version === "number") onState(next.state, next.version);
-        if (data.job.status === "FAILED") setError(data.job.errorSummary || (language === "id" ? "Prototype belum berhasil dibuat." : "Prototype could not be created yet."));
+        if (next.state && typeof next.version === "number")
+          onState(next.state, next.version);
+        if (data.job.status === "FAILED")
+          setError(
+            data.job.errorSummary ||
+              (language === "id"
+                ? "Prototype belum berhasil dibuat."
+                : "Prototype could not be created yet."),
+          );
       }
     }, 1000);
     return () => window.clearInterval(poll);
@@ -134,10 +160,14 @@ export function DesignStudio({
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  async function generate() {
+  const generate = useCallback(async () => {
     setWorking(true);
     setError("");
-    setStage(language === "id" ? "Menyiapkan prototype dengan AI..." : "Preparing AI prototype...");
+    setStage(
+      language === "id"
+        ? "Menyiapkan prototype dengan AI..."
+        : "Preparing AI prototype...",
+    );
     try {
       const response = await fetch(
         `/api/projects/${projectId}/design/generate`,
@@ -154,7 +184,21 @@ export function DesignStudio({
     } finally {
       setWorking(false);
     }
-  }
+  }, [language, projectId]);
+
+  useEffect(() => {
+    if (!autoGenerate || !effectivePackageReady || designBusy) return;
+    const timer = window.setTimeout(() => {
+      void generate().finally(() => onAutoGenerateHandled?.());
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    autoGenerate,
+    designBusy,
+    effectivePackageReady,
+    generate,
+    onAutoGenerateHandled,
+  ]);
 
   async function send(text: string) {
     if (!text.trim() || working) return;
@@ -333,19 +377,23 @@ export function DesignStudio({
                 assumptions.
               </p>
             )}
-            <button
-              type="button"
-              className="rf-studio-primary"
-              disabled={!effectivePackageReady || designBusy}
-              onClick={() => void generate()}
-            >
-              {prototypeActionLabel}
-            </button>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {language === "id"
-                ? "Opsional — buat referensi visual interaktif berdasarkan Product Truth dan Screen Map."
-                : "Optional — create an interactive visual reference based on Product Truth and the Screen Map."}
-            </p>
+            {showPrototypeAction && (
+              <>
+                <button
+                  type="button"
+                  className="rf-studio-primary"
+                  disabled={!effectivePackageReady || designBusy}
+                  onClick={() => void generate()}
+                >
+                  {prototypeActionLabel}
+                </button>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {language === "id"
+                    ? "Opsional — buat referensi visual interaktif berdasarkan Product Truth dan Screen Map."
+                    : "Optional — create an interactive visual reference based on Product Truth and the Screen Map."}
+                </p>
+              </>
+            )}
             {designJob && ["QUEUED", "RUNNING"].includes(designJob.status) && (
               <p role="status">{designJob.stageLabel}</p>
             )}
@@ -411,7 +459,7 @@ export function DesignStudio({
             >
               Approve Design
             </button>
-            {effectivePackageReady && (
+            {effectivePackageReady && showDownloadHandoff && (
               <button type="button" onClick={onDownloadHandoff}>
                 Download Handoff
               </button>
