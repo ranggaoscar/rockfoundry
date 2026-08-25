@@ -171,40 +171,10 @@ export function normalizeConversationText(value: string): string {
 }
 
 
-/**
- * A small, typed normalization map for canonical terms that intentionally
- * summarize a grounded domain phrase rather than repeat it literally.
- */
-const SEMANTIC_NORMALIZATIONS: Record<string, string[]> = {
-  "features.booking becak online": ["mirip gojek"],
-  "objectives.booking perjalanan": ["mirip gojek"],
-  "roles.driver becak": ["driver nya", "driver", "pengemudi becak"],
-  "workflows.penumpang booking perjalanan": ["booking perjalanan"],
-  "workflows.order ditawarkan ke beberapa driver online": [
-    "kebeberapa driver yg online, dan siapa yg mau menerima",
-  ],
-  "decision.service_area.satu kota dulu": ["satu kota dulu"],
-  "decision.dispatch_strategy.order ditawarkan ke beberapa driver online": [
-    "kebeberapa driver yg online, dan siapa yg mau menerima",
-  ],
-};
 
 
-function isSemanticallySupportedValue(
-  path: string,
-  value: string,
-  evidence: string,
-) {
-  const normalizedValue = normalizeConversationText(value);
-  const normalizedEvidence = normalizeConversationText(evidence);
-  if (!normalizedValue || !normalizedEvidence) return false;
-  if (normalizedEvidence.includes(normalizedValue)) return true;
-  return Boolean(
-    SEMANTIC_NORMALIZATIONS[`${path}.${normalizedValue}`]?.some(
-      (phrase) => normalizeConversationText(phrase) === normalizedEvidence,
-    ),
-  );
-
+function isAllowedCanonicalPath(path: string) {
+  return ARRAY_FACT_PATHS.has(path) || path === "normalizedSummary" || path === "productType";
 }
 
 /** Evidence must be a source span after harmless Unicode/whitespace punctuation normalization. */
@@ -221,68 +191,67 @@ export function isGroundedConversationEvidence(
   );
 }
 
-function isGroundedConversationValue(
+function canonicalValueFromEvidence(
   path: string,
   value: string,
   evidence: string,
-) {
-  const normalizedValue = normalizeConversationText(value);
-  return (
-    normalizedValue.length >= 3 &&
-    /[\p{L}\p{N}]/u.test(normalizedValue) &&
-    isSemanticallySupportedValue(path, value, evidence)
-  );
-}
-
-function isGroundedConversationDecision(
-  topic: string,
-  decision: string,
-  evidence: string,
   latestUserMessage: string,
 ) {
-  const topicKey = normalizeConversationText(topic.replace(/[_-]+/g, " ")).replace(/ /g, "_");
-  if (!isSemanticallySupportedValue(`decision.${topicKey}`, decision, evidence)) return false;
-  const normalizedTopic = normalizeConversationText(topic.replace(/[_-]+/g, " "));
-  const topicIsIdentifier = /^[\p{L}\p{N}]+(?:[_-][\p{L}\p{N}]+)+$/u.test(topic.trim());
-  return (
-    topicIsIdentifier ||
-    (normalizedTopic.length >= 3 &&
-      normalizeConversationText(latestUserMessage).includes(normalizedTopic))
-  );
+  if (!isAllowedCanonicalPath(path)) return null;
+  if (!isGroundedConversationEvidence(evidence, latestUserMessage)) return null;
+  const normalizedValue = normalizeConversationText(value);
+  const normalizedEvidence = normalizeConversationText(evidence);
+  if (normalizedValue.length < 3 || !/[\p{L}\p{N}]/u.test(normalizedValue)) return null;
+  return normalizedEvidence.includes(normalizedValue) ? value : evidence;
 }
 
-function isGroundedExplicitFact(
+function groundedExplicitFact(
   item: ConversationExplicitFact,
   latestUserMessage: string,
 ) {
-  return (
-    isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
-    isGroundedConversationValue(item.path, item.value, item.evidence)
+  const value = canonicalValueFromEvidence(
+    item.path,
+    item.value,
+    item.evidence,
+    latestUserMessage,
   );
+  return value ? { ...item, value } : null;
 }
 
-function isGroundedCorrection(
+function groundedCorrection(
   item: ConversationCorrection,
   latestUserMessage: string,
 ) {
-  const normalizedLatest = normalizeConversationText(latestUserMessage);
-  return (
-    isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
-    isGroundedConversationValue(item.path, item.value, item.evidence) &&
-    (!item.replaces || normalizedLatest.includes(normalizeConversationText(item.replaces)))
+  const value = canonicalValueFromEvidence(
+    item.path,
+    item.value,
+    item.evidence,
+    latestUserMessage,
   );
+  const replaces = item.replaces && normalizeConversationText(item.replaces);
+  const latest = normalizeConversationText(latestUserMessage);
+  if (!value || !replaces || !latest.includes(replaces)) return null;
+  return { ...item, value };
 }
 
-function isGroundedConfirmedDecision(
+function groundedConfirmedDecision(
   item: ConversationConfirmedDecision,
   latestUserMessage: string,
 ) {
-  return (
-    isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
-    isGroundedConversationDecision(item.topic, item.decision, item.evidence, latestUserMessage)
-  );
+  if (!isGroundedConversationEvidence(item.evidence, latestUserMessage)) return null;
+  const normalizedTopic = normalizeConversationText(item.topic.replace(/[_-]+/g, " "));
+  const normalizedLatest = normalizeConversationText(latestUserMessage);
+  const topicInMessage = normalizedTopic.length >= 3 && normalizedLatest.includes(normalizedTopic);
+  const traceableAffect = item.affects.some((path) => isAllowedCanonicalPath(path));
+  if (!topicInMessage && !traceableAffect) return null;
+  const normalizedDecision = normalizeConversationText(item.decision);
+  const normalizedEvidence = normalizeConversationText(item.evidence);
+  if (normalizedDecision.length < 3 || !/[\p{L}\p{N}]/u.test(normalizedDecision)) return null;
+  return {
+    ...item,
+    decision: normalizedEvidence.includes(normalizedDecision) ? item.decision : item.evidence,
+  };
 }
-
 
 /** Keep canonical deltas grounded and allow at most one contextual ask. */
 export function groundConversationResponse(
@@ -293,15 +262,18 @@ export function groundConversationResponse(
   return {
     ...response,
     stateDelta: {
-      explicitFacts: response.stateDelta.explicitFacts.filter((item) =>
-        isGroundedExplicitFact(item, latestUserMessage),
-      ),
-      confirmedDecisions: response.stateDelta.confirmedDecisions.filter((item) =>
-        isGroundedConfirmedDecision(item, latestUserMessage),
-      ),
-      corrections: response.stateDelta.corrections.filter((item) =>
-        isGroundedCorrection(item, latestUserMessage),
-      ),
+      explicitFacts: response.stateDelta.explicitFacts.flatMap((item) => {
+        const grounded = groundedExplicitFact(item, latestUserMessage);
+        return grounded ? [grounded] : [];
+      }),
+      confirmedDecisions: response.stateDelta.confirmedDecisions.flatMap((item) => {
+        const grounded = groundedConfirmedDecision(item, latestUserMessage);
+        return grounded ? [grounded] : [];
+      }),
+      corrections: response.stateDelta.corrections.flatMap((item) => {
+        const grounded = groundedCorrection(item, latestUserMessage);
+        return grounded ? [grounded] : [];
+      }),
       resolvedQuestions: response.stateDelta.resolvedQuestions.filter((item) =>
         isGroundedConversationEvidence(item.evidence, latestUserMessage),
       ),
@@ -492,6 +464,9 @@ export function applyConversationResponse(
     applyExplicitFact(state, fact);
   }
   for (const correction of response.stateDelta.corrections) {
+    if (!correction.replaces) continue;
+    const values = arrayField(state, correction.path);
+    if (!values || !values.includes(correction.replaces)) continue;
     applyCorrection(state, correction);
   }
   for (const decision of response.stateDelta.confirmedDecisions) {
