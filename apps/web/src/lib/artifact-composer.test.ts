@@ -6,7 +6,9 @@ vi.mock("./ai-provider", () => ({
 
 import {
   artifactComposerErrorPayload,
+  formatComposedDocument,
   publicDraftArtifact,
+  selectLatestCompleteDraftGeneration,
   selectLatestLegacyDraftArtifacts,
 } from "./artifact-composer";
 
@@ -19,6 +21,34 @@ describe("Artifact Composer error boundary", () => {
     expect(JSON.stringify(payload)).not.toContain("Prisma");
     expect(JSON.stringify(payload)).not.toContain("secret");
     expect(JSON.stringify(payload)).not.toContain("invalid JSON");
+  });
+});
+
+describe("Product Draft formatter compatibility", () => {
+  it("keeps the truth ledger headings and per-item labels", () => {
+    const content = formatComposedDocument({
+      title: "Screen Map",
+      summary: "Useful draft",
+      sections: [
+        {
+          id: "overview",
+          title: "Overview",
+          paragraphs: ["A grounded summary."],
+          items: [
+            { id: "confirmed", text: "Owner", label: "CONFIRMED", evidenceIds: [] },
+            { id: "proposal", text: "Orders screen", label: "PROPOSAL", evidenceIds: [] },
+            { id: "question", text: "Delivery?", label: "OPEN_QUESTION", evidenceIds: [] },
+          ],
+        },
+      ],
+    });
+    expect(content).toContain("## TRUTH LEDGER");
+    expect(content).toContain("## CONFIRMED");
+    expect(content).toContain("## ASSUMPTIONS / PROPOSALS");
+    expect(content).toContain("## OPEN QUESTIONS");
+    expect(content).toContain("**CONFIRMED** Owner");
+    expect(content).toContain("**PROPOSAL** Orders screen");
+    expect(content).toContain("**OPEN_QUESTION** Delivery?");
   });
 });
 
@@ -52,12 +82,33 @@ describe("legacy Product Draft accessor coherence", () => {
   }));
 
   it("rejects mixed legacy versions and selects a coherent set", () => {
-    const mixed = [
-      ...rows(1).slice(0, 3),
-      ...rows(2).slice(3),
-    ];
+    const mixed = [...rows(1).slice(0, 3), ...rows(2).slice(3)];
     expect(selectLatestLegacyDraftArtifacts(mixed)).toBeNull();
     const selected = selectLatestLegacyDraftArtifacts(rows(2));
     expect(selected?.every((row) => row.version === 2)).toBe(true);
   });
 });
+
+describe("draft generation selection across canonical versions", () => {
+  it("keeps the latest complete stale generation visible", () => {
+    const artifact = (type: string) => ({
+      id: type,
+      type,
+      status: "READY",
+      content: type,
+      version: 1,
+      canonicalVersion: 5,
+      generatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    const complete = typesForTest().map(artifact);
+    const generations = [
+      { id: "g1", canonicalVersion: 4, generationNumber: 1, status: "COMPLETE", artifacts: complete },
+      { id: "g2", canonicalVersion: 5, generationNumber: 2, status: "COMPLETE", artifacts: complete },
+    ];
+    expect(selectLatestCompleteDraftGeneration(generations, 6)?.id).toBe("g2");
+  });
+});
+
+function typesForTest() {
+  return ["BRD", "PRD", "ERD", "USER_FLOWS", "SCREEN_MAP", "DESIGN_BRIEF"];
+}

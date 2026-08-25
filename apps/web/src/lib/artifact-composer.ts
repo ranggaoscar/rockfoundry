@@ -81,12 +81,17 @@ function formatItem(item: ArtifactComposerItem) {
 
 function formatLedger(document: ArtifactComposerDocument) {
   const items = document.sections.flatMap((section) => section.items);
-  return (["CONFIRMED", "ASSUMPTION", "PROPOSAL", "OPEN_QUESTION"] as const)
-    .map((label) => {
-      const matching = items.filter((item) => item.label === label);
-      return `### ${label}\n\n${matching.length ? matching.map(formatItem).join("\n") : "- None recorded."}`;
-    })
-    .join("\n\n");
+  const matching = (label: ArtifactComposerItem["label"]) =>
+    items.filter((item) => item.label === label);
+  const lines = (label: ArtifactComposerItem["label"]) => {
+    const values = matching(label);
+    return values.length ? values.map(formatItem).join("\n") : "- None recorded.";
+  };
+  return [
+    `## CONFIRMED\n\n${lines("CONFIRMED")}`,
+    `## ASSUMPTIONS / PROPOSALS\n\n### ASSUMPTION\n\n${lines("ASSUMPTION")}\n\n### PROPOSAL\n\n${lines("PROPOSAL")}`,
+    `## OPEN QUESTIONS\n\n${lines("OPEN_QUESTION")}`,
+  ].join("\n\n");
 }
 
 export function formatComposedDocument(document: ArtifactComposerDocument) {
@@ -222,6 +227,34 @@ export async function composeDraftArtifacts(
   return { ...generation, documents, consistency, input };
 }
 
+type DraftGenerationWithArtifacts = {
+  id: string;
+  canonicalVersion: number;
+  generationNumber: number;
+  status: string;
+  artifacts: DraftArtifactRow[];
+};
+
+export function selectLatestCompleteDraftGeneration<T extends DraftGenerationWithArtifacts>(
+  generations: T[],
+  currentCanonicalVersion: number,
+): T | null {
+  const complete = generations.filter(
+    (generation) =>
+      generation.status === "COMPLETE" &&
+      generation.canonicalVersion <= currentCanonicalVersion &&
+      DRAFT_ARTIFACT_TYPES.every((type) =>
+        generation.artifacts.some((artifact) => artifact.type === type),
+      ),
+  );
+  complete.sort((left, right) => {
+    const leftCurrent = left.canonicalVersion === currentCanonicalVersion ? 1 : 0;
+    const rightCurrent = right.canonicalVersion === currentCanonicalVersion ? 1 : 0;
+    return rightCurrent - leftCurrent || right.generationNumber - left.generationNumber;
+  });
+  return complete[0] || null;
+}
+
 export function selectLatestLegacyDraftArtifacts(
   artifacts: DraftArtifactRow[],
 ): DraftArtifactRow[] | null {
@@ -231,19 +264,20 @@ export function selectLatestLegacyDraftArtifacts(
 }
 
 export async function latestDraftArtifacts(projectId: string, canonicalVersion: number) {
-  const generation = await prisma.draftGeneration.findFirst({
-    where: { projectId, canonicalVersion, status: "COMPLETE" },
+  const generations = await prisma.draftGeneration.findMany({
+    where: {
+      projectId,
+      status: "COMPLETE",
+      canonicalVersion: { lte: canonicalVersion },
+    },
     orderBy: { generationNumber: "desc" },
     include: { artifacts: true },
   });
-  if (generation) {
-    const artifacts = DRAFT_ARTIFACT_TYPES.flatMap((type) => {
-      const artifact = generation.artifacts.find((item) => item.type === type);
-      return artifact ? [artifact] : [];
-    });
-    if (artifacts.length === DRAFT_ARTIFACT_TYPES.length)
-      return { generation, artifacts };
-  }
+  const generation = selectLatestCompleteDraftGeneration(
+    generations,
+    canonicalVersion,
+  );
+  if (generation) return { generation, artifacts: generation.artifacts };
   const legacy = await prisma.artifact.findMany({
     where: {
       projectId,
