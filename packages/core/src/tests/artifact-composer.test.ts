@@ -133,4 +133,43 @@ describe("Artifact Composer normalization", () => {
     ]);
     expect(output.DESIGN_BRIEF.sections[0].items[0].label).toBe("ASSUMPTION");
   });
+  it("normalizes Luna document wrappers and markdown content independently", () => {
+    const input = buildArtifactComposerInput(sparseState());
+    const valid = outputWith({ label: "PROPOSAL", evidenceIds: [] });
+    const output = normalizeArtifactComposerOutput(
+      {
+        documents: {
+          BRD: { document: valid.BRD },
+          PRD: { content: "# Product Requirements\n\nA focused product draft.\n\n## Scope\n\n- Keep the first workflow small." },
+          ERD: valid.ERD,
+          USER_FLOWS: { artifact: valid.USER_FLOWS },
+          SCREEN_MAP: valid.SCREEN_MAP,
+          DESIGN_BRIEF: { data: valid.DESIGN_BRIEF },
+        },
+      },
+      input,
+    );
+
+    expect(output.BRD.title).toBe("Draft");
+    expect(output.PRD.title).toBe("Product Requirements");
+    expect(output.PRD.sections[0].paragraphs[0]).toContain("focused product draft");
+    expect(output.PRD.sections.flatMap((section) => [...section.paragraphs, ...section.items.map((item) => item.text)]).join(" ")).toContain("Keep the first workflow small");
+    expect(output.USER_FLOWS.title).toBe("Draft");
+  });
+
+  it("keeps five valid documents when one Luna document is malformed", () => {
+    const input = buildArtifactComposerInput(sparseState());
+    const valid = outputWith({ label: "PROPOSAL", evidenceIds: [] });
+    const output = normalizeArtifactComposerOutput(
+      { ...valid, DESIGN_BRIEF: { title: "", sections: null } },
+      input,
+    );
+
+    expect(output.BRD.title).toBe("Draft");
+    expect(output.PRD.summary).toBe("A useful draft summary.");
+    expect(output.ERD.sections).toHaveLength(1);
+    expect(output.USER_FLOWS.sections).toHaveLength(1);
+    expect(output.SCREEN_MAP.sections).toHaveLength(1);
+    expect(output.DESIGN_BRIEF.sections[0].items[0].label).toBe("OPEN_QUESTION");
+  });
 });

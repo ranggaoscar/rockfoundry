@@ -257,12 +257,211 @@ export function buildArtifactComposerInput(
   });
 }
 
+function documentFallback(type: string, details?: string): ArtifactComposerDocument {
+  const title = type.replace(/_/g, " ");
+  const text = details || `${title} needs review before it can be treated as complete.`;
+  return {
+    title,
+    summary: text,
+    sections: [
+      {
+        id: "review",
+        title: "Review required",
+        paragraphs: [],
+        items: [
+          {
+            id: "review-required",
+            text,
+            label: "OPEN_QUESTION",
+            evidenceIds: [],
+            rationale: "The provider response was incomplete or malformed; no claims were confirmed.",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function markdownDocument(value: string, fallbackTitle: string): ArtifactComposerDocument | null {
+  const lines = value
+    .replace(/```(?:markdown|md)?/gi, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line, index, all) => line || (index > 0 && all[index - 1]));
+  if (!lines.some((line) => line)) return null;
+
+  const titleLine = lines.find((line) => /^#\s+/.test(line));
+  const title = titleLine?.replace(/^#\s+/, "").trim() || fallbackTitle;
+  const contentLines = titleLine ? lines.slice(lines.indexOf(titleLine) + 1) : lines;
+  const sections: ArtifactComposerSection[] = [];
+  let current: ArtifactComposerSection = {
+    id: "overview",
+    title: "Overview",
+    paragraphs: [],
+    items: [],
+  };
+  const flush = () => {
+    if (current.paragraphs.length || current.items.length || !sections.length) {
+      sections.push(current);
+    }
+  };
+  for (const line of contentLines) {
+    const heading = line.match(/^##\s+(.+)$/);
+    if (heading) {
+      flush();
+      current = {
+        id: heading[1].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "section",
+        title: heading[1].trim(),
+        paragraphs: [],
+        items: [],
+      };
+      continue;
+    }
+    const bullet = line.match(/^[-*+]\s+(.+)$/);
+    if (bullet) {
+      const raw = bullet[1].trim();
+      const labelMatch = raw.match(/^\*\*(ASSUMPTION|PROPOSAL|OPEN_QUESTION|CONFIRMED)\*\*\s*(.*)$/i);
+      const requestedLabel = labelMatch?.[1]?.toUpperCase();
+      const label: ArtifactComposerLabel =
+        requestedLabel === "ASSUMPTION" || requestedLabel === "OPEN_QUESTION"
+          ? requestedLabel
+          : "PROPOSAL";
+      const text = (labelMatch?.[2] || raw).trim();
+      if (text) {
+        current.items.push({
+          id: `item-${current.items.length + 1}`,
+          text,
+          label,
+          evidenceIds: [],
+        });
+      }
+      continue;
+    }
+    if (line && !/^#{1,6}\s+/.test(line)) current.paragraphs.push(line);
+  }
+  flush();
+  const summary = sections[0]?.paragraphs[0] || `Draft ${title} for review.`;
+  const bodyText = contentLines
+    .filter((line) => line && !/^#{1,6}\s+/.test(line))
+    .join(" ");
+  if (bodyText && sections.length && !sections.flatMap((section) => section.paragraphs).join(" ").includes(bodyText)) {
+    sections[0].paragraphs.push(bodyText);
+  }
+  return {
+    title,
+    summary,
+    sections: sections.length ? sections : [{ id: "overview", title: "Overview", paragraphs: [summary], items: [] }],
+  };
+}
+
+function structuredDocument(value: Record<string, unknown>, type: string): ArtifactComposerDocument {
+  const title = typeof value.title === "string" && value.title.trim()
+    ? value.title.trim()
+    : type.replace(/_/g, " ");
+  const rawSections = Array.isArray(value.sections) ? value.sections : [];
+  if (!title.trim() || (!rawSections.length && typeof value.summary !== "string")) {
+    return documentFallback(type);
+  }
+  const sections = rawSections.flatMap((rawSection, sectionIndex) => {
+    if (!rawSection || typeof rawSection !== "object" || Array.isArray(rawSection)) return [];
+    const section = rawSection as Record<string, unknown>;
+    const rawItems = Array.isArray(section.items) ? section.items : [];
+    const items = rawItems.flatMap((rawItem, itemIndex) => {
+      const parsed = ArtifactComposerItemSchema.safeParse(rawItem);
+      if (parsed.success) return [parsed.data];
+      if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) return [];
+      const item = rawItem as Record<string, unknown>;
+      if (typeof item.text !== "string" || !item.text.trim()) return [];
+      const label = ArtifactComposerLabelSchema.safeParse(item.label);
+      return [{
+        id: typeof item.id === "string" && item.id ? item.id : `item-${itemIndex + 1}`,
+        text: item.text.trim(),
+        label: label.success && label.data !== "CONFIRMED" ? label.data : "PROPOSAL",
+        evidenceIds: Array.isArray(item.evidenceIds) ? item.evidenceIds.filter((id): id is string => typeof id === "string") : [],
+        ...(typeof item.rationale === "string" ? { rationale: item.rationale } : {}),
+      } satisfies ArtifactComposerItem];
+    });
+    const paragraphs = Array.isArray(section.paragraphs)
+      ? section.paragraphs.filter((paragraph): paragraph is string => typeof paragraph === "string" && paragraph.trim().length > 0)
+      : [];
+    return [{
+      id: typeof section.id === "string" && section.id ? section.id : `section-${sectionIndex + 1}`,
+      title: typeof section.title === "string" && section.title ? section.title : "Overview",
+      paragraphs,
+      items,
+    } satisfies ArtifactComposerSection];
+  });
+  const summary = typeof value.summary === "string" && value.summary.trim()
+    ? value.summary.trim()
+    : sections[0]?.paragraphs[0] || `Draft ${title} for review.`;
+  return {
+    title,
+    summary,
+    sections: sections.length ? sections : [{ id: "overview", title: "Overview", paragraphs: [summary], items: [] }],
+  };
+}
+
+function unwrapDocument(value: unknown, depth = 0): unknown {
+  if (depth > 4 || value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  for (const key of ["document", "artifact", "data", "result", "value", "output"]) {
+    if (key in record) return unwrapDocument(record[key], depth + 1);
+  }
+  if (typeof record.content === "string") return record.content;
+  return value;
+}
+
+function normalizeDocument(value: unknown, type: string): ArtifactComposerDocument {
+  const unwrapped = unwrapDocument(value);
+  if (typeof unwrapped === "string") {
+    let parsed: unknown = unwrapped;
+    try {
+      parsed = JSON.parse(unwrapped);
+    } catch {
+      return markdownDocument(unwrapped, type.replace(/_/g, " ")) || documentFallback(type);
+    }
+    return normalizeDocument(parsed, type);
+  }
+  if (unwrapped && typeof unwrapped === "object" && !Array.isArray(unwrapped)) {
+    return structuredDocument(unwrapped as Record<string, unknown>, type);
+  }
+  return documentFallback(type);
+}
+
+/** Normalize provider-specific wrappers and content without coupling document validity. */
+export function normalizeArtifactComposerOutputShape(output: unknown): ArtifactComposerOutput {
+  let source: unknown = output;
+  for (let depth = 0; depth < 4; depth++) {
+    if (!source || typeof source !== "object" || Array.isArray(source)) break;
+    const record = source as Record<string, unknown>;
+    const nested = ["documents", "artifacts", "output", "data", "result"].find(
+      (key) => record[key] && typeof record[key] === "object" && !Array.isArray(record[key]),
+    );
+    if (!nested) break;
+    source = record[nested];
+  }
+  const record = source && typeof source === "object" && !Array.isArray(source)
+    ? source as Record<string, unknown>
+    : {};
+  const entries = Array.isArray(record.documents) ? record.documents : [];
+  const fromArray = Object.fromEntries(
+    entries.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const item = entry as Record<string, unknown>;
+      return typeof item.type === "string" ? [[item.type, item.document ?? item.content ?? item.data]] : [];
+    }),
+  );
+  const docs = { ...fromArray, ...record } as Record<string, unknown>;
+  const types = ["BRD", "PRD", "ERD", "USER_FLOWS", "SCREEN_MAP", "DESIGN_BRIEF"] as const;
+  return Object.fromEntries(types.map((type) => [type, normalizeDocument(docs[type], type)])) as ArtifactComposerOutput;
+}
+
 /** Keep model output structured while preventing unsupported claims from becoming facts. */
 export function normalizeArtifactComposerOutput(
   output: unknown,
   input: ArtifactComposerInput,
 ): ArtifactComposerOutput {
-  const parsed = ArtifactComposerOutputSchema.parse(output);
+  const parsed = normalizeArtifactComposerOutputShape(output);
   const normalizeItem = (item: ArtifactComposerItem): ArtifactComposerItem => {
     if (item.label !== "CONFIRMED") return item;
     const supportedFacts = item.evidenceIds
@@ -275,10 +474,7 @@ export function normalizeArtifactComposerOutput(
         item.text.toLocaleLowerCase().includes(fact.value.toLocaleLowerCase()),
     );
     if (grounded) {
-      return {
-        ...item,
-        evidenceIds: supportedFacts.map((fact) => fact.id),
-      };
+      return { ...item, evidenceIds: supportedFacts.map((fact) => fact.id) };
     }
     const reason =
       "Downgraded to PROPOSAL: the claim text is not supported by explicit user canonical evidence.";
@@ -289,9 +485,8 @@ export function normalizeArtifactComposerOutput(
       rationale: item.rationale ? `${item.rationale} ${reason}` : reason,
     };
   };
-  return ArtifactComposerOutputSchema.parse({
-    ...parsed,
-    ...Object.fromEntries(
+  return ArtifactComposerOutputSchema.parse(
+    Object.fromEntries(
       Object.entries(parsed).map(([type, document]) => [
         type,
         {
@@ -303,5 +498,5 @@ export function normalizeArtifactComposerOutput(
         },
       ]),
     ),
-  });
+  );
 }

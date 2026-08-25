@@ -1,16 +1,113 @@
 import { describe, expect, it, vi } from "vitest";
 
+const { aiGateway, prismaMock, transactionMock } = vi.hoisted(() => {
+  const createdArtifacts: Array<Record<string, unknown>> = [];
+  const transactionMock = {
+    draftGeneration: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: "generation-1",
+        ...data,
+      })),
+    },
+    artifact: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+        const artifact = {
+          id: `artifact-${createdArtifacts.length + 1}`,
+          generatedAt: new Date("2026-08-26T00:00:00.000Z"),
+          ...data,
+        };
+        createdArtifacts.push(artifact);
+        return artifact;
+      }),
+    },
+  };
+  return {
+    aiGateway: { runArtifactComposer: vi.fn() },
+    prismaMock: {
+      conversationMessage: { findMany: vi.fn().mockResolvedValue([]) },
+      draftGeneration: { findMany: vi.fn().mockResolvedValue([]) },
+      $transaction: vi.fn(async (callback: (transaction: typeof transactionMock) => unknown) =>
+        callback(transactionMock),
+      ),
+    },
+    transactionMock,
+  };
+});
+
 vi.mock("./ai-provider", () => ({
-  getAiGateway: vi.fn(),
+  getAiGateway: vi.fn(() => aiGateway),
 }));
 
+vi.mock("@rockfoundry/db", () => ({ prisma: prismaMock }));
+
+import { createInitialProjectState } from "@rockfoundry/core";
 import {
   artifactComposerErrorPayload,
+  composeDraftArtifacts,
   formatComposedDocument,
   publicDraftArtifact,
   selectLatestCompleteDraftGeneration,
   selectLatestLegacyDraftArtifacts,
 } from "./artifact-composer";
+
+function malformedMarkdownDocument(
+  title: string,
+  detail: string,
+  wrapper: "document" | "artifact" | "data" | "result",
+) {
+  const markdown = `# ${title}\n\n${detail}\n\n## Review\n\n- Useful ${title} detail survives malformed fields.`;
+  return {
+    [wrapper]: {
+      title,
+      summary: null,
+      sections: "invalid-sections",
+      content: markdown,
+    },
+  };
+}
+
+function malformedLunaOutput() {
+  return {
+    documents: {
+      BRD: malformedMarkdownDocument(
+        "Business Requirements",
+        "Laundry shop owners need a clear order workflow.",
+        "document",
+      ),
+      PRD: {
+        document: {
+          title: "Product Requirements",
+          summary: { invalid: true },
+          sections: 42,
+          content:
+            "# Product Requirements\n\nA focused laundry product draft.\n\n## Scope\n\n- Keep the first laundry workflow small.",
+        },
+      },
+      ERD: malformedMarkdownDocument(
+        "Entity Relationship Document",
+        "Laundry orders connect customers with pickup status.",
+        "artifact",
+      ),
+      USER_FLOWS: malformedMarkdownDocument(
+        "User Flows",
+        "Customers request pickup and owners review active orders.",
+        "data",
+      ),
+      SCREEN_MAP: malformedMarkdownDocument(
+        "Screen Map",
+        "Owner dashboard — Route: `#/orders` — Purpose: Review active laundry orders",
+        "document",
+      ),
+      DESIGN_BRIEF: malformedMarkdownDocument(
+        "Design Brief",
+        "A useful laundry preview direction keeps order status visible.",
+        "result",
+      ),
+    },
+  };
+}
 
 describe("Artifact Composer error boundary", () => {
   it("never exposes provider, schema, or database error text", () => {
@@ -49,6 +146,55 @@ describe("Product Draft formatter compatibility", () => {
     expect(content).toContain("**CONFIRMED** Owner");
     expect(content).toContain("**PROPOSAL** Orders screen");
     expect(content).toContain("**OPEN_QUESTION** Delivery?");
+  });
+});
+describe("Product Draft persistence with tolerant Luna output", () => {
+  it("persists six useful READY artifacts from one malformed provider response without repair", async () => {
+    const state = createInitialProjectState({
+      id: "luna-web-regression",
+      name: "Laundry",
+      rawIdea: "A laundry app for a small shop",
+    });
+    aiGateway.runArtifactComposer.mockReset();
+    aiGateway.runArtifactComposer.mockResolvedValue(malformedLunaOutput());
+
+    const result = await composeDraftArtifacts("project-1", 7, state);
+
+    expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(1);
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(transactionMock.draftGeneration.create).toHaveBeenCalledTimes(1);
+    expect(transactionMock.draftGeneration.create.mock.calls[0][0].data).toMatchObject({
+      canonicalVersion: 7,
+      generationNumber: 1,
+      status: "COMPLETE",
+    });
+    expect(transactionMock.artifact.create).toHaveBeenCalledTimes(6);
+    const artifactInputs = transactionMock.artifact.create.mock.calls.map(
+      ([call]) => call.data,
+    );
+    expect(artifactInputs.map((artifact) => artifact.type)).toEqual([
+      "BRD",
+      "PRD",
+      "ERD",
+      "USER_FLOWS",
+      "SCREEN_MAP",
+      "DESIGN_BRIEF",
+    ]);
+    expect(artifactInputs.every((artifact) => artifact.status === "READY")).toBe(true);
+    expect(artifactInputs.every((artifact) => artifact.draftGenerationId === "generation-1")).toBe(true);
+
+    const prd = result.documents.PRD;
+    const screenMap = result.documents.SCREEN_MAP;
+    expect(prd).toContain("focused laundry product draft");
+    expect(prd).toContain("Keep the first laundry workflow small");
+    expect(screenMap).toContain("#/orders");
+    expect(screenMap).toContain("Review active laundry orders");
+    for (const artifact of artifactInputs) {
+      const content = String(artifact.content);
+      expect(content.length).toBeGreaterThan(100);
+      expect(content).not.toMatch(/needs review before it can be treated as complete/i);
+      expect(content.match(/\[UNRESOLVED\]/g)?.length || 0).toBeLessThan(2);
+    }
   });
 });
 

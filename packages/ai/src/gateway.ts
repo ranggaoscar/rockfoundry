@@ -9,6 +9,12 @@ import {
   classifyDesignFailure,
   formatDesignFailureDiagnostics,
 } from "./failure";
+function parseProviderJson(content: string): unknown {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json|javascript)?\s*([\s\S]*?)\s*```$/i);
+  return JSON.parse(fenced?.[1] || trimmed);
+}
+
 
 /** Keep OpenAI-compatible roots canonical so callers can safely supply either
  * `https://host` or `https://host/v1` without producing `/v1/v1/...`. */
@@ -182,15 +188,13 @@ export class NineRouterGateway implements AiGatewayProvider {
 
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content;
-
       if (!content) {
         throw new Error("No content returned from AI provider");
       }
-
       let parsed: T;
       if (req.responseFormat === "json" || req.responseSchema) {
         try {
-          parsed = JSON.parse(content) as T;
+          parsed = parseProviderJson(content) as T;
         } catch {
           throw new Error("Failed to parse JSON response from AI provider");
         }

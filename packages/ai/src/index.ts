@@ -3,6 +3,7 @@ import {
   ArtifactComposerOutputSchema,
   buildArtifactComposerInput,
   normalizeArtifactComposerOutput,
+  normalizeArtifactComposerOutputShape,
   type ArtifactComposerInput,
   type ArtifactComposerOutput,
   ConversationAgentResponseSchema,
@@ -1535,23 +1536,20 @@ export class AiGateway {
 
   async runArtifactComposer(input: ArtifactComposerInput): Promise<ArtifactComposerOutput> {
     const parsedInput = ArtifactComposerInputSchema.parse(input);
-    const result = await this.completeWithSchemaRepair(
-      {
-        taskType: "artifact_composer",
-        modelTier: TASK_MODEL_TIER.artifact_composer,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPTS.artifact_composer },
-          { role: "user", content: JSON.stringify(parsedInput) },
-        ],
-        temperature: TASK_TEMPERATURE.artifact_composer,
-        responseFormat: "json",
-        responseSchema: ArtifactComposerOutputSchema.toJSONSchema(),
-        maxRetries: 0,
-        providerDiagnostics: this.provider.diagnostics,
-      },
-      ArtifactComposerOutputSchema,
-    );
-    return normalizeArtifactComposerOutput(result.data, parsedInput);
+    const result = await this.provider.complete<unknown>({
+      taskType: "artifact_composer",
+      modelTier: TASK_MODEL_TIER.artifact_composer,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPTS.artifact_composer },
+        { role: "user", content: JSON.stringify(parsedInput) },
+      ],
+      temperature: TASK_TEMPERATURE.artifact_composer,
+      responseFormat: "json",
+      maxRetries: 0,
+      providerDiagnostics: this.provider.diagnostics,
+    });
+    const shaped = normalizeArtifactComposerOutputShape(result.data);
+    return normalizeArtifactComposerOutput(shaped, parsedInput);
   }
 
   async runDesignArchitecture(input: {

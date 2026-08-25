@@ -19,6 +19,9 @@ function input() {
     }),
   );
 }
+function validDocument(title: string) {
+  return { title, summary: "Useful", sections: [{ id: "s", title: "Overview", paragraphs: ["Useful"], items: [{ id: "i", text: "Thing", label: "PROPOSAL", evidenceIds: [] }] }] };
+}
 
 describe("Artifact Composer gateway", () => {
   it("mock provider creates a useful sparse laundry draft with labels", async () => {
@@ -36,26 +39,29 @@ describe("Artifact Composer gateway", () => {
     expect(text).toMatch(/Purpose: Review active laundry orders/);
   });
 
-  it("sends artifact_composer and repairs an invalid strict response", async () => {
+  it("normalizes malformed Luna output in one provider call without whole-output repair", async () => {
     const valid = {
       BRD: { title: "BRD", summary: "Useful", sections: [{ id: "s", title: "Overview", paragraphs: ["Useful"], items: [{ id: "i", text: "Thing", label: "PROPOSAL", evidenceIds: [] }] }] },
-      PRD: { title: "PRD", summary: "Useful", sections: [{ id: "s", title: "Overview", paragraphs: ["Useful"], items: [{ id: "i", text: "Thing", label: "PROPOSAL", evidenceIds: [] }] }] },
-      ERD: { title: "ERD", summary: "Useful", sections: [{ id: "s", title: "Overview", paragraphs: ["Useful"], items: [{ id: "i", text: "Thing", label: "PROPOSAL", evidenceIds: [] }] }] },
-      USER_FLOWS: { title: "Flows", summary: "Useful", sections: [{ id: "s", title: "Overview", paragraphs: ["Useful"], items: [{ id: "i", text: "Thing", label: "PROPOSAL", evidenceIds: [] }] }] },
-      SCREEN_MAP: { title: "Screens", summary: "Useful", sections: [{ id: "s", title: "Overview", paragraphs: ["Useful"], items: [{ id: "i", text: "Thing", label: "PROPOSAL", evidenceIds: [] }] }] },
-      DESIGN_BRIEF: { title: "Design", summary: "Useful", sections: [{ id: "s", title: "Overview", paragraphs: ["Useful"], items: [{ id: "i", text: "Thing", label: "PROPOSAL", evidenceIds: [] }] }] },
+      PRD: { content: "# Product Requirements\n\nUseful draft.\n\n## Scope\n\n- Keep scope small." },
+      ERD: { artifact: { title: "ERD", sections: [{ title: "Data", items: [{ text: "Entity", label: "PROPOSAL" }] }] } },
+      USER_FLOWS: { document: validDocument("Flows") },
+      SCREEN_MAP: validDocument("Screens"),
+      DESIGN_BRIEF: { title: "", sections: null },
     };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ BRD: {} }) } }] }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(valid) } }] }) });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify({ documents: valid }) } }] }),
+    });
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new AiGateway(new OpenAICompatibleGateway("https://provider.example/v1", "key", "model"));
     const result = await gateway.runArtifactComposer(input());
     expect(result.BRD.title).toBe("BRD");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).taskType).toBeUndefined();
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).messages[0].content).toMatch(/artifact composer/i);
+    expect(result.PRD.title).toBe("Product Requirements");
+    expect(result.PRD.sections.flatMap((section) => section.paragraphs).join(" ")).toContain("Useful draft");
+    expect(result.DESIGN_BRIEF.sections[0].items[0].label).toBe("OPEN_QUESTION");
+    expect(ArtifactComposerOutputSchema.parse(result)).toEqual(result);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).response_format).toEqual({ type: "json_object" });
     vi.unstubAllGlobals();
   });
 });
