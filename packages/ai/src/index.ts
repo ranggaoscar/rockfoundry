@@ -1,5 +1,16 @@
 import {
   ConversationAgentResponseSchema,
+  ConversationAssumptionSchema,
+  ConversationConfirmedDecisionSchema,
+  ConversationCorrectionSchema,
+  ConversationExplicitFactSchema,
+  ConversationModeSchema,
+  ConversationProposalSchema,
+  ConversationQuickReplySchema,
+  ConversationResolvedAssumptionSchema,
+  ConversationResolvedQuestionSchema,
+  ConversationRiskSchema,
+  ConversationSuggestedActionSchema,
   DesignArchitectureOutputSchema,
   DesignQualityReviewSchema,
   InitialIdeaExtraction,
@@ -8,18 +19,13 @@ import {
   type ConversationAgentResponse,
 } from "@rockfoundry/core";
 import { z } from "zod";
-import {
-  AiGatewayProvider,
-  InferenceRequest,
-  InferenceResponse,
-} from "./schema";
-
 export * from "./schema";
 export * from "./gateway";
 export * from "./failure";
 export * from "./prompts";
 export * from "./env";
 export * from "./public-demo";
+export { ConversationAgentResponseSchema };
 
 import {
   PROMPT_VERSIONS,
@@ -33,6 +39,11 @@ import {
   formatDesignFailureDiagnostics,
 } from "./failure";
 import { ApiError } from "./gateway";
+import {
+  AiGatewayProvider,
+  InferenceRequest,
+  InferenceResponse,
+} from "./schema";
 
 function item(
   value: string,
@@ -773,6 +784,110 @@ function normalizeMissingDesignSummary(
   return { ...data, summary };
 }
 
+export type ConversationAgentOutputIssue = {
+  path: Array<string | number>;
+  code?: string;
+  message: string;
+};
+
+export class ConversationAgentOutputError extends Error {
+  readonly code = "AI_CONVERSATION_OUTPUT_INVALID" as const;
+
+  constructor(
+    message: string,
+    public readonly issues: ConversationAgentOutputIssue[] = [],
+  ) {
+    super(message);
+    this.name = "ConversationAgentOutputError";
+  }
+}
+
+function conversationOutputIssues(error: z.ZodError): ConversationAgentOutputIssue[] {
+  return error.issues.map((issue) => ({
+    path: issue.path.filter(
+      (part): part is string | number => typeof part === "string" || typeof part === "number",
+    ),
+    code: issue.code,
+    message: issue.message,
+  }));
+}
+
+function conversationObject(value: unknown): Record<string, unknown> {
+  let parsed = value;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      throw new ConversationAgentOutputError("Conversation Agent output was not valid JSON.");
+    }
+  }
+  const normalized = normalizeConversationData(parsed);
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
+    throw new ConversationAgentOutputError("Conversation Agent output must be a JSON object.");
+  }
+  return normalized as Record<string, unknown>;
+}
+
+function curateConversationItems<T>(value: unknown, schema: z.ZodType<T>): T[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const result = schema.safeParse(normalizeConversationData(entry));
+    return result.success ? [result.data] : [];
+  });
+}
+
+export function normalizeConversationAgentResponse(
+  raw: unknown,
+  requestedMode: string,
+): ConversationAgentResponse {
+  const source = conversationObject(raw);
+  if (typeof source.message !== "string" || !source.message.trim()) {
+    const issue = {
+      path: ["message"],
+      code: "invalid_type",
+      message: "Conversation Agent output requires a non-empty message.",
+    } satisfies ConversationAgentOutputIssue;
+    throw new ConversationAgentOutputError(issue.message, [issue]);
+  }
+  const requested = ConversationModeSchema.safeParse(requestedMode);
+  if (!requested.success) {
+    throw new ConversationAgentOutputError(
+      "Conversation Agent requested mode is not supported.",
+      conversationOutputIssues(requested.error),
+    );
+  }
+  const state =
+    source.stateDelta && typeof source.stateDelta === "object" && !Array.isArray(source.stateDelta)
+      ? (source.stateDelta as Record<string, unknown>)
+      : {};
+  const action = ConversationSuggestedActionSchema.safeParse(source.suggestedNextAction);
+  const mode = ConversationModeSchema.safeParse(source.mode);
+  const curated = {
+    message: source.message,
+    mode: mode.success ? mode.data : requested.data,
+    quickReplies: curateConversationItems(source.quickReplies, ConversationQuickReplySchema),
+    stateDelta: {
+      explicitFacts: curateConversationItems(state.explicitFacts, ConversationExplicitFactSchema),
+      confirmedDecisions: curateConversationItems(state.confirmedDecisions, ConversationConfirmedDecisionSchema),
+      corrections: curateConversationItems(state.corrections, ConversationCorrectionSchema),
+      resolvedQuestions: curateConversationItems(state.resolvedQuestions, ConversationResolvedQuestionSchema),
+      resolvedAssumptions: curateConversationItems(state.resolvedAssumptions, ConversationResolvedAssumptionSchema),
+    },
+    proposals: curateConversationItems(source.proposals, ConversationProposalSchema),
+    assumptions: curateConversationItems(source.assumptions, ConversationAssumptionSchema),
+    unresolvedRisks: curateConversationItems(source.unresolvedRisks, ConversationRiskSchema),
+    suggestedNextAction: action.success ? action.data : { type: "NONE" as const },
+  };
+  const result = ConversationAgentResponseSchema.safeParse(curated);
+  if (!result.success) {
+    throw new ConversationAgentOutputError(
+      "Curated Conversation Agent output did not satisfy the response contract.",
+      conversationOutputIssues(result.error),
+    );
+  }
+  return result.data;
+}
+
 export class AiGateway {
   constructor(
     private provider: AiGatewayProvider = new MockGatewayProvider(),
@@ -862,7 +977,7 @@ export class AiGateway {
         {
           role: "system",
           content:
-            "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. When draftSpecReady is false, prioritize one important product-shape uncertainty from the supplied context instead of interrogating for completeness. When draftSpecReady is true, stop completeness interrogation, summarize the current product truth, and offer the Draft Spec action when appropriate. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Keep the response concise but useful.",
+            "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. When draftSpecReady is false, prioritize one important product-shape uncertainty from the supplied context instead of interrogating for completeness. When draftSpecReady is true, stop completeness interrogation, summarize the current product truth, and offer the Draft Spec action when appropriate. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Allowed mode values: BRAINSTORM, CLARIFICATION, CORRECTION, SPEC_REQUEST, DESIGN_REQUEST, RESEARCH_REQUEST, REFERENCE, HANDOFF_REQUEST. Assumption confidence values: STRONGLY_INFERRED, WEAKLY_INFERRED, UNKNOWN. Assumption impact values: LOW, MEDIUM, HIGH. Keep the response concise but useful.",
         },
         {
           role: "user",
@@ -882,14 +997,15 @@ export class AiGateway {
       providerDiagnostics: this.provider.diagnostics,
     };
 
-    const repair = async (data: unknown, validation: z.ZodError) => {
-      const issues = validation.issues.map((issue) => ({
-        path: issue.path.join("."),
-        code: issue.code,
-        message: issue.message,
-      }));
+    const repair = async (data: unknown, validation: unknown) => {
+      const issues =
+        validation instanceof ConversationAgentOutputError
+          ? validation.issues
+          : validation instanceof z.ZodError
+            ? conversationOutputIssues(validation)
+            : [{ path: [], message: "Invalid Conversation Agent output." }];
       console.warn(
-        `${this.providerDiagnostic("repair") } schemaIssues=${issues.map((issue) => `${issue.path || "<root>"}:${issue.code}`).join("|")}`,
+        `${this.providerDiagnostic("repair")} schemaIssues=${issues.map((issue) => `${issue.path.join(".") || "<root>"}:${issue.code || "invalid"}`).join("|")}`,
       );
       const repaired = await this.provider.complete({
         ...baseRequest,
@@ -907,30 +1023,14 @@ export class AiGateway {
           },
         ],
       });
-      const parsedRepair = ConversationAgentResponseSchema.safeParse(
-        normalizeConversationData(repaired.data),
-      );
-      if (!parsedRepair.success) {
-        const diagnostic = classifyDesignFailure(parsedRepair.error, {
-          task: "conversation_agent",
-        });
-        console.warn(
-          `${this.providerDiagnostic("repair")} ${formatDesignFailureDiagnostics(diagnostic)}`,
-        );
-        throw parsedRepair.error;
-      }
-      console.warn(`${this.providerDiagnostic("repair")} result=validated`);
-      return parsedRepair.data;
+      const curated = normalizeConversationAgentResponse(repaired.data, input.mode);
+      console.warn(`${this.providerDiagnostic("repair")} result=curated`);
+      return curated;
     };
 
     let strictResult: InferenceResponse<unknown> | undefined;
     try {
       strictResult = await this.provider.complete(baseRequest);
-      const parsedStrict = ConversationAgentResponseSchema.safeParse(
-        normalizeConversationData(strictResult.data),
-      );
-      if (parsedStrict.success) return parsedStrict.data;
-      return repair(strictResult.data, parsedStrict.error);
     } catch (strictError) {
       const strictDiagnostic = classifyDesignFailure(strictError, {
         task: "conversation_agent",
@@ -944,6 +1044,15 @@ export class AiGateway {
         strictError.statusCode >= 500
       ) {
         throw strictError;
+      }
+    }
+
+    if (strictResult) {
+      try {
+        return normalizeConversationAgentResponse(strictResult.data, input.mode);
+      } catch (outputError) {
+        if (!(outputError instanceof ConversationAgentOutputError)) throw outputError;
+        return repair(strictResult.data, outputError);
       }
     }
 
@@ -963,11 +1072,12 @@ export class AiGateway {
       throw fallbackError;
     }
 
-    const parsedFallback = ConversationAgentResponseSchema.safeParse(
-      normalizeConversationData(jsonObjectResult.data),
-    );
-    if (parsedFallback.success) return parsedFallback.data;
-    return repair(jsonObjectResult.data, parsedFallback.error);
+    try {
+      return normalizeConversationAgentResponse(jsonObjectResult.data, input.mode);
+    } catch (outputError) {
+      if (!(outputError instanceof ConversationAgentOutputError)) throw outputError;
+      return repair(jsonObjectResult.data, outputError);
+    }
   }
 
   private providerDiagnostic(stage: string) {

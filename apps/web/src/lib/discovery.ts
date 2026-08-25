@@ -5,6 +5,10 @@ import {
   type ProjectState,
   type Question,
 } from "@rockfoundry/core";
+import {
+  AI_PROVIDER_ERROR_MESSAGE,
+  conversationAiErrorMessage,
+} from "./ai-error";
 import { runConversationAgent } from "./conversation-agent";
 import { getLocalProject, parseProjectState, saveProjectState } from "./local-project";
 
@@ -12,8 +16,7 @@ export const INITIAL_CONVERSATION_PATH = "conversation_agent_v2" as const;
 /** @deprecated Keep the old export for the optional compatibility route. */
 export const INITIAL_DISCOVERY_PATH = INITIAL_CONVERSATION_PATH;
 
-const SAFE_PROVIDER_FAILURE =
-  "RockFoundry couldn't reach the configured AI provider. Retry or open Provider Settings.";
+const SAFE_PROVIDER_FAILURE = AI_PROVIDER_ERROR_MESSAGE;
 const INITIAL_TURN_STALE_AFTER_MS = 2 * 60 * 1000;
 
 type InitialTurnStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
@@ -124,7 +127,11 @@ function withInitialTurnMetadata(
   } satisfies ProjectState;
 }
 
-async function markInitialTurnFailed(projectId: string, attempt: number) {
+async function markInitialTurnFailed(
+  projectId: string,
+  attempt: number,
+  errorMessage = SAFE_PROVIDER_FAILURE,
+) {
   const latest = await getLocalProject(projectId);
   if (!latest) return null;
   const state = parseProjectState(latest);
@@ -133,7 +140,7 @@ async function markInitialTurnFailed(projectId: string, attempt: number) {
   const nextState = withInitialTurnMetadata(state, {
     status: "FAILED",
     attempt,
-    error: SAFE_PROVIDER_FAILURE,
+    error: errorMessage,
   });
   try {
     return await saveProjectState(projectId, nextState, latest.version);
@@ -145,13 +152,16 @@ async function markInitialTurnFailed(projectId: string, attempt: number) {
   }
 }
 
-async function updateAgentRunFailure(runId: string) {
+async function updateAgentRunFailure(
+  runId: string,
+  errorMessage = SAFE_PROVIDER_FAILURE,
+) {
   await prisma.agentRun.update({
     where: { id: runId },
     data: {
       status: "FAILED",
       completedAt: new Date(),
-      failureReason: SAFE_PROVIDER_FAILURE,
+      failureReason: errorMessage,
     },
   });
 }
@@ -338,10 +348,11 @@ export async function runInitialConversation(
       discoveryPath: INITIAL_CONVERSATION_PATH,
       providerCalls: 1 as const,
     };
-  } catch {
-    await updateAgentRunFailure(run.id);
-    const failed = await markInitialTurnFailed(projectId, attempt);
-    const failure = new Error(SAFE_PROVIDER_FAILURE);
+  } catch (error) {
+    const failureMessage = conversationAiErrorMessage(error);
+    await updateAgentRunFailure(run.id, failureMessage);
+    const failed = await markInitialTurnFailed(projectId, attempt, failureMessage);
+    const failure = new Error(failureMessage);
     Object.assign(failure, {
       retryable: true,
       state: failed?.state,

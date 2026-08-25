@@ -3,10 +3,17 @@ import { describe, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { createRequire } from "node:module";
 import {
+  ConversationAgentOutputError,
+} from "@rockfoundry/ai";
+import {
   ConversationAgentResponseSchema,
   applyConversationResponse,
   createInitialProjectState,
 } from "@rockfoundry/core";
+import {
+  AI_INVALID_RESPONSE_MESSAGE,
+  AI_PROVIDER_ERROR_MESSAGE,
+} from "./ai-error";
 
 
 import {
@@ -15,6 +22,7 @@ import {
   CONVERSATION_TURN_STALE_MS,
   CONVERSATION_TURN_STATUS,
   parseStoredConversationResponse,
+  publicConversationTurn,
   recoverStaleConversationTurns,
   runClaimedConversationTurn,
 } from "./conversation-turn";
@@ -294,6 +302,63 @@ it("stale running turns become failed while fresh running turns remain running",
     await recoverStaleConversationTurns(db, now);
     assert.equal((await db.conversationTurn.findUnique({ where: { id: stale.turn.id } }))?.status, CONVERSATION_TURN_STATUS.FAILED);
     assert.equal((await db.conversationTurn.findUnique({ where: { id: fresh.turn.id } }))?.status, CONVERSATION_TURN_STATUS.RUNNING);
+  } finally {
+    await closeDb(db);
+  }
+});
+it("persists semantic model-output and provider summaries without raw errors", async () => {
+  const { db, projectId, state } = await makeDb();
+  try {
+    const outputTurn = await claim(db, projectId, "semantic-output");
+    assert.equal(outputTurn.kind, "CLAIMED");
+    if (outputTurn.kind !== "CLAIMED") throw new Error("expected claim");
+    await assert.rejects(
+      runClaimedConversationTurn({
+        db,
+        projectId,
+        turnId: outputTurn.turn.id,
+        text: outputTurn.turn.text,
+        mode: "BRAINSTORM",
+        intent: "BRAINSTORM",
+        state,
+        expectedVersion: 1,
+        runAgent: async () => {
+          throw new ConversationAgentOutputError(
+            "private provider body should never persist",
+          );
+        },
+      }),
+    );
+    const failedOutput = await db.conversationTurn.findUniqueOrThrow({
+      where: { id: outputTurn.turn.id },
+    });
+    assert.equal(failedOutput.errorSummary, AI_INVALID_RESPONSE_MESSAGE);
+    assert.equal(publicConversationTurn(failedOutput).errorSummary, AI_INVALID_RESPONSE_MESSAGE);
+
+    const providerTurn = await claim(db, projectId, "semantic-provider");
+    assert.equal(providerTurn.kind, "CLAIMED");
+    if (providerTurn.kind !== "CLAIMED") throw new Error("expected claim");
+    await assert.rejects(
+      runClaimedConversationTurn({
+        db,
+        projectId,
+        turnId: providerTurn.turn.id,
+        text: providerTurn.turn.text,
+        mode: "BRAINSTORM",
+        intent: "BRAINSTORM",
+        state,
+        expectedVersion: 1,
+        runAgent: async () => {
+          throw new Error("private provider body should never persist");
+        },
+      }),
+    );
+    const failedProvider = await db.conversationTurn.findUniqueOrThrow({
+      where: { id: providerTurn.turn.id },
+    });
+    assert.equal(failedProvider.errorSummary, AI_PROVIDER_ERROR_MESSAGE);
+    assert.equal(publicConversationTurn(failedProvider).errorSummary, AI_PROVIDER_ERROR_MESSAGE);
+    assert.equal(failedProvider.errorSummary.includes("private"), false);
   } finally {
     await closeDb(db);
   }

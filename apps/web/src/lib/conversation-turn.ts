@@ -10,6 +10,10 @@ import { saveProjectStateInTransaction } from "./local-project";
 import { getPackageEligibility } from "./package-readiness";
 import { classifyMessage } from "./conversation";
 import { modeFromMessage, runConversationAgent } from "./conversation-agent";
+import {
+  conversationAiErrorMessage,
+  safeConversationTurnErrorSummary,
+} from "./ai-error";
 
 function mergeDetectedContradictions(state: ProjectState) {
   const detected = detectContradictions(state);
@@ -71,12 +75,14 @@ export type ConversationTurnClaim =
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
-
 function safeErrorSummary(error: unknown): string {
   if (error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT") {
     return "The project changed while processing this turn. Retry is available.";
   }
-  return "The conversation turn failed and can be retried.";
+  return (
+    safeConversationTurnErrorSummary(conversationAiErrorMessage(error)) ||
+    "The conversation turn failed and can be retried."
+  );
 }
 
 export function publicConversationTurn(turn: {
@@ -93,12 +99,7 @@ export function publicConversationTurn(turn: {
   startedAt: Date;
   completedAt: Date | null;
 }): ConversationTurnPublic {
-  const errorSummary =
-    turn.errorSummary === "The project changed while processing this turn. Retry is available."
-      ? turn.errorSummary
-      : turn.errorSummary
-        ? "The conversation turn failed and can be retried."
-        : null;
+  const errorSummary = safeConversationTurnErrorSummary(turn.errorSummary);
   return {
     id: turn.id,
     projectId: turn.projectId,

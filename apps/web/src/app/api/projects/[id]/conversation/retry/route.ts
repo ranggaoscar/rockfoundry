@@ -13,6 +13,7 @@ import {
   retryableConversationTurnPayload,
   runClaimedConversationTurn,
 } from "@/lib/conversation-turn";
+import { conversationAiErrorMessage } from "@/lib/ai-error";
 
 const Input = z.object({ userMessageId: z.string().min(1) });
 
@@ -110,7 +111,7 @@ export async function POST(
       );
     }
     return jsonError(
-      "RockFoundry couldn't retry that conversation turn.",
+      conversationAiErrorMessage(error),
       422,
     );
   }

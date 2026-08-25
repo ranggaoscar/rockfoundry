@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AiGateway,
   ConversationAgentResponseJsonSchema,
+  ConversationAgentResponseSchema,
   MockGatewayProvider,
   PortableConversationAgentResponseJsonSchema,
+  normalizeConversationAgentResponse,
 } from "../index";
 import { ApiError, OpenAICompatibleGateway } from "../gateway";
 
@@ -28,13 +30,41 @@ function validConversation(message = "Model-authored response") {
       corrections: [],
       resolvedQuestions: [],
       resolvedAssumptions: [],
-      },
+    },
     proposals: [],
     assumptions: [],
     unresolvedRisks: [],
     suggestedNextAction: { type: "NONE" },
   };
 }
+
+const lunaMalformedOptionalResponse = {
+  message: "Becak online bisa dimulai dari booking sederhana di satu kota.",
+  mode: "DISCOVERY",
+  quickReplies: ["Satu kota dulu", "Lintas kota"],
+  stateDelta: {
+    explicitFacts: [],
+    confirmedDecisions: [],
+    corrections: [],
+    resolvedQuestions: [],
+    resolvedAssumptions: [],
+  },
+  proposals: ["Mulai dari aplikasi penumpang dan driver"],
+  assumptions: [
+    {
+      statement: "Driver memiliki telepon pintar",
+      confidence: "MEDIUM",
+      impact: "CRITICAL",
+    },
+  ],
+  unresolvedRisks: [],
+  suggestedNextAction: {
+    type: "ASK_CONTEXTUAL_QUESTION",
+    question: "Untuk awal, layanan ini dibatasi di satu kota atau lintas kota?",
+    quickReplies: [],
+  },
+};
+
 
 function walkSchema(value: unknown, visit: (node: Record<string, unknown>) => void) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
@@ -70,6 +100,132 @@ describe("Conversation Agent gateway", () => {
         );
       }
     });
+  });
+  it("curates Luna malformed optionals while preserving the exact message", () => {
+    const response = normalizeConversationAgentResponse(
+      lunaMalformedOptionalResponse,
+      "BRAINSTORM",
+    );
+
+    expect(response.message).toBe(lunaMalformedOptionalResponse.message);
+    expect(response.mode).toBe("BRAINSTORM");
+    expect(response.quickReplies).toEqual([]);
+    expect(response.proposals).toEqual([]);
+    expect(response.assumptions).toEqual([]);
+    expect(response.unresolvedRisks).toEqual([]);
+    expect(response.suggestedNextAction).toEqual(
+      lunaMalformedOptionalResponse.suggestedNextAction,
+    );
+    expect(response).toEqual(ConversationAgentResponseSchema.parse(response));
+  });
+
+  it("keeps valid optional and canonical neighbors while dropping malformed entries", () => {
+    const valid = {
+      ...validConversation("Keep the natural message"),
+      quickReplies: [{ label: "One city", value: "one_city" }, "bad"],
+      proposals: [
+        {
+          topic: "service_area",
+          statement: "Start in one city",
+          reason: "Keeps operations small",
+          affects: [],
+        },
+        "bad",
+      ],
+      assumptions: [
+        {
+          statement: "Drivers have smartphones",
+          confidence: "STRONGLY_INFERRED",
+          impact: "MEDIUM",
+        },
+        { statement: "bad", confidence: "INVALID", impact: "HIGH" },
+      ],
+      unresolvedRisks: [
+        {
+          topic: "supply",
+          title: "Driver supply",
+          reason: "Enough drivers may be needed",
+          priority: 7,
+        },
+        { topic: "bad" },
+      ],
+      stateDelta: {
+        explicitFacts: [
+          { path: "roles", value: "driver", evidence: "driver" },
+          { path: "roles", value: "", evidence: "missing value" },
+        ],
+        confirmedDecisions: [
+          {
+            topic: "service_area",
+            decision: "one city",
+            affects: [],
+            evidence: "one city",
+          },
+          { topic: "service_area", decision: "" },
+        ],
+        corrections: [
+          { path: "roles", value: "driver", evidence: "driver" },
+          { path: "roles", value: 2, evidence: "bad" },
+        ],
+        resolvedQuestions: [
+          { question: "Which city?", evidence: "one city" },
+          { question: "", evidence: "bad" },
+        ],
+        resolvedAssumptions: [
+          {
+            statement: "Drivers have smartphones",
+            resolution: "Validate during onboarding",
+            evidence: "driver",
+          },
+          { statement: "bad", resolution: 2, evidence: "bad" },
+        ],
+      },
+    };
+
+    const response = normalizeConversationAgentResponse(valid, "BRAINSTORM");
+
+    expect(response.quickReplies).toEqual([{ label: "One city", value: "one_city" }]);
+    expect(response.proposals).toEqual([valid.proposals[0]]);
+    expect(response.assumptions).toEqual([valid.assumptions[0]]);
+    expect(response.unresolvedRisks).toEqual([valid.unresolvedRisks[0]]);
+    expect(response.stateDelta.explicitFacts).toEqual([valid.stateDelta.explicitFacts[0]]);
+    expect(response.stateDelta.confirmedDecisions).toEqual([
+      valid.stateDelta.confirmedDecisions[0],
+    ]);
+    expect(response.stateDelta.corrections).toEqual([valid.stateDelta.corrections[0]]);
+    expect(response.stateDelta.resolvedQuestions).toEqual([
+      valid.stateDelta.resolvedQuestions[0],
+    ]);
+    expect(response.stateDelta.resolvedAssumptions).toEqual([
+      valid.stateDelta.resolvedAssumptions[0],
+    ]);
+    expect(response).toEqual(ConversationAgentResponseSchema.parse(response));
+  });
+
+  it("returns a natural becak first turn from a real provider without Mock fallback", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(providerResponse(JSON.stringify(lunaMalformedOptionalResponse)));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway("https://provider.example/v1", "test-key", "test-model"),
+    );
+
+    const response = await gateway.runConversationAgent({
+      project: { rawIdea: "saya mau buat aplikasi becak online" },
+      latestUserMessage: "saya mau buat aplikasi becak online",
+      mode: "BRAINSTORM",
+      riskContext: [],
+    });
+
+    expect(response.message).toBe(lunaMalformedOptionalResponse.message);
+    expect(response.mode).toBe("BRAINSTORM");
+    expect(response.stateDelta.confirmedDecisions).toEqual([]);
+    expect(response.suggestedNextAction).toEqual(
+      lunaMalformedOptionalResponse.suggestedNextAction,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
   });
 
   it("returns a natural finance response without a canned question contract", async () => {
@@ -148,9 +304,8 @@ describe("Conversation Agent gateway", () => {
         riskContext: [],
       }),
     ).resolves.toMatchObject({ message: "keep this message" });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body).response_format).toEqual({ type: "json_object" });
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body).messages.at(-1).content).toContain("validationIssues");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).response_format).toEqual({ type: "json_object" });
     vi.unstubAllGlobals();
   });
 

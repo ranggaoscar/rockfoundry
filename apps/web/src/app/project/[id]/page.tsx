@@ -24,6 +24,7 @@ import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { DesignStudio } from "@/components/design-studio";
 import { ProductSpec } from "@/components/product-spec";
 import { humanTopicLabel } from "@/lib/topic-label";
+import { safeConversationFailureMessage } from "@/lib/ai-error-messages";
 import type { ProjectStage } from "@/components/workspace-sidebar";
 type ProjectData = {
   id: string;
@@ -84,6 +85,7 @@ type Activity = {
 };
 type Drawer = "context" | "documents" | "settings" | null;
 type Workbench = "spec" | "design" | null;
+
 
 const PACKAGE_PROGRESS_STAGES = [
   ["GENERATING_DOCUMENTS", "Menyusun dokumen"],
@@ -693,6 +695,7 @@ export default function ProjectWorkspace({
         return;
       }
       if (!response.ok) {
+        const retryFailureMessage = safeConversationFailureMessage(data.error);
         if (data.retryable && data.userMessageId) {
           setMessages((current) =>
             current.map((message) =>
@@ -702,7 +705,7 @@ export default function ProjectWorkspace({
                     userMessageId: data.userMessageId,
                     conversationTurnId: data.turn?.id,
                     turnStatus: "FAILED",
-                    turnError: "RockFoundry couldn't finish this response.",
+                    turnError: retryFailureMessage,
                     retryable: true,
                   }
                 : message,
@@ -711,7 +714,7 @@ export default function ProjectWorkspace({
         }
         throw new Error(
           data.retryable
-            ? "RockFoundry couldn't finish this response."
+            ? retryFailureMessage
             : data.error || "RockFoundry couldn't process that message.",
         );
       }
@@ -1534,7 +1537,7 @@ function MessageRow({
         </div>
         {isUser && message.retryable ? (
           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-            <span>RockFoundry couldn&apos;t finish this response.</span>
+            <span>{safeConversationFailureMessage(message.turnError)}</span>
             <button
               type="button"
               className="rf-header-action"

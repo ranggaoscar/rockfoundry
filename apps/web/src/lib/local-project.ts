@@ -5,7 +5,7 @@ import {
   ProjectStateSchema,
   type ProjectState,
 } from "@rockfoundry/core";
-
+import { safeConversationTurnErrorSummary } from "./ai-error";
 export function jsonError(
   message: string,
   status = 500,
@@ -102,7 +102,8 @@ export function publicMessage(message: {
     turnStatus: message.conversationTurn?.status,
     turnError:
       message.conversationTurn?.status === "FAILED"
-        ? "The conversation turn failed and can be retried."
+        ? safeConversationTurnErrorSummary(message.conversationTurn.errorSummary) ||
+          "The conversation turn failed and can be retried."
         : undefined,
     retryable:
       message.role === "user" && message.conversationTurn?.status === "FAILED",

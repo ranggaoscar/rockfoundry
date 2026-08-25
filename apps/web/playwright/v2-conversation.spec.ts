@@ -314,7 +314,7 @@ test.describe("V2 Conversation Agent product flow", () => {
     const text = "Saya ingin aplikasi booking becak.";
     await page.locator("#project-composer").fill(text);
     await page.locator("#project-composer").press("Enter");
-    await expect(page.getByText("RockFoundry couldn't finish this response.", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/^(?:RockFoundry couldn't reach the configured AI provider\.|RockFoundry received an invalid AI response\. Try again\.)$/, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
     await page.reload();
     await expect(page.getByRole("button", { name: /Retry|Coba lagi/i }).last()).toBeVisible();
     await request.put("/api/provider", { data: { mode: "mock" } });

@@ -5,6 +5,7 @@ import {
   runInitialConversation,
 } from "@/lib/discovery";
 import { getLocalProject, jsonError } from "@/lib/local-project";
+import { conversationAiErrorMessage } from "@/lib/ai-error";
 
 export async function GET(
   _req: NextRequest,
@@ -43,18 +44,12 @@ export async function POST(
       state?: unknown;
       version?: number;
     };
-    return jsonError(
-      error instanceof Error
-        ? error.message
-        : "RockFoundry couldn't reach the configured AI provider. Retry or open Provider Settings.",
-      422,
-      {
-        retryable: typed.retryable === true,
-        status: "FAILED",
-        ...(typed.state && typeof typed.version === "number"
-          ? { state: typed.state, version: typed.version }
-          : {}),
-      },
-    );
+    return jsonError(conversationAiErrorMessage(error), 422, {
+      retryable: typed.retryable === true,
+      status: "FAILED",
+      ...(typed.state && typeof typed.version === "number"
+        ? { state: typed.state, version: typed.version }
+        : {}),
+    });
   }
 }

@@ -13,6 +13,7 @@ import {
   runClaimedConversationTurn,
   CONVERSATION_TURN_STATUS,
 } from "@/lib/conversation-turn";
+import { conversationAiErrorMessage } from "@/lib/ai-error";
 import { prisma } from "@rockfoundry/db";
 
 const Input = z.object({
@@ -134,7 +135,9 @@ export async function POST(
           return Response.json(
             {
               error:
-                "The conversation turn failed after saving your message. Retry is available.",
+                status === 409
+                  ? "The conversation turn failed after saving your message. Retry is available."
+                  : conversationAiErrorMessage(error),
               retryable: true,
               turn: publicConversationTurn(turn),
               userMessageId: userMessage?.id ?? null,
@@ -156,7 +159,7 @@ export async function POST(
       );
     }
     return jsonError(
-      "RockFoundry couldn't process that conversation turn.",
+      conversationAiErrorMessage(error),
       422,
     );
   }
