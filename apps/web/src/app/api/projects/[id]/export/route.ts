@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import {
   evaluateDecisionDebt,
-  evaluateDraftSpecMaturity,
+  generateDraftExport,
   generateExport,
   validateConsistency,
 } from "@rockfoundry/core";
@@ -21,12 +21,11 @@ export async function POST(
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
   const state = parseProjectState(project);
-  const maturity = evaluateDraftSpecMaturity(state);
-  if (!maturity.ready)
+  if (!state.rawIdea.trim() && !state.normalizedSummary?.trim())
     return jsonError(
-      "A canonical product truth is required before generating a handoff.",
+      "Add a product idea before generating a final handoff.",
       422,
-      { code: "HANDOFF_BLOCKED", missing: maturity.missing },
+      { code: "HANDOFF_INPUT_REQUIRED" },
     );
   const consistency = validateConsistency(state);
   try {
@@ -58,6 +57,12 @@ export async function POST(
     );
     return Response.json({
       generated: [
+        "BRD.md",
+        "PRD.md",
+        "ERD.md",
+        "USER_FLOWS.md",
+        "SCREEN_MAP.md",
+        "DESIGN_BRIEF.md",
         "PRODUCT_SPEC.md",
         "AGENT_HANDOFF.md",
         "DECISIONS.md",
@@ -74,26 +79,28 @@ export async function POST(
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
   const state = parseProjectState(project);
-  const maturity = evaluateDraftSpecMaturity(state);
-  if (!maturity.ready)
+  if (!state.rawIdea.trim() && !state.normalizedSummary?.trim())
     return jsonError(
-      "A canonical product truth is required before downloading a handoff.",
+      "Add a product idea before downloading the current draft.",
       422,
-      { code: "HANDOFF_BLOCKED", missing: maturity.missing },
+      { code: "DRAFT_INPUT_REQUIRED" },
     );
   try {
-    const generated = await generateExport(parseProjectState(project));
+    const handoff = req.nextUrl.searchParams.get("mode") === "handoff";
+    const generated = handoff
+      ? await generateExport(state)
+      : await generateDraftExport(state);
     return new Response(new Uint8Array(generated.buffer), {
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${(project.name || "rockfoundry-project").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.zip"`,
+        "Content-Disposition": `attachment; filename="${(project.name || "rockfoundry-project").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${handoff ? "handoff" : "draft"}.zip"`,
       },
     });
   } catch {

@@ -1,13 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { evaluateReadinessDirectly } from "@rockfoundry/core";
 import {
   getLocalProject,
   jsonError,
   parseProjectState,
 } from "@/lib/local-project";
-import { getPackageEligibility } from "@/lib/package-readiness";
 import { latestPackageJob } from "@/lib/package-jobs";
 import { enqueuePackageJob } from "@/lib/package-job-claims";
 import { prisma } from "@rockfoundry/db";
@@ -21,13 +19,11 @@ export async function POST(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
-    const readiness = evaluateReadinessDirectly(state);
-    const packageEligibility = getPackageEligibility(readiness);
-    if (!packageEligibility.canBuildPackage)
+    if (!state.rawIdea.trim() && !state.normalizedSummary?.trim())
       return jsonError(
-        "Selesaikan keputusan penting sebelum membuat paket produk.",
+        "Add a product idea before creating a final handoff.",
         422,
-        packageEligibility,
+        { code: "HANDOFF_INPUT_REQUIRED" },
       );
 
     const enqueued = await enqueuePackageJob(prisma, id, project.version);
@@ -35,7 +31,6 @@ export async function POST(
       {
         job: await latestPackageJob(id, prisma, project.version),
         reused: enqueued.reused,
-        ...packageEligibility,
       },
       { status: 202 },
     );
@@ -51,7 +46,6 @@ export async function GET(
   const { id } = await params;
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
-  const readiness = evaluateReadinessDirectly(parseProjectState(project));
   const job = await latestPackageJob(id, prisma, project.version);
-  return Response.json({ job, ...getPackageEligibility(readiness) });
+  return Response.json({ job });
 }

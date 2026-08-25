@@ -73,7 +73,9 @@ export const ConversationStateDeltaSchema = z.object({
   confirmedDecisions: z.array(ConversationConfirmedDecisionSchema).default([]),
   corrections: z.array(ConversationCorrectionSchema).default([]),
   resolvedQuestions: z.array(ConversationResolvedQuestionSchema).default([]),
-  resolvedAssumptions: z.array(ConversationResolvedAssumptionSchema).default([]),
+  resolvedAssumptions: z
+    .array(ConversationResolvedAssumptionSchema)
+    .default([]),
 });
 export type ConversationStateDelta = z.infer<
   typeof ConversationStateDeltaSchema
@@ -85,9 +87,7 @@ export const ConversationProposalSchema = z.object({
   reason: z.string().min(1),
   affects: z.array(z.string()).default([]),
 });
-export type ConversationProposal = z.infer<
-  typeof ConversationProposalSchema
->;
+export type ConversationProposal = z.infer<typeof ConversationProposalSchema>;
 
 export const ConversationAssumptionSchema = z.object({
   statement: z.string().min(1),
@@ -136,7 +136,9 @@ export const ConversationAgentResponseSchema = z.object({
   proposals: z.array(ConversationProposalSchema).default([]),
   assumptions: z.array(ConversationAssumptionSchema).default([]),
   unresolvedRisks: z.array(ConversationRiskSchema).default([]),
-  suggestedNextAction: ConversationSuggestedActionSchema.default({ type: "NONE" }),
+  suggestedNextAction: ConversationSuggestedActionSchema.default({
+    type: "NONE",
+  }),
 });
 export type ConversationAgentResponse = z.infer<
   typeof ConversationAgentResponseSchema
@@ -170,11 +172,12 @@ export function normalizeConversationText(value: string): string {
     .trim();
 }
 
-
-
-
 function isAllowedCanonicalPath(path: string) {
-  return ARRAY_FACT_PATHS.has(path) || path === "normalizedSummary" || path === "productType";
+  return (
+    ARRAY_FACT_PATHS.has(path) ||
+    path === "normalizedSummary" ||
+    path === "productType"
+  );
 }
 
 /** Evidence must be a source span after harmless Unicode/whitespace punctuation normalization. */
@@ -201,7 +204,8 @@ function canonicalValueFromEvidence(
   if (!isGroundedConversationEvidence(evidence, latestUserMessage)) return null;
   const normalizedValue = normalizeConversationText(value);
   const normalizedEvidence = normalizeConversationText(evidence);
-  if (normalizedValue.length < 3 || !/[\p{L}\p{N}]/u.test(normalizedValue)) return null;
+  if (normalizedValue.length < 3 || !/[\p{L}\p{N}]/u.test(normalizedValue))
+    return null;
   return normalizedEvidence.includes(normalizedValue) ? value : null;
 }
 
@@ -231,10 +235,16 @@ function groundedNeutralFacts(
     const normalizedEvidence = normalizeConversationText(item.evidence);
     const directlySupported = item.path.startsWith("decision.")
       ? normalizedEvidence.includes(normalizedProposed)
-      : canonicalValueFromEvidence(item.path, item.proposedValue, item.evidence, latestUserMessage);
+      : canonicalValueFromEvidence(
+          item.path,
+          item.proposedValue,
+          item.evidence,
+          latestUserMessage,
+        );
     if (directlySupported) return [];
     if (
-      (!item.path.startsWith("decision.") && !isAllowedCanonicalPath(item.path)) ||
+      (!item.path.startsWith("decision.") &&
+        !isAllowedCanonicalPath(item.path)) ||
       !isGroundedConversationEvidence(item.evidence, latestUserMessage)
     ) {
       return [];
@@ -276,11 +286,17 @@ function groundedConfirmedDecision(
   item: ConversationConfirmedDecision,
   latestUserMessage: string,
 ) {
-  if (!isGroundedConversationEvidence(item.evidence, latestUserMessage)) return null;
-  const normalizedTopic = normalizeConversationText(item.topic.replace(/[_-]+/g, " "));
+  if (!isGroundedConversationEvidence(item.evidence, latestUserMessage))
+    return null;
+  const normalizedTopic = normalizeConversationText(
+    item.topic.replace(/[_-]+/g, " "),
+  );
   const normalizedLatest = normalizeConversationText(latestUserMessage);
-  const topicInMessage = normalizedTopic.length >= 3 && normalizedLatest.includes(normalizedTopic);
-  const traceableAffect = item.affects.some((path) => isAllowedCanonicalPath(path));
+  const topicInMessage =
+    normalizedTopic.length >= 3 && normalizedLatest.includes(normalizedTopic);
+  const traceableAffect = item.affects.some((path) =>
+    isAllowedCanonicalPath(path),
+  );
   if (!topicInMessage && !traceableAffect) return null;
   const normalizedDecision = normalizeConversationText(item.decision);
   const normalizedEvidence = normalizeConversationText(item.evidence);
@@ -288,7 +304,8 @@ function groundedConfirmedDecision(
     normalizedDecision.length < 3 ||
     !/[\p{L}\p{N}]/u.test(normalizedDecision) ||
     !normalizedEvidence.includes(normalizedDecision)
-  ) return null;
+  )
+    return null;
   return item;
 }
 /** Keep canonical deltas grounded and allow at most one contextual ask. */
@@ -304,10 +321,12 @@ export function groundConversationResponse(
         const grounded = groundedExplicitFact(item, latestUserMessage);
         return grounded ? [grounded] : [];
       }),
-      confirmedDecisions: response.stateDelta.confirmedDecisions.flatMap((item) => {
-        const grounded = groundedConfirmedDecision(item, latestUserMessage);
-        return grounded ? [grounded] : [];
-      }),
+      confirmedDecisions: response.stateDelta.confirmedDecisions.flatMap(
+        (item) => {
+          const grounded = groundedConfirmedDecision(item, latestUserMessage);
+          return grounded ? [grounded] : [];
+        },
+      ),
       corrections: response.stateDelta.corrections.flatMap((item) => {
         const grounded = groundedCorrection(item, latestUserMessage);
         return grounded ? [grounded] : [];
@@ -315,8 +334,9 @@ export function groundConversationResponse(
       resolvedQuestions: response.stateDelta.resolvedQuestions.filter((item) =>
         isGroundedConversationEvidence(item.evidence, latestUserMessage),
       ),
-      resolvedAssumptions: response.stateDelta.resolvedAssumptions.filter((item) =>
-        isGroundedConversationEvidence(item.evidence, latestUserMessage),
+      resolvedAssumptions: response.stateDelta.resolvedAssumptions.filter(
+        (item) =>
+          isGroundedConversationEvidence(item.evidence, latestUserMessage),
       ),
     },
   };
@@ -325,19 +345,39 @@ export function groundConversationResponse(
 export function enforceConversationQuestionPolicy(
   rawResponse: ConversationAgentResponse,
   state: ProjectState,
-  options: { draftSpecReady?: boolean } = {},
+  options: { draftSpecReady?: boolean; conversationTurnCount?: number } = {},
 ): ConversationAgentResponse {
   const response = ConversationAgentResponseSchema.parse(rawResponse);
   const action = response.suggestedNextAction;
   if (action.type !== "ASK_CONTEXTUAL_QUESTION") return response;
-  if (options.draftSpecReady ?? state.draftSpecReady) {
-    return { ...response, suggestedNextAction: { type: "CREATE_SPEC" } };
+  const conversationTurnCount =
+    options.conversationTurnCount ??
+    (typeof state.generationMetadata.conversationTurnCount === "number"
+      ? state.generationMetadata.conversationTurnCount
+      : 0);
+  if (
+    (options.draftSpecReady ?? state.draftSpecReady) ||
+    conversationTurnCount >= 3
+  ) {
+    const visibleMessage = /[?？]\s*$/.test(response.message)
+      ? /\b(ini|siapa|apakah|boleh|yang|untuk|mau|bisa)\b/i.test(
+          response.message,
+        )
+        ? "Kita sudah tahu cukup banyak untuk membuat Product Draft pertama. Detail yang belum terjawab tetap terlihat di Open Questions."
+        : "We know enough to create a first Product Draft. Details that remain unanswered stay visible in Open Questions."
+      : response.message;
+    return {
+      ...response,
+      message: visibleMessage,
+      suggestedNextAction: { type: "CREATE_SPEC" },
+    };
   }
   const normalizedQuestion = normalizeConversationText(action.question);
   const previousResolutions = state.generationMetadata.conversationResolutions;
   const resolvedQuestions = Array.isArray(previousResolutions)
     ? previousResolutions.flatMap((entry) => {
-        if (!entry || typeof entry !== "object" || !("question" in entry)) return [];
+        if (!entry || typeof entry !== "object" || !("question" in entry))
+          return [];
         const question = entry.question;
         return typeof question === "string" ? [question] : [];
       })
@@ -371,7 +411,10 @@ function arrayField(state: ProjectState, path: string): string[] | null {
     : null;
 }
 
-function applyExplicitFact(state: ProjectState, fact: ConversationExplicitFact) {
+function applyExplicitFact(
+  state: ProjectState,
+  fact: ConversationExplicitFact,
+) {
   const values = arrayField(state, fact.path);
   if (values) {
     if (!values.includes(fact.value)) values.push(fact.value);
@@ -390,7 +433,10 @@ function applyExplicitFact(state: ProjectState, fact: ConversationExplicitFact) 
   }
 }
 
-function applyCorrection(state: ProjectState, correction: ConversationCorrection) {
+function applyCorrection(
+  state: ProjectState,
+  correction: ConversationCorrection,
+) {
   const values = arrayField(state, correction.path);
   const previousValue = correction.replaces;
   if (values) {
@@ -420,7 +466,9 @@ function applyCorrection(state: ProjectState, correction: ConversationCorrection
     );
   }
 
-  const history = Array.isArray(state.generationMetadata.conversationCorrections)
+  const history = Array.isArray(
+    state.generationMetadata.conversationCorrections,
+  )
     ? state.generationMetadata.conversationCorrections
     : [];
   history.push({
@@ -436,8 +484,13 @@ function applyCorrection(state: ProjectState, correction: ConversationCorrection
   };
 }
 
-function applyAssumption(state: ProjectState, assumption: ConversationAssumption) {
-  if (state.assumptions.some((item) => item.statement === assumption.statement)) {
+function applyAssumption(
+  state: ProjectState,
+  assumption: ConversationAssumption,
+) {
+  if (
+    state.assumptions.some((item) => item.statement === assumption.statement)
+  ) {
     return;
   }
   const item: Assumption = {
@@ -469,7 +522,9 @@ function appendConversationResolution(
     evidence: string;
   },
 ) {
-  const history = Array.isArray(state.generationMetadata.conversationResolutions)
+  const history = Array.isArray(
+    state.generationMetadata.conversationResolutions,
+  )
     ? state.generationMetadata.conversationResolutions
     : [];
   history.push({
@@ -490,12 +545,27 @@ export function applyConversationResponse(
   latestUserMessage: string,
 ): ProjectState {
   const state = cloneState(currentState);
+  const previousTurnCount =
+    typeof state.generationMetadata.conversationTurnCount === "number"
+      ? state.generationMetadata.conversationTurnCount
+      : 0;
+  const conversationTurnCount = previousTurnCount + 1;
+  state.generationMetadata = {
+    ...state.generationMetadata,
+    conversationTurnCount,
+    productDraftAvailable:
+      Boolean(state.rawIdea.trim() || state.normalizedSummary?.trim()) &&
+      conversationTurnCount >= 3,
+  };
   const raw = ConversationAgentResponseSchema.parse(rawResponse);
   const response = enforceConversationQuestionPolicy(
     groundConversationResponse(raw, latestUserMessage),
     state,
+    { conversationTurnCount },
   );
-  const groundedUserFacts = Array.isArray(state.generationMetadata.groundedUserFacts)
+  const groundedUserFacts = Array.isArray(
+    state.generationMetadata.groundedUserFacts,
+  )
     ? state.generationMetadata.groundedUserFacts
     : [];
   groundedUserFacts.push(...groundedNeutralFacts(raw, latestUserMessage));
@@ -540,7 +610,11 @@ export function applyConversationResponse(
         normalizeConversationText(question) ===
         normalizeConversationText(resolved.question),
     );
-    if (index < 0 || !isGroundedConversationEvidence(resolved.evidence, latestUserMessage)) continue;
+    if (
+      index < 0 ||
+      !isGroundedConversationEvidence(resolved.evidence, latestUserMessage)
+    )
+      continue;
     const question = state.openQuestions[index];
     state.openQuestions.splice(index, 1);
     addProvenance(
@@ -564,7 +638,11 @@ export function applyConversationResponse(
         normalizeConversationText(item.statement) ===
           normalizeConversationText(resolved.statement),
     );
-    if (!assumption || !isGroundedConversationEvidence(resolved.evidence, latestUserMessage)) continue;
+    if (
+      !assumption ||
+      !isGroundedConversationEvidence(resolved.evidence, latestUserMessage)
+    )
+      continue;
     assumption.resolved = true;
     addProvenance(
       state,
@@ -581,7 +659,9 @@ export function applyConversationResponse(
     });
   }
 
-  const proposals = Array.isArray(state.generationMetadata.conversationProposals)
+  const proposals = Array.isArray(
+    state.generationMetadata.conversationProposals,
+  )
     ? state.generationMetadata.conversationProposals
     : [];
   for (const proposal of response.proposals) {
@@ -622,11 +702,13 @@ export function applyConversationResponseWithPolicy(
     latestUserMessage,
   );
   const readiness = evaluateReadinessDirectly(state);
-  const response = enforceConversationQuestionPolicy(
-    grounded,
-    currentState,
-    { draftSpecReady: readiness.draftSpecReady },
-  );
+  const response = enforceConversationQuestionPolicy(grounded, currentState, {
+    draftSpecReady: readiness.draftSpecReady,
+    conversationTurnCount:
+      typeof state.generationMetadata.conversationTurnCount === "number"
+        ? state.generationMetadata.conversationTurnCount
+        : 0,
+  });
   if (
     grounded.suggestedNextAction.type === "ASK_CONTEXTUAL_QUESTION" &&
     response.suggestedNextAction.type !== "ASK_CONTEXTUAL_QUESTION"
@@ -641,11 +723,15 @@ export function applyConversationResponseWithPolicy(
       let index = state.openQuestions.length - 1;
       index >= 0 &&
       state.openQuestions.filter(
-        (question) => normalizeConversationText(question) === normalizedQuestion,
+        (question) =>
+          normalizeConversationText(question) === normalizedQuestion,
       ).length > previousCount;
       index -= 1
     ) {
-      if (normalizeConversationText(state.openQuestions[index]) === normalizedQuestion) {
+      if (
+        normalizeConversationText(state.openQuestions[index]) ===
+        normalizedQuestion
+      ) {
         state.openQuestions.splice(index, 1);
       }
     }

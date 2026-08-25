@@ -60,7 +60,8 @@ function mockConversationAgent(
   let payload: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(payloadText);
-    if (parsed && typeof parsed === "object") payload = parsed as Record<string, unknown>;
+    if (parsed && typeof parsed === "object")
+      payload = parsed as Record<string, unknown>;
   } catch {
     payload = { latestUserMessage: payloadText };
   }
@@ -75,19 +76,37 @@ function mockConversationAgent(
   const text = `${context} ${latest}`.toLowerCase();
   const base = {
     quickReplies: [],
-    stateDelta: { explicitFacts: [], confirmedDecisions: [], corrections: [], resolvedQuestions: [], resolvedAssumptions: [] },
+    stateDelta: {
+      explicitFacts: [],
+      confirmedDecisions: [],
+      corrections: [],
+      resolvedQuestions: [],
+      resolvedAssumptions: [],
+    },
     proposals: [],
     assumptions: [],
     unresolvedRisks: [],
-  } satisfies Pick<ConversationAgentResponse, "quickReplies" | "stateDelta" | "proposals" | "assumptions" | "unresolvedRisks">;
+  } satisfies Pick<
+    ConversationAgentResponse,
+    | "quickReplies"
+    | "stateDelta"
+    | "proposals"
+    | "assumptions"
+    | "unresolvedRisks"
+  >;
   const latestLower = latest.toLowerCase();
   if (/becak/.test(text)) {
     const cityQuestion =
       "Untuk awal, layanan ini dibatasi di satu kota atau langsung lintas kota?";
     const driverQuestion =
       "Driver-nya berasal dari pangkalan becak terdaftar atau pendaftaran terbuka?";
-    if (/beberapa driver|siapa yg mau menerima|first accept|menerima dulu/i.test(latestLower)) {
-      const dispatchEvidence = "kebeberapa driver yg online, dan siapa yg mau menerima";
+    if (
+      /beberapa driver|siapa yg mau menerima|first accept|menerima dulu/i.test(
+        latestLower,
+      )
+    ) {
+      const dispatchEvidence =
+        "kebeberapa driver yg online, dan siapa yg mau menerima";
       return {
         ...base,
         message:
@@ -96,7 +115,11 @@ function mockConversationAgent(
         stateDelta: {
           explicitFacts: [
             { path: "targetUsers", value: "penumpang", evidence: "penumpang" },
-            { path: "workflows", value: "order ditawarkan ke beberapa driver online", evidence: dispatchEvidence },
+            {
+              path: "workflows",
+              value: "order ditawarkan ke beberapa driver online",
+              evidence: dispatchEvidence,
+            },
           ],
           confirmedDecisions: [
             {
@@ -122,9 +145,17 @@ function mockConversationAgent(
         stateDelta: {
           explicitFacts: [
             { path: "targetUsers", value: "penumpang", evidence: "penumpang" },
-            { path: "roles", value: "driver becak", evidence: "driver nya" },
-            { path: "entities", value: "pangkalan becak", evidence: "pangkalan becak" },
-            { path: "workflows", value: "penumpang booking perjalanan", evidence: "booking perjalanan" },
+            { path: "roles", value: "driver becak", evidence: "driver becak" },
+            {
+              path: "entities",
+              value: "pangkalan becak",
+              evidence: "pangkalan becak",
+            },
+            {
+              path: "workflows",
+              value: "penumpang booking perjalanan",
+              evidence: "penumpang booking perjalanan",
+            },
           ],
           confirmedDecisions: [],
           corrections: [],
@@ -148,10 +179,26 @@ function mockConversationAgent(
         stateDelta: {
           explicitFacts: [
             { path: "targetUsers", value: "penumpang", evidence: "penumpang" },
-            { path: "features", value: "booking becak online", evidence: "mirip gojek" },
-            { path: "objectives", value: "booking perjalanan", evidence: "booking perjalanan" },
-            { path: "workflows", value: "penumpang booking perjalanan", evidence: "booking perjalanan" },
-            { path: "constraints", value: "satu kota dulu", evidence: "satu kota dulu" },
+            {
+              path: "features",
+              value: "booking becak online",
+              evidence: "booking becak online",
+            },
+            {
+              path: "objectives",
+              value: "booking perjalanan",
+              evidence: "booking perjalanan",
+            },
+            {
+              path: "workflows",
+              value: "penumpang booking perjalanan",
+              evidence: "penumpang booking perjalanan",
+            },
+            {
+              path: "constraints",
+              value: "satu kota dulu",
+              evidence: "satu kota dulu",
+            },
           ],
           confirmedDecisions: [
             {
@@ -187,10 +234,14 @@ function mockConversationAgent(
     };
   }
 
-  if (/owner|warung|usaha kecil/.test(text) && /uang|cash|keuangan|finance/.test(text)) {
+  if (
+    /owner|warung|usaha kecil/.test(text) &&
+    /uang|cash|keuangan|finance/.test(text)
+  ) {
     return {
       ...base,
-      message: "Sip, berarti MVP ini cukup owner-only. Mulai dari transaksi masuk dan keluar, kategori, saldo kas, dan histori. Belum perlu role atau approval.",
+      message:
+        "Sip, berarti MVP ini cukup owner-only. Mulai dari transaksi masuk dan keluar, kategori, saldo kas, dan histori. Belum perlu role atau approval.",
       mode: "CLARIFICATION",
       stateDelta: {
         explicitFacts: [{ path: "roles", value: "owner", evidence: latest }],
@@ -205,7 +256,8 @@ function mockConversationAgent(
   if (/uang|cash|keuangan|finance|catat/.test(text)) {
     return {
       ...base,
-      message: "Kalau tujuannya sederhana, gua mulai dari transaksi masuk dan keluar, kategori, saldo kas, dan histori. Untuk menjaga MVP tetap kecil, belum perlu role atau approval.",
+      message:
+        "Kalau tujuannya sederhana, gua mulai dari transaksi masuk dan keluar, kategori, saldo kas, dan histori. Untuk menjaga MVP tetap kecil, belum perlu role atau approval.",
       mode: "BRAINSTORM",
       suggestedNextAction: {
         type: "ASK_CONTEXTUAL_QUESTION",
@@ -218,19 +270,26 @@ function mockConversationAgent(
     };
   }
   if (/groom|anjing|pet|dog/.test(text)) {
-    if (/beberapa layanan|satu booking|keduanya|gabung/.test(latest.toLowerCase())) {
+    if (
+      /beberapa layanan|satu booking|keduanya|gabung/.test(latest.toLowerCase())
+    ) {
       return {
         ...base,
-        message: "Oke, satu booking bisa memuat beberapa layanan. Simpan layanan sebagai daftar di booking, lalu jadwal dan status penitipan tetap terlihat sebagai satu kunjungan.",
+        message:
+          "Oke, satu booking bisa memuat beberapa layanan. Simpan layanan sebagai daftar di booking, lalu jadwal dan status penitipan tetap terlihat sebagai satu kunjungan.",
         mode: "CLARIFICATION",
         stateDelta: {
           explicitFacts: [
-            { path: "features", value: "booking multi-layanan", evidence: latest },
+            {
+              path: "features",
+              value: "booking multi-layanan",
+              evidence: latest,
+            },
           ],
           confirmedDecisions: [],
           corrections: [],
-        resolvedQuestions: [],
-        resolvedAssumptions: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
         },
         suggestedNextAction: { type: "CREATE_SPEC" },
       };
@@ -238,7 +297,8 @@ function mockConversationAgent(
     if (/jadwal|staf|pemilik hewan|booking/.test(latest.toLowerCase())) {
       return {
         ...base,
-        message: "Berarti jadwal adalah pusat operasionalnya: staf perlu melihat slot, layanan, dan status setiap anjing. Untuk MVP, satu booking bisa menyimpan layanan yang dipilih tanpa approval berlapis.",
+        message:
+          "Berarti jadwal adalah pusat operasionalnya: staf perlu melihat slot, layanan, dan status setiap anjing. Untuk MVP, satu booking bisa menyimpan layanan yang dipilih tanpa approval berlapis.",
         mode: "CLARIFICATION",
         stateDelta: {
           explicitFacts: [
@@ -247,23 +307,26 @@ function mockConversationAgent(
           ],
           confirmedDecisions: [],
           corrections: [],
-        resolvedQuestions: [],
-        resolvedAssumptions: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
         },
         suggestedNextAction: {
           type: "ASK_CONTEXTUAL_QUESTION",
-          question: "Apakah satu booking boleh berisi grooming dan penitipan sekaligus?",
+          question:
+            "Apakah satu booking boleh berisi grooming dan penitipan sekaligus?",
           quickReplies: [],
         },
       };
     }
     return {
       ...base,
-      message: "Untuk grooming dan penitipan anjing, inti produknya kemungkinan jadwal layanan, profil hewan, dan status penitipan.",
+      message:
+        "Untuk grooming dan penitipan anjing, inti produknya kemungkinan jadwal layanan, profil hewan, dan status penitipan.",
       mode: "BRAINSTORM",
       suggestedNextAction: {
         type: "ASK_CONTEXTUAL_QUESTION",
-        question: "Pemilik hewan biasanya booking grooming, penitipan, atau keduanya sekaligus?",
+        question:
+          "Pemilik hewan biasanya booking grooming, penitipan, atau keduanya sekaligus?",
         quickReplies: [
           { label: "Grooming", value: "grooming" },
           { label: "Penitipan", value: "boarding" },
@@ -273,20 +336,27 @@ function mockConversationAgent(
     };
   }
   if (/festival|vendor|event|acara/.test(text)) {
-    if (/mengubah status|panitia yang|administrasi/.test(latest.toLowerCase())) {
+    if (
+      /mengubah status|panitia yang|administrasi/.test(latest.toLowerCase())
+    ) {
       return {
         ...base,
-        message: "Berarti panitia menjadi pemilik status kelengkapan vendor. Perubahan status perlu tercatat, sedangkan vendor cukup melihat apa yang masih kurang dari berkas mereka.",
+        message:
+          "Berarti panitia menjadi pemilik status kelengkapan vendor. Perubahan status perlu tercatat, sedangkan vendor cukup melihat apa yang masih kurang dari berkas mereka.",
         mode: "CLARIFICATION",
         stateDelta: {
           explicitFacts: [
             { path: "roles", value: "panitia", evidence: latest },
-            { path: "workflows", value: "review kelengkapan vendor", evidence: latest },
+            {
+              path: "workflows",
+              value: "review kelengkapan vendor",
+              evidence: latest,
+            },
           ],
           confirmedDecisions: [],
           corrections: [],
-        resolvedQuestions: [],
-        resolvedAssumptions: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
         },
         suggestedNextAction: { type: "CREATE_SPEC" },
       };
@@ -294,17 +364,26 @@ function mockConversationAgent(
     if (/lengkap|booth|panitia|vendor/.test(latest.toLowerCase())) {
       return {
         ...base,
-        message: "Berarti MVP perlu daftar kelengkapan vendor dan penempatan booth yang bisa dilihat panitia. Pisahkan status administrasi dari lokasi supaya perubahan booth tidak menghapus bukti kelengkapan.",
+        message:
+          "Berarti MVP perlu daftar kelengkapan vendor dan penempatan booth yang bisa dilihat panitia. Pisahkan status administrasi dari lokasi supaya perubahan booth tidak menghapus bukti kelengkapan.",
         mode: "CLARIFICATION",
         stateDelta: {
           explicitFacts: [
-            { path: "workflows", value: "review kelengkapan vendor", evidence: latest },
-            { path: "workflows", value: "atur penempatan booth", evidence: latest },
+            {
+              path: "workflows",
+              value: "review kelengkapan vendor",
+              evidence: latest,
+            },
+            {
+              path: "workflows",
+              value: "atur penempatan booth",
+              evidence: latest,
+            },
           ],
           confirmedDecisions: [],
           corrections: [],
-        resolvedQuestions: [],
-        resolvedAssumptions: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
         },
         suggestedNextAction: {
           type: "ASK_CONTEXTUAL_QUESTION",
@@ -315,11 +394,13 @@ function mockConversationAgent(
     }
     return {
       ...base,
-      message: "Untuk festival, produk ini sebaiknya mulai dari daftar vendor, status kelengkapan mereka, dan peta kebutuhan panitia. Jangan langsung jadi project-management suite.",
+      message:
+        "Untuk festival, produk ini sebaiknya mulai dari daftar vendor, status kelengkapan mereka, dan peta kebutuhan panitia. Jangan langsung jadi project-management suite.",
       mode: "BRAINSTORM",
       suggestedNextAction: {
         type: "ASK_CONTEXTUAL_QUESTION",
-        question: "Panitia paling perlu mengontrol kelengkapan vendor atau penempatan booth?",
+        question:
+          "Panitia paling perlu mengontrol kelengkapan vendor atau penempatan booth?",
         quickReplies: [
           { label: "Kelengkapan vendor", value: "compliance" },
           { label: "Penempatan booth", value: "booth" },
@@ -327,48 +408,140 @@ function mockConversationAgent(
       },
     };
   }
-  if (/crm|marmer|marble|brand|sales/.test(text)) {
-    if (/sales hanya|owner semua|brand sendiri|scoped/.test(latest.toLowerCase())) {
+  if (/laundry|cucian|dry.?clean|pakaian/.test(text)) {
+    if (
+      /ternyata|sebenarnya|juga boleh|also|employee|karyawan|pegawai|staf|staff/.test(
+        latestLower,
+      ) &&
+      /tarif|harga|price|ubah/.test(latestLower)
+    ) {
       return {
         ...base,
-        message: "Oke, batas aksesnya jelas: sales hanya melihat brand sendiri, owner melihat seluruh brand. Itu cukup sebagai aturan MVP tanpa menambah approval atau assignment kompleks.",
-        mode: "CLARIFICATION",
+        message:
+          "Oke, koreksi ini membuat karyawan juga boleh mengubah tarif. PRD dan permission boundary akan ikut diperbarui, sementara detail approval atau riwayat perubahan tetap dibuka sebagai pertanyaan.",
+        mode: "CORRECTION",
         stateDelta: {
           explicitFacts: [
-            { path: "permissions", value: "sales brand-scoped, owner global", evidence: latest },
+            { path: "roles", value: "karyawan laundry", evidence: "karyawan" },
+            {
+              path: "permissions",
+              value: "karyawan juga boleh ubah tarif",
+              evidence: "karyawan juga boleh ubah tarif",
+            },
           ],
-          confirmedDecisions: [],
+          confirmedDecisions: [
+            {
+              topic: "tariff_permission",
+              decision: "karyawan juga boleh ubah tarif",
+              evidence: "karyawan juga boleh ubah tarif",
+              affects: ["permissions", "businessRules", "features"],
+            },
+          ],
           corrections: [],
-        resolvedQuestions: [],
-        resolvedAssumptions: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
         },
         suggestedNextAction: { type: "CREATE_SPEC" },
       };
     }
-    if (/histori|riwayat|customer lintas|owner|sales/.test(latest.toLowerCase())) {
+    if (/pickup|jemput|antar|delivery|status|pesanan/.test(latestLower)) {
       return {
         ...base,
-        message: "Kalau histori customer harus tetap jelas lintas brand, simpan satu profil customer lalu hubungkan lead dan quotation ke brand masing-masing. Owner bisa melihat lintas brand, sementara sales tetap scoped.",
+        message:
+          "Sip, draft awalnya mencakup pesanan laundry, pickup atau delivery, dan status cucian. Kita sudah tahu cukup banyak untuk membuat Product Draft; detail operasional yang belum jelas akan tinggal terlihat di dokumen.",
         mode: "CLARIFICATION",
         stateDelta: {
           explicitFacts: [
-            { path: "workflows", value: "histori customer lintas brand", evidence: latest },
+            {
+              path: "workflows",
+              value: "pesanan laundry dan pickup terjadwal",
+              evidence: "pickup",
+            },
+            {
+              path: "features",
+              value: "lacak status cucian",
+              evidence: "status",
+            },
           ],
           confirmedDecisions: [],
           corrections: [],
-        resolvedQuestions: [],
-        resolvedAssumptions: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
         },
         suggestedNextAction: { type: "CREATE_SPEC" },
       };
     }
     return {
       ...base,
-      message: "Untuk CRM lima brand, inti MVP-nya adalah lead, follow-up, quotation, dan batas akses sales versus owner. Customer lintas brand perlu diputuskan karena itu akan memengaruhi histori dan pencarian.",
+      message:
+        "Untuk produk laundry ini, inti draftnya adalah pesanan, status cucian, pickup atau delivery, dan tarif layanan. Kita mulai dari alur pesanan; aturan siapa yang boleh mengubah tarif bisa disempurnakan setelah draft terlihat.",
       mode: "BRAINSTORM",
       suggestedNextAction: {
         type: "ASK_CONTEXTUAL_QUESTION",
-        question: "Kalau customer yang sama datang ke dua brand, histori sebaiknya tetap satu atau terpisah?",
+        question:
+          "Pesanan laundry masuk lewat pickup terjadwal, antar langsung, atau keduanya?",
+        quickReplies: [],
+      },
+    };
+  }
+  if (/crm|marmer|marble|brand|sales/.test(text)) {
+    if (
+      /sales hanya|owner semua|brand sendiri|scoped/.test(latest.toLowerCase())
+    ) {
+      return {
+        ...base,
+        message:
+          "Oke, batas aksesnya jelas: sales hanya melihat brand sendiri, owner melihat seluruh brand. Itu cukup sebagai aturan MVP tanpa menambah approval atau assignment kompleks.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            {
+              path: "permissions",
+              value: "sales brand-scoped, owner global",
+              evidence: latest,
+            },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
+        },
+        suggestedNextAction: { type: "CREATE_SPEC" },
+      };
+    }
+    if (
+      /histori|riwayat|customer lintas|owner|sales/.test(latest.toLowerCase())
+    ) {
+      return {
+        ...base,
+        message:
+          "Kalau histori customer harus tetap jelas lintas brand, simpan satu profil customer lalu hubungkan lead dan quotation ke brand masing-masing. Owner bisa melihat lintas brand, sementara sales tetap scoped.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            {
+              path: "workflows",
+              value: "histori customer lintas brand",
+              evidence: latest,
+            },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
+        },
+        suggestedNextAction: { type: "CREATE_SPEC" },
+      };
+    }
+    return {
+      ...base,
+      message:
+        "Untuk CRM lima brand, inti MVP-nya adalah lead, follow-up, quotation, dan batas akses sales versus owner. Customer lintas brand perlu diputuskan karena itu akan memengaruhi histori dan pencarian.",
+      mode: "BRAINSTORM",
+      suggestedNextAction: {
+        type: "ASK_CONTEXTUAL_QUESTION",
+        question:
+          "Kalau customer yang sama datang ke dua brand, histori sebaiknya tetap satu atau terpisah?",
         quickReplies: [
           { label: "Satu histori", value: "shared_identity" },
           { label: "Terpisah per brand", value: "separate_records" },
@@ -401,7 +574,18 @@ export class MockGatewayProvider implements AiGatewayProvider {
       };
     if (taskType === "design_quality_review")
       return {
-        data: { verdict: "PASS", score: 86, assessments: [{ area: "grounding", assessment: "Prototype follows the supplied screen map." }], blockingProblems: [], improvements: [] } as T,
+        data: {
+          verdict: "PASS",
+          score: 86,
+          assessments: [
+            {
+              area: "grounding",
+              assessment: "Prototype follows the supplied screen map.",
+            },
+          ],
+          blockingProblems: [],
+          improvements: [],
+        } as T,
         usage: { promptTokens: 100, completionTokens: 80, totalTokens: 180 },
         metadata: { provider: "mock", model: "mock", latency: 80 },
       };
@@ -584,6 +768,99 @@ export class MockGatewayProvider implements AiGatewayProvider {
             "Several stone brands are part of the idea",
           ),
         );
+    } else if (/laundry|cucian|dry.?clean|pakaian/.test(lower)) {
+      if (/pelanggan|customer|pengguna/.test(lower))
+        extraction.primaryUsers.push(
+          item(
+            "Pelanggan laundry",
+            "EXPLICIT",
+            "Customer language is present in the idea",
+          ),
+        );
+      if (/owner|pemilik/.test(lower))
+        extraction.primaryUsers.push(
+          item(
+            "Owner laundry",
+            "EXPLICIT",
+            "Owner language is present in the idea",
+          ),
+        );
+      if (/karyawan|pegawai|staf|staff/.test(lower))
+        extraction.primaryUsers.push(
+          item(
+            "Karyawan laundry",
+            "EXPLICIT",
+            "Employee language is present in the idea",
+          ),
+        );
+      extraction.coreEntities.push(
+        item(
+          "Pesanan laundry",
+          "EXPLICIT",
+          "Laundry order is directly implied by the idea",
+        ),
+      );
+      extraction.coreEntities.push(
+        item(
+          "Pelanggan",
+          "EXPLICIT",
+          "Customer is directly named or implied by laundry orders",
+        ),
+      );
+      if (/tarif|harga|price/.test(lower))
+        extraction.coreEntities.push(
+          item(
+            "Tarif layanan",
+            "EXPLICIT",
+            "Laundry pricing is named in the idea",
+          ),
+        );
+      extraction.proposedCapabilities.push(
+        item(
+          "Kelola pesanan laundry",
+          "EXPLICIT",
+          "Order handling is named in the idea",
+        ),
+      );
+      if (/pickup|jemput|antar|delivery/.test(lower))
+        extraction.proposedCapabilities.push(
+          item(
+            "Atur pickup dan delivery",
+            "EXPLICIT",
+            "Pickup or delivery is named in the idea",
+          ),
+        );
+      if (/status|proses|selesai/.test(lower))
+        extraction.proposedCapabilities.push(
+          item(
+            "Lacak status cucian",
+            "EXPLICIT",
+            "Laundry status tracking is named in the idea",
+          ),
+        );
+      if (/tarif|harga|price/.test(lower))
+        extraction.proposedCapabilities.push(
+          item(
+            "Kelola tarif layanan",
+            "EXPLICIT",
+            "Tariff management is named in the idea",
+          ),
+        );
+      extraction.expectedWorkflows.push(
+        item(
+          "Pelanggan membuat pesanan laundry dan melihat status cucian",
+          "EXPLICIT",
+          "Laundry order workflow is named or directly implied",
+        ),
+      );
+      if (/pickup|jemput|antar|delivery/.test(lower))
+        extraction.expectedWorkflows.push(
+          item(
+            "Petugas mengatur pickup atau delivery pesanan",
+            "EXPLICIT",
+            "Pickup or delivery workflow is named in the idea",
+          ),
+        );
     } else if (/rental|car|vehicle|booking/.test(lower)) {
       extraction.primaryUsers.push(
         item(
@@ -747,7 +1024,9 @@ function portableConversationSchema(value: unknown): Record<string, unknown> {
   if (schema.properties && typeof schema.properties === "object") {
     const originalRequired = new Set(
       Array.isArray(source.required)
-        ? source.required.filter((key): key is string => typeof key === "string")
+        ? source.required.filter(
+            (key): key is string => typeof key === "string",
+          )
         : [],
     );
     const properties = Object.fromEntries(
@@ -769,7 +1048,8 @@ function portableConversationSchema(value: unknown): Record<string, unknown> {
   }
   for (const key of ["items", "anyOf", "allOf"]) {
     const child = schema[key];
-    if (Array.isArray(child)) schema[key] = child.map(portableConversationSchema);
+    if (Array.isArray(child))
+      schema[key] = child.map(portableConversationSchema);
     else if (child && typeof child === "object")
       schema[key] = portableConversationSchema(child);
   }
@@ -833,10 +1113,13 @@ export class ConversationAgentOutputError extends Error {
   }
 }
 
-function conversationOutputIssues(error: z.ZodError): ConversationAgentOutputIssue[] {
+function conversationOutputIssues(
+  error: z.ZodError,
+): ConversationAgentOutputIssue[] {
   return error.issues.map((issue) => ({
     path: issue.path.filter(
-      (part): part is string | number => typeof part === "string" || typeof part === "number",
+      (part): part is string | number =>
+        typeof part === "string" || typeof part === "number",
     ),
     code: issue.code,
     message: issue.message,
@@ -849,12 +1132,20 @@ function conversationObject(value: unknown): Record<string, unknown> {
     try {
       parsed = JSON.parse(parsed);
     } catch {
-      throw new ConversationAgentOutputError("Conversation Agent output was not valid JSON.");
+      throw new ConversationAgentOutputError(
+        "Conversation Agent output was not valid JSON.",
+      );
     }
   }
   const normalized = normalizeConversationData(parsed);
-  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
-    throw new ConversationAgentOutputError("Conversation Agent output must be a JSON object.");
+  if (
+    !normalized ||
+    typeof normalized !== "object" ||
+    Array.isArray(normalized)
+  ) {
+    throw new ConversationAgentOutputError(
+      "Conversation Agent output must be a JSON object.",
+    );
   }
   return normalized as Record<string, unknown>;
 }
@@ -888,26 +1179,59 @@ export function normalizeConversationAgentResponse(
     );
   }
   const state =
-    source.stateDelta && typeof source.stateDelta === "object" && !Array.isArray(source.stateDelta)
+    source.stateDelta &&
+    typeof source.stateDelta === "object" &&
+    !Array.isArray(source.stateDelta)
       ? (source.stateDelta as Record<string, unknown>)
       : {};
-  const action = ConversationSuggestedActionSchema.safeParse(source.suggestedNextAction);
+  const action = ConversationSuggestedActionSchema.safeParse(
+    source.suggestedNextAction,
+  );
   const mode = ConversationModeSchema.safeParse(source.mode);
   const curated = {
     message: source.message,
     mode: mode.success ? mode.data : requested.data,
-    quickReplies: curateConversationItems(source.quickReplies, ConversationQuickReplySchema),
+    quickReplies: curateConversationItems(
+      source.quickReplies,
+      ConversationQuickReplySchema,
+    ),
     stateDelta: {
-      explicitFacts: curateConversationItems(state.explicitFacts, ConversationExplicitFactSchema),
-      confirmedDecisions: curateConversationItems(state.confirmedDecisions, ConversationConfirmedDecisionSchema),
-      corrections: curateConversationItems(state.corrections, ConversationCorrectionSchema),
-      resolvedQuestions: curateConversationItems(state.resolvedQuestions, ConversationResolvedQuestionSchema),
-      resolvedAssumptions: curateConversationItems(state.resolvedAssumptions, ConversationResolvedAssumptionSchema),
+      explicitFacts: curateConversationItems(
+        state.explicitFacts,
+        ConversationExplicitFactSchema,
+      ),
+      confirmedDecisions: curateConversationItems(
+        state.confirmedDecisions,
+        ConversationConfirmedDecisionSchema,
+      ),
+      corrections: curateConversationItems(
+        state.corrections,
+        ConversationCorrectionSchema,
+      ),
+      resolvedQuestions: curateConversationItems(
+        state.resolvedQuestions,
+        ConversationResolvedQuestionSchema,
+      ),
+      resolvedAssumptions: curateConversationItems(
+        state.resolvedAssumptions,
+        ConversationResolvedAssumptionSchema,
+      ),
     },
-    proposals: curateConversationItems(source.proposals, ConversationProposalSchema),
-    assumptions: curateConversationItems(source.assumptions, ConversationAssumptionSchema),
-    unresolvedRisks: curateConversationItems(source.unresolvedRisks, ConversationRiskSchema),
-    suggestedNextAction: action.success ? action.data : { type: "NONE" as const },
+    proposals: curateConversationItems(
+      source.proposals,
+      ConversationProposalSchema,
+    ),
+    assumptions: curateConversationItems(
+      source.assumptions,
+      ConversationAssumptionSchema,
+    ),
+    unresolvedRisks: curateConversationItems(
+      source.unresolvedRisks,
+      ConversationRiskSchema,
+    ),
+    suggestedNextAction: action.success
+      ? action.data
+      : { type: "NONE" as const },
   };
   const result = ConversationAgentResponseSchema.safeParse(curated);
   if (!result.success) {
@@ -932,7 +1256,10 @@ export class AiGateway {
     const taskType = request.taskType || "initial_idea_extraction";
     const effectiveRequest = {
       ...request,
-      reasoningEffort: reasoningEffortForTask(taskType, request.reasoningEffort),
+      reasoningEffort: reasoningEffortForTask(
+        taskType,
+        request.reasoningEffort,
+      ),
     };
     const initial = await this.provider.complete<unknown>(effectiveRequest);
     const normalizedInitial = { ...initial, data: normalize(initial.data) };
@@ -994,11 +1321,13 @@ export class AiGateway {
     riskContext: unknown[];
     recentConversation?: Array<{ role: "user" | "assistant"; text: string }>;
     draftSpecReady?: boolean;
+    conversationTurnCount?: number;
     importantUnresolvedCount?: number;
     highestImpactRisk?: unknown;
   }): Promise<ConversationAgentResponse> {
     const maturityContext = {
       draftSpecReady: input.draftSpecReady ?? false,
+      conversationTurnCount: input.conversationTurnCount ?? 0,
       importantUnresolvedCount: input.importantUnresolvedCount ?? null,
       highestImpactRisk: input.highestImpactRisk ?? null,
     };
@@ -1009,7 +1338,7 @@ export class AiGateway {
         {
           role: "system",
           content:
-            "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. Do not ask questions already answered by projectContext or recentConversation. When draftSpecReady is false, prioritize one important product-shape uncertainty from the supplied context instead of interrogating for completeness. When draftSpecReady is true, stop completeness interrogation, summarize the current product truth, and offer the Draft Spec action when appropriate. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Allowed mode values: BRAINSTORM, CLARIFICATION, CORRECTION, SPEC_REQUEST, DESIGN_REQUEST, RESEARCH_REQUEST, REFERENCE, HANDOFF_REQUEST. Assumption confidence values: STRONGLY_INFERRED, WEAKLY_INFERRED, UNKNOWN. Assumption impact values: LOW, MEDIUM, HIGH. Keep the response concise but useful.",
+            "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. Do not ask questions already answered by projectContext or recentConversation. For the first few meaningful turns, prioritize one important product-shape uncertainty from the supplied context instead of interrogating for completeness. Once conversationTurnCount is 3 or more, default to a useful first Product Draft: summarize the current product truth and stop asking completeness questions. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Allowed mode values: BRAINSTORM, CLARIFICATION, CORRECTION, SPEC_REQUEST, DESIGN_REQUEST, RESEARCH_REQUEST, REFERENCE, HANDOFF_REQUEST. Assumption confidence values: STRONGLY_INFERRED, WEAKLY_INFERRED, UNKNOWN. Assumption impact values: LOW, MEDIUM, HIGH. Keep the response concise but useful.",
         },
         {
           role: "user",
@@ -1056,7 +1385,10 @@ export class AiGateway {
           },
         ],
       });
-      const curated = normalizeConversationAgentResponse(repaired.data, input.mode);
+      const curated = normalizeConversationAgentResponse(
+        repaired.data,
+        input.mode,
+      );
       console.warn(`${this.providerDiagnostic("repair")} result=curated`);
       return curated;
     };
@@ -1082,9 +1414,13 @@ export class AiGateway {
 
     if (strictResult) {
       try {
-        return normalizeConversationAgentResponse(strictResult.data, input.mode);
+        return normalizeConversationAgentResponse(
+          strictResult.data,
+          input.mode,
+        );
       } catch (outputError) {
-        if (!(outputError instanceof ConversationAgentOutputError)) throw outputError;
+        if (!(outputError instanceof ConversationAgentOutputError))
+          throw outputError;
         return repair(strictResult.data, outputError);
       }
     }
@@ -1106,9 +1442,13 @@ export class AiGateway {
     }
 
     try {
-      return normalizeConversationAgentResponse(jsonObjectResult.data, input.mode);
+      return normalizeConversationAgentResponse(
+        jsonObjectResult.data,
+        input.mode,
+      );
     } catch (outputError) {
-      if (!(outputError instanceof ConversationAgentOutputError)) throw outputError;
+      if (!(outputError instanceof ConversationAgentOutputError))
+        throw outputError;
       return repair(jsonObjectResult.data, outputError);
     }
   }
@@ -1172,7 +1512,11 @@ export class AiGateway {
       {
         taskType: "design_quality_review",
         messages: [
-          { role: "system", content: "Evaluate only fidelity, screen coverage, hierarchy, interactions, and design contract adherence. Do not invent product behavior. Return JSON only." },
+          {
+            role: "system",
+            content:
+              "Evaluate only fidelity, screen coverage, hierarchy, interactions, and design contract adherence. Do not invent product behavior. Return JSON only.",
+          },
           { role: "user", content: JSON.stringify(input) },
         ],
         responseFormat: "json",
@@ -1212,7 +1556,7 @@ export class AiGateway {
     const result = await this.completeWithSchemaRepair(
       {
         taskType: input.taskType || "prototype_generation",
-          modelTier: "strong",
+        modelTier: "strong",
         messages: [
           {
             role: "system",

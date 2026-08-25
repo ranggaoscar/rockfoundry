@@ -22,7 +22,7 @@ import {
 import { SettingsPanel, useProviderStatus } from "@/components/settings-panel";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { DesignStudio } from "@/components/design-studio";
-import { ProductSpec } from "@/components/product-spec";
+import { ProductDocuments } from "@/components/product-documents";
 import { humanTopicLabel } from "@/lib/topic-label";
 import { safeConversationFailureMessage } from "@/lib/ai-error-messages";
 import type { ProjectStage } from "@/components/workspace-sidebar";
@@ -84,8 +84,7 @@ type Activity = {
   failureReason?: string | null;
 };
 type Drawer = "context" | "documents" | "settings" | null;
-type Workbench = "spec" | "design" | null;
-
+type Workbench = "documents" | "design" | null;
 
 const PACKAGE_PROGRESS_STAGES = [
   ["GENERATING_DOCUMENTS", "Menyusun dokumen"],
@@ -110,8 +109,8 @@ function initialMessages(project: ProjectData): Message[] {
         role: "assistant",
         text: indo ? "Mau bikin apa?" : "What do you want to build?",
         detail: indo
-          ? "Ceritakan idenya dengan bahasa biasa. Gua akan munculkan keputusan tersembunyi yang biasanya ditebak coding agent — baru kita selesaikan Decision Debt sebelum handoff."
-          : "Tell me the idea in plain language. I’ll surface the hidden decisions a coding agent would otherwise invent — then we’ll pay down Decision Debt before handoff.",
+          ? "Ceritakan idenya dengan bahasa biasa. Setelah beberapa jawaban penting, kita susun Product Draft pertama dengan asumsi dan open question yang tetap terlihat."
+          : "Tell me the idea in plain language. After a few meaningful answers, we’ll create a first Product Draft with assumptions and open questions kept visible.",
       },
     ];
   return [{ id: "idea", role: "user", text: idea }];
@@ -169,23 +168,23 @@ function PackageBuildStatus({
   const failed = job.status === "FAILED";
   const queued = job.status === "QUEUED";
   return (
-    <section className="rf-package-status" aria-label="Package build status">
+    <section className="rf-package-status" aria-label="Final handoff status">
       <p>
         {failed
-          ? "Pembuatan paket berhenti"
+          ? "Pembuatan final handoff berhenti"
           : queued
-            ? "Paket produk sedang disiapkan"
-            : "Paket produk sedang dibuat"}
+            ? "Final handoff sedang disiapkan"
+            : "Final handoff sedang dibuat"}
       </p>
       <p className="mt-1">
         {failed
-          ? job.errorSummary || "Pembuatan paket gagal. Coba lagi."
+          ? job.errorSummary || "Final handoff gagal. Coba lagi."
           : queued
             ? "Menunggu worker..."
             : job.stageLabel}
       </p>
       {!failed && (
-        <ol aria-label="Tahapan pembuatan paket">
+        <ol aria-label="Tahapan final handoff">
           {PACKAGE_PROGRESS_STAGES.map(([stage, label]) => {
             const complete = job.completedStages.includes(stage);
             const current = !complete && job.stage === stage;
@@ -208,7 +207,11 @@ function PackageBuildStatus({
         </ol>
       )}
       {failed && (
-        <button className="rf-primary-button mt-3" type="button" onClick={onRetry}>
+        <button
+          className="rf-primary-button mt-3"
+          type="button"
+          onClick={onRetry}
+        >
           Coba lagi
         </button>
       )}
@@ -231,31 +234,42 @@ function PackageReadyActions({
   return (
     <section
       className="rf-package-status"
-      aria-label={indo ? "Paket produk siap" : "Product package ready"}
+      aria-label={indo ? "Final handoff siap" : "Final handoff ready"}
     >
       <p className="text-foreground">
-        {indo ? "Paket produk siap." : "Product package is ready."}
+        {indo ? "Final handoff siap." : "Final handoff is ready."}
       </p>
       <p className="mt-1">
         {indo
-          ? "Dokumen dan handoff sudah bisa ditinjau. Prototype opsional."
-          : "Documents and handoff are ready to review. Prototype is optional."}
+          ? "Artifact terbaru dan referensi design sudah bisa diunduh."
+          : "The latest artifacts and design references are ready to download."}
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button className="rf-primary-button" type="button" onClick={onDownload}>
-          Download Handoff
+        <button
+          className="rf-primary-button"
+          type="button"
+          onClick={onDownload}
+        >
+          Download final handoff
         </button>
-        <button className="rf-header-action inline-flex" type="button" onClick={onProductMap}>
-          {indo ? "Lihat Product Spec" : "View Product Spec"}
+        <button
+          className="rf-header-action inline-flex"
+          type="button"
+          onClick={onProductMap}
+        >
+          {indo ? "Lihat documents" : "View documents"}
         </button>
-        <button className="rf-header-action inline-flex" type="button" onClick={onPrototype}>
+        <button
+          className="rf-header-action inline-flex"
+          type="button"
+          onClick={onPrototype}
+        >
           {indo ? "Buat prototype dengan AI" : "Build prototype with AI"}
         </button>
       </div>
     </section>
   );
 }
-
 
 function isDesignIntent(text: string) {
   return /\b(buat design|bikin design|generate design|buat prototype|bikin prototype)\b/i.test(
@@ -289,9 +303,7 @@ function thinkingCopy(elapsed: number, indo: boolean) {
       ? "Menemukan asumsi penting"
       : "Identifying important assumptions";
   }
-  return indo
-    ? "Memikirkan alur kerjanya"
-    : "Thinking through the workflow";
+  return indo ? "Memikirkan alur kerjanya" : "Thinking through the workflow";
 }
 
 export default function ProjectWorkspace({
@@ -333,7 +345,12 @@ export default function ProjectWorkspace({
   const [renaming, setRenaming] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState("");
   const [recentProjects, setRecentProjects] = useState<
-    Array<{ id: string; name: string; updatedAt?: string; stage?: ProjectStage }>
+    Array<{
+      id: string;
+      name: string;
+      updatedAt?: string;
+      stage?: ProjectStage;
+    }>
   >([]);
   const [navOpen, setNavOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -357,9 +374,7 @@ export default function ProjectWorkspace({
       );
     const data = await response.json();
     setProject(data.project);
-    setExportReady(
-      Boolean(data.project.canonicalState?.studio?.currentVersion > 0),
-    );
+    setExportReady(false);
     setActivity(data.activity || []);
     setMessages(
       data.messages?.length
@@ -391,7 +406,11 @@ export default function ProjectWorkspace({
         if (data.state && typeof data.version === "number") {
           setProject((current) =>
             current
-              ? { ...current, canonicalState: data.state, version: data.version }
+              ? {
+                  ...current,
+                  canonicalState: data.state,
+                  version: data.version,
+                }
               : current,
           );
         }
@@ -526,7 +545,11 @@ export default function ProjectWorkspace({
         if (status.state && typeof status.version === "number") {
           setProject((current) =>
             current
-              ? { ...current, canonicalState: status.state, version: status.version }
+              ? {
+                  ...current,
+                  canonicalState: status.state,
+                  version: status.version,
+                }
               : current,
           );
         }
@@ -575,7 +598,6 @@ export default function ProjectWorkspace({
     };
   }, [projectId]);
 
-
   const fetchReferences = useCallback(async () => {
     if (!projectId) return;
     const response = await fetch(`/api/projects/${projectId}/references`);
@@ -615,7 +637,10 @@ export default function ProjectWorkspace({
   const packageReady = Boolean(
     exportReady || packageJob?.status === "COMPLETED",
   );
-  const designReady = packageReady || Boolean(state.draftSpecReady);
+  const draftAvailable = Boolean(
+    state.rawIdea?.trim() || state.normalizedSummary?.trim(),
+  );
+  const designReady = packageReady || draftAvailable;
 
   const visibleMessages = useMemo(() => {
     if (
@@ -647,7 +672,6 @@ export default function ProjectWorkspace({
     });
   }, [visibleMessages.length, working]);
 
-
   async function sendMessage(event?: FormEvent, directText?: string) {
     event?.preventDefault();
     const submittedText = (directText ?? composer).trim();
@@ -658,7 +682,8 @@ export default function ProjectWorkspace({
     const generation = conversationGenerationRef.current + 1;
     conversationGenerationRef.current = generation;
     activeConversationRef.current = { controller, generation };
-    const isCurrent = () => activeConversationRef.current?.generation === generation;
+    const isCurrent = () =>
+      activeConversationRef.current?.generation === generation;
     setMessages((current) => [
       ...current,
       { id: optimisticId, role: "user", text: submittedText },
@@ -685,7 +710,8 @@ export default function ProjectWorkspace({
               ? {
                   ...message,
                   userMessageId: data.userMessageId || message.userMessageId,
-                  conversationTurnId: data.turn?.id || message.conversationTurnId,
+                  conversationTurnId:
+                    data.turn?.id || message.conversationTurnId,
                   turnStatus: "RUNNING",
                   retryable: false,
                 }
@@ -786,11 +812,14 @@ export default function ProjectWorkspace({
     setRetryingTurnId(message.conversationTurnId || userMessageId);
     setWorking(true);
     try {
-      const response = await fetch(`/api/projects/${projectId}/conversation/retry`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userMessageId }),
-      });
+      const response = await fetch(
+        `/api/projects/${projectId}/conversation/retry`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userMessageId }),
+        },
+      );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Retry failed.");
       setProject((current) =>
@@ -807,40 +836,39 @@ export default function ProjectWorkspace({
     }
   }
 
-
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await sendMessage();
   }
 
-  async function buildDraftSpec() {
+  async function buildProductDraft() {
     if (!projectId || !project || working) return;
     setPageError("");
     try {
-      const response = await fetch(`/api/projects/${projectId}/spec`, {
+      const response = await fetch(`/api/projects/${projectId}/documents`, {
         method: "POST",
       });
       const data = await response.json();
       if (!response.ok)
-        throw new Error(data.error || "RockFoundry couldn't create the draft spec.");
-      setExportReady(true);
-      setWorkbench("spec");
+        throw new Error(
+          data.error || "RockFoundry couldn't create the Product Draft.",
+        );
+      setWorkbench("documents");
       setMessages((current) => [
         ...current,
         {
-          id: `spec-${Date.now()}`,
+          id: `draft-${Date.now()}`,
           role: "assistant",
           text: indo
-            ? "Draft Spec sudah dibuat. Bagian yang belum jelas tetap ditandai."
-            : "The draft spec is ready. Unresolved sections stay marked.",
+            ? "Product Draft sudah dibuat. Yang belum jelas tetap terlihat sebagai asumsi atau open question."
+            : "The Product Draft is ready. Unresolved details stay visible as assumptions or open questions.",
         },
       ]);
     } catch (cause) {
       setPageError(
         cause instanceof Error
           ? cause.message
-          : "RockFoundry couldn't create the draft spec.",
+          : "RockFoundry couldn't create the Product Draft.",
       );
     }
   }
@@ -920,8 +948,8 @@ export default function ProjectWorkspace({
                   id: `package-${data.job.id}`,
                   role: "assistant",
                   text: indo
-                    ? "Spec dan handoff sudah tersusun. Design workbench terbuka di kanan."
-                    : "The spec and handoff are assembled. The Design workbench is open on the right.",
+                    ? "Handoff final sudah tersusun. Design workbench terbuka di kanan."
+                    : "The final handoff is assembled. The Design workbench is open on the right.",
                 },
               ],
         );
@@ -1093,33 +1121,31 @@ export default function ProjectWorkspace({
             <button
               type="button"
               className="rf-status-line hidden sm:block"
-              onClick={() => setWorkbench("spec")}
-              title={readinessPlainLabel(state)}
+              onClick={() => setWorkbench("documents")}
+              title={
+                draftAvailable
+                  ? "Open the current Product Draft"
+                  : "Open the product idea"
+              }
             >
-              {projectStatus(state) === "Safe to build"
+              {draftAvailable
                 ? indo
-                  ? "Siap untuk MVP"
-                  : "Ready for MVP"
-                : projectStatus(state) === "Draft only"
-                  ? indo
-                    ? "Draft spec"
-                    : "Spec draft"
-                  : state.decisionDebt?.unresolvedHighRiskCount > 0
-                    ? indo
-                      ? `${state.decisionDebt.unresolvedHighRiskCount} hal penting belum diputuskan`
-                      : `${state.decisionDebt.unresolvedHighRiskCount} important items remain open`
-                    : indo
-                      ? "Ide produk"
-                      : "Product idea"}
+                  ? "Product draft tersedia"
+                  : "Product draft available"
+                : indo
+                  ? "Ide produk"
+                  : "Product idea"}
             </button>
           </div>
           <button
             className="rf-header-action hidden sm:inline-flex"
             type="button"
-            data-active={workbench === "spec"}
-            onClick={() => setWorkbench(workbench === "spec" ? null : "spec")}
+            data-active={workbench === "documents"}
+            onClick={() =>
+              setWorkbench(workbench === "documents" ? null : "documents")
+            }
           >
-            Spec
+            Documents
           </button>
           <button
             className="rf-header-action hidden sm:inline-flex"
@@ -1247,9 +1273,11 @@ export default function ProjectWorkspace({
                 <PackageReadyActions
                   language={indo ? "id" : "en"}
                   onDownload={() =>
-                    window.location.assign(`/api/projects/${projectId}/export`)
+                    window.location.assign(
+                      `/api/projects/${projectId}/export?mode=handoff`,
+                    )
                   }
-                  onProductMap={() => setWorkbench("spec")}
+                  onProductMap={() => setWorkbench("documents")}
                   onPrototype={() => {
                     setPrototypeLaunchRequested(true);
                     setWorkbench("design");
@@ -1297,9 +1325,9 @@ export default function ProjectWorkspace({
                     <button
                       className="rf-chip"
                       type="button"
-                      onClick={() => setWorkbench("spec")}
+                      onClick={() => setWorkbench("documents")}
                     >
-                      Spec
+                      Documents
                     </button>
                     <button
                       className="rf-chip"
@@ -1333,18 +1361,20 @@ export default function ProjectWorkspace({
                         <ArrowUp className="size-4 shrink-0" />
                       )}
                     </button>
-                    {state.draftSpecReady ? (
+                    {draftAvailable ? (
                       <>
                         <button
                           className="rf-primary-button"
                           type="button"
-                          onClick={() => void buildDraftSpec()}
+                          onClick={() => void buildProductDraft()}
                           disabled={working}
                         >
-                          {indo ? "Buat Draft Spec" : "Create Draft Spec"}
+                          {indo
+                            ? "Generate Product Draft"
+                            : "Generate Product Draft"}
                         </button>
                         <button
-                          className="rf-primary-button"
+                          className="rf-header-action inline-flex"
                           type="button"
                           onClick={() => {
                             pendingDesignRef.current = false;
@@ -1353,7 +1383,9 @@ export default function ProjectWorkspace({
                           }}
                           disabled={working}
                         >
-                          {indo ? "Buat Design Preview" : "Create Design Preview"}
+                          {indo
+                            ? "Buat Design Preview"
+                            : "Generate Design Preview"}
                         </button>
                       </>
                     ) : null}
@@ -1375,7 +1407,7 @@ export default function ProjectWorkspace({
             <aside className="rf-workbench" aria-label="Product workbench">
               <div className="rf-workbench-head">
                 <p className="rf-workbench-kicker">
-                  {workbench === "spec" ? "PRODUCT SPEC" : "DESIGN"}
+                  {workbench === "documents" ? "PRODUCT DRAFT" : "DESIGN"}
                 </p>
                 <button
                   className="rf-icon-button"
@@ -1386,28 +1418,28 @@ export default function ProjectWorkspace({
                   <X className="size-4 shrink-0" />
                 </button>
               </div>
-              {workbench === "spec" ? (
-                <ProductSpec
-                  state={state}
+              {workbench === "documents" ? (
+                <ProductDocuments
+                  projectId={project.id}
                   language={indo ? "id" : "en"}
-                  packageReady={packageReady}
-                  working={working}
-                  onUpdate={() => {
+                  onContinueChat={() => {
                     setWorkbench(null);
                     document.getElementById("project-composer")?.focus();
                   }}
-                  onDownload={() =>
-                    window.location.assign(`/api/projects/${projectId}/export`)
-                  }
-                  onGenerateHandoff={() => void buildDraftSpec()}
+                  onOpenDesign={() => {
+                    pendingDesignRef.current = false;
+                    setWorkbench("design");
+                    setPrototypeLaunchRequested(true);
+                  }}
+                  onGenerateHandoff={() => void buildProductPackage()}
                 />
               ) : (
                 <DesignStudio
                   projectId={project.id}
                   studio={state.studio}
                   packageReady={designReady}
-                  draftSpecReady={Boolean(state.draftSpecReady)}
-                  showDownloadHandoff={packageJob?.status !== "COMPLETED"}
+                  draftSpecReady={draftAvailable}
+                  showDownloadHandoff={false}
                   showPrototypeAction
                   autoGenerate={prototypeLaunchRequested}
                   onAutoGenerateHandled={() =>
@@ -1415,7 +1447,9 @@ export default function ProjectWorkspace({
                   }
                   language={indo ? "id" : "en"}
                   onDownloadHandoff={() =>
-                    window.location.assign(`/api/projects/${projectId}/export`)
+                    window.location.assign(
+                      `/api/projects/${projectId}/export?mode=handoff`,
+                    )
                   }
                   onState={(nextState, version) =>
                     setProject((current) =>
@@ -1445,7 +1479,9 @@ export default function ProjectWorkspace({
           working={working}
           onClose={() => setDrawer(null)}
           onDownload={() =>
-            window.location.assign(`/api/projects/${projectId}/export`)
+            window.location.assign(
+              `/api/projects/${projectId}/export?mode=handoff`,
+            )
           }
           onReviseDecision={reviseDecision}
         />
@@ -1559,7 +1595,11 @@ function MessageRow({
               disabled={working}
               onClick={() => onAnswer(message)}
             >
-              {working ? "Retrying…" : language === "id" ? "Coba lagi" : "Retry"}
+              {working
+                ? "Retrying…"
+                : language === "id"
+                  ? "Coba lagi"
+                  : "Retry"}
             </button>
           </div>
         ) : null}
@@ -1994,16 +2034,27 @@ function DocumentsContent({
   exportReady: boolean;
   onDownload: () => void;
 }) {
-  const status = state.readiness ? projectStatus(state) : "Draft";
+  const status = exportReady ? "Ready" : "Not prepared";
   const hasDesign = state.studio?.currentVersion > 0;
-  const hasReferences = Array.isArray(state.references) && state.references.length > 0;
+  const hasReferences =
+    Array.isArray(state.references) && state.references.length > 0;
   const supportingReferences = hasReferences
     ? "reference/BRD.md · reference/PRD.md · reference/ERD.md · reference/references.json"
     : "reference/BRD.md · reference/PRD.md · reference/ERD.md";
   const core = [
     {
+      file: "BRD.md · PRD.md · ERD.md",
+      description:
+        "Business, product, and data documents included in the final package.",
+    },
+    {
+      file: "USER_FLOWS.md · SCREEN_MAP.md · DESIGN_BRIEF.md",
+      description:
+        "The reviewed flow and design inputs used by the coding agent.",
+    },
+    {
       file: "PRODUCT_SPEC.md",
-      description: "Human-readable product overview, flows, rules, and unknowns.",
+      description: "Compact compatibility summary of the product truth.",
     },
     {
       file: "AGENT_HANDOFF.md",
@@ -2027,15 +2078,13 @@ function DocumentsContent({
   return (
     <div className="space-y-5 px-5 py-5">
       <p className="text-sm leading-6 text-muted-foreground">
-        Generate the handoff, then download the core brief and its guardrails
-        for the coding agent.
-      </p>
-      <p className="text-xs leading-5 text-muted-foreground">
-        {readinessPlainLabel(state)}
+        {exportReady
+          ? "This package contains the latest reviewed artifacts and design references."
+          : "Final handoff is separate from the working draft. Review Documents and choose Prepare final handoff when ready."}
       </p>
       <section className="space-y-2">
         <h3 className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
-          Primary build documents
+          Final package contents
         </h3>
         {core.map((doc) => (
           <div
@@ -2057,7 +2106,7 @@ function DocumentsContent({
       </section>
       <section>
         <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
-          Advanced coding-agent package
+          Coding-agent guardrails
         </h3>
         <div className="space-y-1">
           {advanced.map((doc) => (
@@ -2098,7 +2147,8 @@ function DocumentsContent({
         </button>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Build the product package from Discovery to generate this handoff.
+          Prepare the final handoff from Documents after reviewing the current
+          draft.
         </p>
       )}
     </div>

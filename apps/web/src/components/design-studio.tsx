@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type Screen = {
   id: string;
@@ -20,7 +14,7 @@ type Screen = {
 
 type Studio = {
   status: string;
-  readiness: {
+  readiness?: {
     level: string;
     score: number;
     blockers: string[];
@@ -113,8 +107,10 @@ export function DesignStudio({
     useState<PackageDesign | null>(null);
   const [designJob, setDesignJob] = useState<DesignJob | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [remoteReadiness, setRemoteReadiness] = useState<Studio["readiness"]>();
-  const readiness = remoteReadiness || studio?.readiness;
+  const onStateRef = useRef(onState);
+  useEffect(() => {
+    onStateRef.current = onState;
+  }, [onState]);
   const previewUrl = `/api/projects/${projectId}/design/preview?v=${studio?.currentVersion || 0}`;
   const baseline = remotePackageDesign || packageDesign || null;
   const hasDesign = Boolean(studio && studio.currentVersion > 0);
@@ -126,21 +122,24 @@ export function DesignStudio({
   const designBusy =
     working || ["QUEUED", "RUNNING"].includes(designJob?.status || "");
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetch(`/api/projects/${projectId}/design`)
-      .then((response) => response.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data.readiness) setRemoteReadiness(data.readiness);
-        if (data.packageDesign) setRemotePackageDesign(data.packageDesign);
-        if (data.designJob) setDesignJob(data.designJob);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
+  const refreshSnapshot = useCallback(async () => {
+    const response = await fetch(`/api/projects/${projectId}/design`);
+    if (!response.ok) return null;
+    const next = await response.json();
+    if (next.packageDesign) setRemotePackageDesign(next.packageDesign);
+    if (next.designJob) setDesignJob(next.designJob);
+    if (next.state && typeof next.version === "number") {
+      onStateRef.current(next.state, next.version);
+    }
+    return next;
   }, [projectId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshSnapshot().catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshSnapshot]);
   useEffect(() => {
     if (!designJob || !["QUEUED", "RUNNING"].includes(designJob.status)) return;
     const poll = window.setInterval(async () => {
@@ -153,12 +152,7 @@ export function DesignStudio({
       setDesignJob(data.job);
       if (["COMPLETED", "FAILED"].includes(data.job.status)) {
         setStage("");
-        const snapshot = await fetch(`/api/projects/${projectId}/design`);
-        if (!snapshot.ok) return;
-        const next = await snapshot.json();
-        if (next.packageDesign) setRemotePackageDesign(next.packageDesign);
-        if (next.state && typeof next.version === "number")
-          onState(next.state, next.version);
+        await refreshSnapshot();
         if (data.job.status === "FAILED")
           setError(
             data.job.errorSummary ||
@@ -169,7 +163,7 @@ export function DesignStudio({
       }
     }, 1000);
     return () => window.clearInterval(poll);
-  }, [designJob, language, onState, projectId]);
+  }, [designJob, language, projectId, refreshSnapshot]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -291,7 +285,6 @@ export function DesignStudio({
     void send(composer);
   }
 
-
   const effectiveScreens = baseline?.screenMap || studio?.screenMap || [];
   const prototypeFailed = designJob?.status === "FAILED";
   const prototypeActionLabel = prototypeFailed
@@ -308,8 +301,8 @@ export function DesignStudio({
         {effectiveScreens.length === 0 ? (
           <p className="text-[0.8rem] text-muted-foreground">
             {language === "id"
-              ? "Screen map muncul setelah spec terkunci."
-              : "The screen map appears after the spec locks."}
+              ? "Screen Map akan diturunkan dari Product Draft."
+              : "The Screen Map is derived from the Product Draft."}
           </p>
         ) : (
           effectiveScreens.map((screen) => (
@@ -346,22 +339,24 @@ export function DesignStudio({
               : baseline
                 ? "Baseline · READY"
                 : language === "id"
-                  ? "Belum ada paket"
-                  : "No package yet"}
+                  ? "Preview belum dibuat"
+                  : "No preview yet"}
           </span>
         </div>
         {!hasDesign ? (
           <div className="rf-studio-empty">
             <p className="rf-studio-kicker">
-              {baseline ? "Baseline DesignSpec" : "Design Readiness"}
+              {baseline ? "Baseline Design Brief" : "Design Preview input"}
             </p>
             {baseline ? (
               <p className="mt-2 max-w-[48ch] text-[0.95rem] leading-6 text-muted-foreground">
                 {baseline.summary}
               </p>
             ) : (
-              <p className="rf-studio-score">
-                {readiness?.score ?? 0}% · {readiness?.level || "BLOCKED"}
+              <p className="mt-2 max-w-[48ch] text-[0.95rem] leading-6 text-muted-foreground">
+                {language === "id"
+                  ? "Preview bisa dimulai dari Product Draft yang masih terbuka. Asumsi dan pertanyaan tetap terlihat selama review."
+                  : "The preview can start from an open Product Draft. Assumptions and open questions stay visible during review."}
               </p>
             )}
             <p className="mt-2 text-[0.875rem] text-muted-foreground">
@@ -383,8 +378,9 @@ export function DesignStudio({
                 {DESIGN_PROGRESS.map(([key, en, id]) => {
                   const current = designJob?.stage === key;
                   const complete =
-                    DESIGN_PROGRESS.findIndex((item) => item[0] === designJob?.stage) >
-                    DESIGN_PROGRESS.findIndex((item) => item[0] === key);
+                    DESIGN_PROGRESS.findIndex(
+                      (item) => item[0] === designJob?.stage,
+                    ) > DESIGN_PROGRESS.findIndex((item) => item[0] === key);
                   return (
                     <li
                       key={key}
@@ -415,8 +411,8 @@ export function DesignStudio({
                 </button>
                 <p className="mt-2 max-w-[42ch] text-[0.75rem] leading-5 text-muted-foreground">
                   {language === "id"
-                    ? "Opsional. Prototype jadi referensi visual dari Product Spec dan Screen Map."
-                    : "Optional. The prototype becomes a visual reference from the Product Spec and Screen Map."}
+                    ? "Opsional. Prototype menjadi referensi visual dari PRD, User Flows, Screen Map, dan Design Brief."
+                    : "Optional. The prototype uses the PRD, User Flows, Screen Map, and Design Brief as inputs."}
                 </p>
               </>
             ) : null}
@@ -429,8 +425,8 @@ export function DesignStudio({
             {!effectivePackageReady ? (
               <p className="mt-3 text-[0.75rem] text-muted-foreground">
                 {language === "id"
-                  ? "Draft Spec sudah cukup untuk mulai design. Asumsi yang belum jelas akan ditampilkan."
-                  : "A draft spec is enough to start design. Unresolved assumptions stay visible."}
+                  ? "Product Draft yang belum lengkap tetap bisa dipreview. Asumsi yang belum jelas akan ditampilkan."
+                  : "An incomplete Product Draft can still start a preview. Unresolved assumptions stay visible."}
               </p>
             ) : null}
             {stage ? <p className="rf-progress-row">{stage}</p> : null}
@@ -455,9 +451,6 @@ export function DesignStudio({
         {studio?.stale && (
           <p>Design needs review. Affected: {studio.staleScreens.join(", ")}</p>
         )}
-        {studio?.debt.count ? (
-          <p>Design Debt {studio.debt.count} unresolved design decisions</p>
-        ) : null}
         <ol className="rf-studio-versions">
           {studio?.revisions.map((revision) => (
             <li key={revision.version}>

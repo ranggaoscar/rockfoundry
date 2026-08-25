@@ -12,11 +12,16 @@ RockFoundry does not generate application source code. It helps a builder turn a
 
 A builder opens RockFoundry and starts with a plain-language idea. RockFoundry conducts an adaptive discovery conversation. It identifies missing information, asks one context-specific question at a time, inspects public references when useful, records decisions and assumptions, detects contradictions, and calculates readiness.
 
-When enough information exists, RockFoundry generates exactly three primary documents:
+After a few meaningful conversation turns, RockFoundry should generate a reviewable Product Draft without waiting for `BUILD_READY`. The draft is a six-file artifact set:
 
 - `BRD.md` for business intent and scope.
 - `PRD.md` for product behavior and acceptance criteria.
 - `ERD.md` for the data model and Mermaid diagram.
+- `USER_FLOWS.md` for grounded user journeys and unresolved steps.
+- `SCREEN_MAP.md` for current and inferred screens.
+- `DESIGN_BRIEF.md` for the design preview input contract.
+
+`AGENT_HANDOFF.md` remains a later, explicit final-handoff artifact.
 
 The documents are deterministic outputs of canonical project state. AI may propose structured actions and enrich wording, but it may not silently mutate confirmed facts or introduce requirements during artifact rendering.
 
@@ -392,7 +397,7 @@ Contains a data model overview, a valid Mermaid `erDiagram`, textual entity sche
 
 ## 14. Artifact Consistency
 
-Deterministic validation runs across all three artifacts.
+Deterministic validation runs across the draft artifact set.
 
 - A major PRD concept such as quotation must have a corresponding ERD entity or explicit explanation.
 - A BRD concept such as three warehouse locations must appear in PRD scope and behavior.
@@ -469,19 +474,22 @@ Inline options may appear below a contextual question. The user can click an opt
 
 The sidebar includes `+ New Project`, recent projects, optional search for long lists, and `Settings`. Do not add folders or tags in V1.
 
-The active project header shows the project name and only essential controls. `...` may contain rename, export, and delete. Readiness appears as a compact status such as `Discovery: 68% · 3 important decisions remaining` and opens details on click.
+The active project header shows the project name and only essential controls. `...` may contain rename, export, and delete. Readiness remains available as secondary diagnostic context; it is not the primary project action.
 
 ### Documents
 
-A single `Documents` action opens a lightweight document view:
+A single `Documents` action opens a Product Draft workbench:
 
 ```text
-BRD  Ready
-PRD  Draft
-ERD  Needs 2 decisions
+BRD            Current
+PRD            Current
+ERD            Current
+USER_FLOWS     Current
+SCREEN_MAP     Current
+DESIGN_BRIEF   Current
 ```
 
-Each document supports preview, regenerate, copy, and download. Artifact generation appears inline in the conversation as a compact result with `Open` and `Download` actions.
+Each document supports preview, regeneration from new conversation truth, and draft download. Unknowns stay visible under confirmed facts, assumptions/proposals, and open questions. Final handoff is a separate explicit action.
 
 ### Provider settings
 

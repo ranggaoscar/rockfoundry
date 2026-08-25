@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { evaluateReadinessDirectly } from "@rockfoundry/core";
 import {
   getLocalProject,
   jsonError,
@@ -22,19 +21,18 @@ export async function POST(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
-    const directReadiness = evaluateReadinessDirectly(state);
-    const draftSpecReady = Boolean(
-      state.draftSpecReady || directReadiness.draftSpecReady,
-    );
-    const packageReady = state.readiness === "BUILD_READY";
-    if (!packageReady && !draftSpecReady) {
+    if (!state.rawIdea.trim() && !state.normalizedSummary?.trim()) {
       return jsonError(
-        "A draft-ready product specification is required before creating a design preview.",
+        "A product idea or draft artifact is required before creating a design preview.",
         422,
-        { code: "DESIGN_BLOCKED", draftSpecReady: false },
+        { code: "DESIGN_BLOCKED" },
       );
     }
-    const enqueued = await enqueueDesignGenerationJob(prisma, id, project.version);
+    const enqueued = await enqueueDesignGenerationJob(
+      prisma,
+      id,
+      project.version,
+    );
     return Response.json(
       {
         job: await latestDesignGenerationJob(prisma, id, project.version),
@@ -43,8 +41,14 @@ export async function POST(
       { status: 202 },
     );
   } catch (error) {
-    if (error instanceof Error && error.message.includes("active prototype job"))
-      return jsonError("A prototype is already being prepared for this project.", 409);
+    if (
+      error instanceof Error &&
+      error.message.includes("active prototype job")
+    )
+      return jsonError(
+        "A prototype is already being prepared for this project.",
+        409,
+      );
     return jsonError("RockFoundry couldn't start the prototype.", 422);
   }
 }

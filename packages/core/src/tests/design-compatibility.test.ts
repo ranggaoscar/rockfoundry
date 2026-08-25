@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createInitialProjectState, ProjectStateSchema } from "../schema/project";
+import {
+  createInitialProjectState,
+  ProjectStateSchema,
+} from "../schema/project";
 import {
   DesignSpecSchema,
   DesignStateSchema,
@@ -9,7 +12,10 @@ import { generateExport } from "../export/generator";
 
 describe("design schema compatibility", () => {
   it("reads a legacy DesignState with safe defaults", () => {
-    const parsed = DesignStateSchema.parse({ status: "DRAFT", currentVersion: 1 });
+    const parsed = DesignStateSchema.parse({
+      status: "DRAFT",
+      currentVersion: 1,
+    });
 
     expect(parsed).toMatchObject({
       status: "DRAFT",
@@ -21,8 +27,16 @@ describe("design schema compatibility", () => {
       revisions: [],
       assumptions: [],
     });
-    expect(parsed.readiness).toMatchObject({ level: "BLOCKED", score: 0, blockers: [], unresolved: [] });
-    expect(parsed.direction).toMatchObject({ mood: "quiet-technical", navigation: "sidebar" });
+    expect(parsed.readiness).toMatchObject({
+      level: "BLOCKED",
+      score: 0,
+      blockers: [],
+      unresolved: [],
+    });
+    expect(parsed.direction).toMatchObject({
+      mood: "quiet-technical",
+      navigation: "sidebar",
+    });
   });
 
   it("reads the legacy DesignSpec V1 shape unchanged", () => {
@@ -62,15 +76,30 @@ describe("design schema compatibility", () => {
       responsive: "stack on mobile",
       tokens: { radius: "12px" },
       layout: { mobileNavigation: "bottom bar" },
-      componentsV2: [{ name: "RecordTable", purpose: "show records", variants: ["compact"] }],
+      componentsV2: [
+        { name: "RecordTable", purpose: "show records", variants: ["compact"] },
+      ],
       screensV2: [{ screenId: "catalog", primaryAction: "Add record" }],
     });
 
     expect(parsed.navigation).toBe("sidebar");
-    expect(parsed.tokens).toMatchObject({ radius: "12px", typography: "system scale" });
-    expect(parsed.layout).toMatchObject({ mobileNavigation: "bottom bar", desktopNavigation: "sidebar" });
-    expect(parsed.componentsV2[0]).toMatchObject({ name: "RecordTable", variants: ["compact"], stateNotes: "" });
-    expect(parsed.screensV2[0]).toMatchObject({ screenId: "catalog", primaryAction: "Add record" });
+    expect(parsed.tokens).toMatchObject({
+      radius: "12px",
+      typography: "system scale",
+    });
+    expect(parsed.layout).toMatchObject({
+      mobileNavigation: "bottom bar",
+      desktopNavigation: "sidebar",
+    });
+    expect(parsed.componentsV2[0]).toMatchObject({
+      name: "RecordTable",
+      variants: ["compact"],
+      stateNotes: "",
+    });
+    expect(parsed.screensV2[0]).toMatchObject({
+      screenId: "catalog",
+      primaryAction: "Add record",
+    });
   });
 
   it("reads an old prototype artifact and preserves the allowed file contract", () => {
@@ -83,30 +112,47 @@ describe("design schema compatibility", () => {
       summary: "legacy prototype",
     });
 
-    expect(parsed.files.map(({ path }) => path)).toEqual(["index.html", "styles.css", "app.js"]);
+    expect(parsed.files.map(({ path }) => path)).toEqual([
+      "index.html",
+      "styles.css",
+      "app.js",
+    ]);
     expect(parsed.assumptions).toEqual([]);
   });
 
   it("keeps the old handoff/export document structure readable", async () => {
-    const result = await generateExport(createInitialProjectState({ id: "legacy", name: "Legacy", rawIdea: "A catalog" }));
+    const result = await generateExport(
+      createInitialProjectState({
+        id: "legacy",
+        name: "Legacy",
+        rawIdea: "A catalog",
+      }),
+    );
 
     expect(Object.keys(result.documents).sort()).toEqual([
       "AGENT_HANDOFF",
       "BRD",
       "DECISIONS",
       "DECISIONS_JSON",
+      "DESIGN_BRIEF",
       "DO_NOT_INVENT",
       "ERD",
       "INVARIANTS",
       "PRD",
       "READINESS",
+      "SCREEN_MAP",
+      "USER_FLOWS",
     ]);
-    expect(result.metadata.fileCount).toBe(8);
+    expect(result.metadata.fileCount).toBe(17);
     expect(result.documents.AGENT_HANDOFF).toContain("# Agent Handoff");
   });
 
   it("defaults absent additive project metadata safely", () => {
-    const legacy = createInitialProjectState({ id: "safe", name: "Safe", rawIdea: "A tool" });
+    const legacy = createInitialProjectState({
+      id: "safe",
+      name: "Safe",
+      rawIdea: "A tool",
+    });
     const parsed = ProjectStateSchema.parse(legacy);
 
     expect(parsed.generationMetadata).toEqual({});

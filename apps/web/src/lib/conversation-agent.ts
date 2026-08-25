@@ -30,7 +30,7 @@ export type ConversationAgentInput = {
   mode: ConversationMode;
   state: ProjectState;
 };
- 
+
 export type RecentConversationMessage = {
   role: "user" | "assistant";
   text: string;
@@ -75,8 +75,8 @@ function isCurrentConversationMessage(
   if (!identity) return false;
   return Boolean(
     (identity.id && entry.id === identity.id) ||
-      (identity.conversationTurnId &&
-        entry.conversationTurnId === identity.conversationTurnId),
+    (identity.conversationTurnId &&
+      entry.conversationTurnId === identity.conversationTurnId),
   );
 }
 
@@ -88,7 +88,8 @@ function findCurrentConversationMessageIdentity(
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (entry.role !== "user") continue;
-    const rawText = typeof entry.content === "string" ? entry.content : entry.text;
+    const rawText =
+      typeof entry.content === "string" ? entry.content : entry.text;
     if (
       typeof rawText === "string" &&
       normalizeConversationText(rawText) === latestNormalized
@@ -98,7 +99,7 @@ function findCurrentConversationMessageIdentity(
   }
   return undefined;
 }
- 
+
 export function conversationProjectContext(state: ProjectState) {
   const clarificationAdvisory =
     state.generationMetadata.conversationClarificationAdvisory;
@@ -170,7 +171,8 @@ export function formatRecentConversation(
   const messages = entries.flatMap((entry): RecentConversationMessage[] => {
     const role: RecentConversationMessage["role"] | null =
       entry.role === "user" || entry.role === "assistant" ? entry.role : null;
-    const rawText = typeof entry.content === "string" ? entry.content : entry.text;
+    const rawText =
+      typeof entry.content === "string" ? entry.content : entry.text;
     if (!role || typeof rawText !== "string") return [];
     const text = rawText.trim();
     if (
@@ -187,7 +189,11 @@ export function formatRecentConversation(
   const selected: RecentConversationMessage[] = [];
   let characters = 0;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (selected.length >= MAX_RECENT_CONVERSATION_ENTRIES || characters >= MAX_RECENT_CONVERSATION_CHARACTERS) break;
+    if (
+      selected.length >= MAX_RECENT_CONVERSATION_ENTRIES ||
+      characters >= MAX_RECENT_CONVERSATION_CHARACTERS
+    )
+      break;
     const remaining = MAX_RECENT_CONVERSATION_CHARACTERS - characters;
     const text = messages[index].text.slice(0, remaining);
     if (!text) continue;
@@ -262,14 +268,24 @@ export async function runConversationAgent(input: ConversationAgentInput) {
     mode: input.mode,
     riskContext: relevantRisks(input.state),
     recentConversation,
-    draftSpecReady: input.state.draftSpecReady || preTurnReadiness.draftSpecReady,
+    draftSpecReady:
+      input.state.draftSpecReady || preTurnReadiness.draftSpecReady,
+    conversationTurnCount:
+      typeof input.state.generationMetadata.conversationTurnCount === "number"
+        ? input.state.generationMetadata.conversationTurnCount
+        : 0,
     importantUnresolvedCount:
       input.state.openQuestions.length +
-      input.state.assumptions.filter((assumption) => !assumption.resolved).length,
+      input.state.assumptions.filter((assumption) => !assumption.resolved)
+        .length,
     highestImpactRisk,
   });
   const parsed = ConversationAgentResponseSchema.parse(response);
-  const applied = applyConversationResponseWithPolicy(input.state, parsed, input.text);
+  const applied = applyConversationResponseWithPolicy(
+    input.state,
+    parsed,
+    input.text,
+  );
   const postTurnReadiness = applied.readiness;
   const state = ProjectStateSchema.parse({
     ...applied.state,
@@ -281,7 +297,8 @@ export async function runConversationAgent(input: ConversationAgentInput) {
     discovery: {
       ...applied.state.discovery,
       evaluated: postTurnReadiness.discovery.evaluated,
-      importantDecisionsRemaining: postTurnReadiness.discovery.importantDecisionsRemaining,
+      importantDecisionsRemaining:
+        postTurnReadiness.discovery.importantDecisionsRemaining,
       unresolvedTopics: postTurnReadiness.discovery.unresolvedTopics,
     },
   });

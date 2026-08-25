@@ -36,12 +36,12 @@ The local web app exposes JSON route handlers. No endpoint requires a RockFoundr
 
 ## Artifacts
 
-| Method | Path                                | Purpose                                    |
-| ------ | ----------------------------------- | ------------------------------------------ |
-| `POST` | `/api/projects/:id/artifacts`       | Generate BRD, PRD, ERD, or all             |
-| `GET`  | `/api/projects/:id/artifacts`       | List artifact statuses                     |
-| `GET`  | `/api/projects/:id/artifacts/:type` | Preview Markdown                           |
-| `GET`  | `/api/projects/:id/export`          | Download the three-document project export |
+| Method | Path                                    | Purpose                                          |
+| ------ | --------------------------------------- | ------------------------------------------------ |
+| `POST` | `/api/projects/:id/documents`           | Generate or update the six-file Product Draft    |
+| `GET`  | `/api/projects/:id/documents`           | Read current or latest versioned draft artifacts |
+| `GET`  | `/api/projects/:id/export`              | Download the current draft ZIP                   |
+| `GET`  | `/api/projects/:id/export?mode=handoff` | Download the explicit final handoff ZIP          |
 
 ## Agent action envelope
 

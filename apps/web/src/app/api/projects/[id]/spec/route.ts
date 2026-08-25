@@ -1,8 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { evaluateDraftSpecMaturity, generateExport, validateConsistency } from "@rockfoundry/core";
-import { prisma } from "@rockfoundry/db";
+import { DRAFT_ARTIFACT_TYPES, persistDraftArtifacts } from "@/lib/artifacts";
 import {
   getLocalProject,
   jsonError,
@@ -18,50 +17,24 @@ export async function POST(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
-    const maturity = evaluateDraftSpecMaturity(state);
-    if (!maturity.ready) {
+    if (!state.rawIdea.trim() && !state.normalizedSummary?.trim()) {
       return jsonError(
-        "A canonical product truth is required before generating a handoff.",
+        "Add a product idea before generating a Product Draft.",
         422,
-        { code: "HANDOFF_BLOCKED", missing: maturity.missing },
+        { code: "DRAFT_INPUT_REQUIRED" },
       );
     }
-    const generated = await generateExport(state);
-    const consistency = validateConsistency(state);
-    await prisma.$transaction(
-      Object.entries(generated.documents).map(([type, content]) =>
-        prisma.artifact.upsert({
-          where: {
-            projectId_type_version: {
-              projectId: id,
-              type,
-              version: project.version,
-            },
-          },
-          create: {
-            projectId: id,
-            type,
-            status: consistency.status === "BLOCKING" ? "DRAFT" : "READY",
-            content,
-            version: project.version,
-          },
-          update: {
-            status: consistency.status === "BLOCKING" ? "DRAFT" : "READY",
-            content,
-            generatedAt: new Date(),
-          },
-        }),
-      ),
-    );
+    const generated = await persistDraftArtifacts(id, project.version, state);
     return Response.json({
       spec: {
-        status: consistency.status,
+        status: generated.consistency.status,
         unresolvedQuestions: state.openQuestions,
         assumptions: state.assumptions,
-        documents: ["PRODUCT_SPEC.md", "AGENT_HANDOFF.md", "DO_NOT_INVENT.md"],
+        documents: DRAFT_ARTIFACT_TYPES.map((type) => `${type}.md`),
       },
       version: project.version,
-      consistency,
+      consistency: generated.consistency,
+      documents: generated.artifacts,
     });
   } catch {
     return jsonError("RockFoundry couldn't create the draft spec.", 422);

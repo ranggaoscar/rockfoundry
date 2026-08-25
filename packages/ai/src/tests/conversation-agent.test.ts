@@ -65,23 +65,30 @@ const lunaMalformedOptionalResponse = {
   },
 };
 
-
-function walkSchema(value: unknown, visit: (node: Record<string, unknown>) => void) {
+function walkSchema(
+  value: unknown,
+  visit: (node: Record<string, unknown>) => void,
+) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
   const node = value as Record<string, unknown>;
   visit(node);
-  for (const child of Object.values((node.properties || {}) as Record<string, unknown>))
+  for (const child of Object.values(
+    (node.properties || {}) as Record<string, unknown>,
+  ))
     walkSchema(child, visit);
   walkSchema(node.items, visit);
   for (const key of ["anyOf", "allOf", "oneOf"]) {
     const children = node[key];
-    if (Array.isArray(children)) children.forEach((child) => walkSchema(child, visit));
+    if (Array.isArray(children))
+      children.forEach((child) => walkSchema(child, visit));
   }
 }
 
 describe("Conversation Agent gateway", () => {
   it("emits a portable strict schema without fragile defaults or unions", () => {
-    expect(ConversationAgentResponseJsonSchema).toMatchObject({ type: "object" });
+    expect(ConversationAgentResponseJsonSchema).toMatchObject({
+      type: "object",
+    });
     expect(PortableConversationAgentResponseJsonSchema).toMatchObject({
       type: "object",
       additionalProperties: false,
@@ -96,7 +103,9 @@ describe("Conversation Agent gateway", () => {
       if (node.properties && typeof node.properties === "object") {
         expect(node.additionalProperties).toBe(false);
         expect(node.required).toEqual(
-          expect.arrayContaining(Object.keys(node.properties as Record<string, unknown>)),
+          expect.arrayContaining(
+            Object.keys(node.properties as Record<string, unknown>),
+          ),
         );
       }
     });
@@ -184,15 +193,21 @@ describe("Conversation Agent gateway", () => {
 
     const response = normalizeConversationAgentResponse(valid, "BRAINSTORM");
 
-    expect(response.quickReplies).toEqual([{ label: "One city", value: "one_city" }]);
+    expect(response.quickReplies).toEqual([
+      { label: "One city", value: "one_city" },
+    ]);
     expect(response.proposals).toEqual([valid.proposals[0]]);
     expect(response.assumptions).toEqual([valid.assumptions[0]]);
     expect(response.unresolvedRisks).toEqual([valid.unresolvedRisks[0]]);
-    expect(response.stateDelta.explicitFacts).toEqual([valid.stateDelta.explicitFacts[0]]);
+    expect(response.stateDelta.explicitFacts).toEqual([
+      valid.stateDelta.explicitFacts[0],
+    ]);
     expect(response.stateDelta.confirmedDecisions).toEqual([
       valid.stateDelta.confirmedDecisions[0],
     ]);
-    expect(response.stateDelta.corrections).toEqual([valid.stateDelta.corrections[0]]);
+    expect(response.stateDelta.corrections).toEqual([
+      valid.stateDelta.corrections[0],
+    ]);
     expect(response.stateDelta.resolvedQuestions).toEqual([
       valid.stateDelta.resolvedQuestions[0],
     ]);
@@ -205,10 +220,16 @@ describe("Conversation Agent gateway", () => {
   it("returns a natural becak first turn from a real provider without Mock fallback", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(providerResponse(JSON.stringify(lunaMalformedOptionalResponse)));
+      .mockResolvedValue(
+        providerResponse(JSON.stringify(lunaMalformedOptionalResponse)),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new AiGateway(
-      new OpenAICompatibleGateway("https://provider.example/v1", "test-key", "test-model"),
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "test-model",
+      ),
     );
 
     const response = await gateway.runConversationAgent({
@@ -229,9 +250,12 @@ describe("Conversation Agent gateway", () => {
   });
 
   it("returns a natural finance response without a canned question contract", async () => {
-    const response = await new AiGateway(new MockGatewayProvider()).runConversationAgent({
+    const response = await new AiGateway(
+      new MockGatewayProvider(),
+    ).runConversationAgent({
       project: {
-        rawIdea: "Gua mau bikin aplikasi sederhana buat catat uang masuk keluar.",
+        rawIdea:
+          "Gua mau bikin aplikasi sederhana buat catat uang masuk keluar.",
         normalizedSummary: "Aplikasi pencatatan uang masuk keluar.",
         targetUsers: [],
         roles: [],
@@ -241,7 +265,8 @@ describe("Conversation Agent gateway", () => {
         assumptions: [],
         openQuestions: [],
       },
-      latestUserMessage: "Gua mau bikin aplikasi sederhana buat catat uang masuk keluar.",
+      latestUserMessage:
+        "Gua mau bikin aplikasi sederhana buat catat uang masuk keluar.",
       mode: "BRAINSTORM",
       riskContext: [],
     });
@@ -260,10 +285,16 @@ describe("Conversation Agent gateway", () => {
         statusText: "Bad Request",
         text: async () => "schema unsupported",
       })
-      .mockResolvedValueOnce(providerResponse(JSON.stringify(validConversation("Luna response"))));
+      .mockResolvedValueOnce(
+        providerResponse(JSON.stringify(validConversation("Luna response"))),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new AiGateway(
-      new OpenAICompatibleGateway("https://provider.example/v1", "test-key", "test-model"),
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "test-model",
+      ),
     );
 
     await expect(
@@ -275,8 +306,12 @@ describe("Conversation Agent gateway", () => {
       }),
     ).resolves.toMatchObject({ message: "Luna response" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).response_format.type).toBe("json_schema");
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).response_format).toEqual({ type: "json_object" });
+    expect(
+      JSON.parse(fetchMock.mock.calls[0][1].body).response_format.type,
+    ).toBe("json_schema");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).response_format).toEqual(
+      { type: "json_object" },
+    );
     vi.unstubAllGlobals();
   });
 
@@ -289,11 +324,21 @@ describe("Conversation Agent gateway", () => {
         statusText: "Unprocessable Entity",
         text: async () => "unsupported schema",
       })
-      .mockResolvedValueOnce(providerResponse(JSON.stringify({ message: "keep this message" })))
-      .mockResolvedValueOnce(providerResponse(JSON.stringify(validConversation("keep this message"))));
+      .mockResolvedValueOnce(
+        providerResponse(JSON.stringify({ message: "keep this message" })),
+      )
+      .mockResolvedValueOnce(
+        providerResponse(
+          JSON.stringify(validConversation("keep this message")),
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new AiGateway(
-      new OpenAICompatibleGateway("https://provider.example/v1", "test-key", "test-model"),
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "test-model",
+      ),
     );
 
     await expect(
@@ -305,7 +350,9 @@ describe("Conversation Agent gateway", () => {
       }),
     ).resolves.toMatchObject({ message: "keep this message" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).response_format).toEqual({ type: "json_object" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).response_format).toEqual(
+      { type: "json_object" },
+    );
     vi.unstubAllGlobals();
   });
 
@@ -313,7 +360,11 @@ describe("Conversation Agent gateway", () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error("provider offline"));
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new AiGateway(
-      new OpenAICompatibleGateway("https://provider.example/v1", "test-key", "test-model"),
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "test-model",
+      ),
     );
     await expect(
       gateway.runConversationAgent({
@@ -344,7 +395,7 @@ describe("Conversation Agent gateway", () => {
                   corrections: [],
                   resolvedQuestions: [],
                   resolvedAssumptions: [],
-                  },
+                },
                 proposals: [],
                 assumptions: [],
                 unresolvedRisks: [],
@@ -375,10 +426,13 @@ describe("Conversation Agent gateway", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
       response_format: { type: "json_schema" },
     });
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe("test-model");
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).response_format.json_schema.schema).toEqual(
-      PortableConversationAgentResponseJsonSchema,
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe(
+      "test-model",
     );
+    expect(
+      JSON.parse(fetchMock.mock.calls[0][1].body).response_format.json_schema
+        .schema,
+    ).toEqual(PortableConversationAgentResponseJsonSchema);
     vi.unstubAllGlobals();
   });
   it("sends the bounded recent conversation transcript in the provider payload", async () => {
@@ -388,11 +442,18 @@ describe("Conversation Agent gateway", () => {
     vi.stubGlobal("fetch", fetchMock);
     const recentConversation = [
       { role: "user" as const, text: "Saya ingin mulai dari satu kota." },
-      { role: "assistant" as const, text: "Baik, kita fokus pada satu kota dulu." },
+      {
+        role: "assistant" as const,
+        text: "Baik, kita fokus pada satu kota dulu.",
+      },
       { role: "user" as const, text: "Ya, satu kota untuk MVP." },
     ];
     const gateway = new AiGateway(
-      new OpenAICompatibleGateway("https://provider.example/v1", "test-key", "test-model"),
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "test-model",
+      ),
     );
 
     await gateway.runConversationAgent({
@@ -405,15 +466,21 @@ describe("Conversation Agent gateway", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    const userPayload = JSON.parse(body.messages.find((message: { role: string }) => message.role === "user").content);
+    const userPayload = JSON.parse(
+      body.messages.find((message: { role: string }) => message.role === "user")
+        .content,
+    );
     expect(userPayload.recentConversation).toEqual(recentConversation);
     vi.unstubAllGlobals();
   });
 
   it("responds to domain-specific follow-up context instead of repeating the first template", async () => {
-    const response = await new AiGateway(new MockGatewayProvider()).runConversationAgent({
+    const response = await new AiGateway(
+      new MockGatewayProvider(),
+    ).runConversationAgent({
       project: {
-        rawIdea: "Gua mau bikin aplikasi buat tempat grooming dan penitipan anjing.",
+        rawIdea:
+          "Gua mau bikin aplikasi buat tempat grooming dan penitipan anjing.",
         normalizedSummary: "Grooming dan penitipan anjing.",
         targetUsers: ["pemilik hewan"],
         roles: ["staf"],
@@ -423,19 +490,25 @@ describe("Conversation Agent gateway", () => {
         assumptions: [],
         openQuestions: [],
       },
-      latestUserMessage: "Pemilik hewan booking grooming atau penitipan, staf perlu lihat jadwal.",
+      latestUserMessage:
+        "Pemilik hewan booking grooming atau penitipan, staf perlu lihat jadwal.",
       mode: "CLARIFICATION",
       riskContext: [],
     });
 
     expect(response.message).toMatch(/jadwal|staf|booking/i);
-    expect(response.message).not.toContain("apakah satu booking bisa mencakup beberapa layanan");
+    expect(response.message).not.toContain(
+      "apakah satu booking bisa mencakup beberapa layanan",
+    );
   });
 
   it("progresses a becak fixture across city, driver, and draft-spec decisions", async () => {
     const gateway = new AiGateway(new MockGatewayProvider());
     const first = await gateway.runConversationAgent({
-      project: { rawIdea: "saya mau buat aplikasi becak online", openQuestions: [] },
+      project: {
+        rawIdea: "saya mau buat aplikasi becak online",
+        openQuestions: [],
+      },
       latestUserMessage: "saya mau buat aplikasi becak online",
       mode: "BRAINSTORM",
       riskContext: [],
@@ -459,7 +532,9 @@ describe("Conversation Agent gateway", () => {
       importantUnresolvedCount: 1,
     });
     expect(second.message).toMatch(/Gojek|satu kota/i);
-    expect(second.stateDelta.confirmedDecisions[0]?.evidence).toBe("satu kota dulu");
+    expect(second.stateDelta.confirmedDecisions[0]?.evidence).toBe(
+      "satu kota dulu",
+    );
     expect(second.suggestedNextAction.type).toBe("ASK_CONTEXTUAL_QUESTION");
 
     const third = await gateway.runConversationAgent({
@@ -477,16 +552,22 @@ describe("Conversation Agent gateway", () => {
     });
     expect(third.stateDelta.explicitFacts).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ evidence: "driver nya" }),
+        expect.objectContaining({ evidence: "driver becak" }),
         expect.objectContaining({ evidence: "pangkalan becak" }),
       ]),
     );
     expect(third.suggestedNextAction).toEqual({ type: "CREATE_SPEC" });
   });
   it("grounds becak dispatch semantics from the real user phrase", async () => {
-    const response = await new AiGateway(new MockGatewayProvider()).runConversationAgent({
-      project: { rawIdea: "saya mau buat aplikasi becak online", openQuestions: [] },
-      latestUserMessage: "kebeberapa driver yg online, dan siapa yg mau menerima",
+    const response = await new AiGateway(
+      new MockGatewayProvider(),
+    ).runConversationAgent({
+      project: {
+        rawIdea: "saya mau buat aplikasi becak online",
+        openQuestions: [],
+      },
+      latestUserMessage:
+        "kebeberapa driver yg online, dan siapa yg mau menerima",
       mode: "CLARIFICATION",
       riskContext: [],
       draftSpecReady: false,
@@ -504,6 +585,45 @@ describe("Conversation Agent gateway", () => {
     expect(response.stateDelta.confirmedDecisions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ topic: "dispatch_strategy" }),
+      ]),
+    );
+  });
+
+  it("grounds a laundry draft and employee tariff correction", async () => {
+    const gateway = new AiGateway(new MockGatewayProvider());
+    const extraction = await gateway.runInitialExtraction(
+      "Aplikasi laundry untuk pelanggan pesan pickup, melacak status cucian, dan owner mengatur tarif.",
+    );
+    expect(
+      extraction.extraction.coreEntities.map((item) => item.value),
+    ).toEqual(expect.arrayContaining(["Pesanan laundry", "Tarif layanan"]));
+    expect(
+      extraction.extraction.expectedWorkflows.map((item) => item.value),
+    ).toEqual(
+      expect.arrayContaining([expect.stringContaining("pesanan laundry")]),
+    );
+
+    const response = await gateway.runConversationAgent({
+      project: {
+        rawIdea: "Aplikasi laundry untuk pickup dan status cucian",
+        openQuestions: [],
+      },
+      latestUserMessage: "ternyata karyawan juga boleh ubah tarif",
+      mode: "CORRECTION",
+      riskContext: [],
+      conversationTurnCount: 3,
+    });
+    expect(response.stateDelta.explicitFacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "permissions",
+          value: "karyawan juga boleh ubah tarif",
+        }),
+      ]),
+    );
+    expect(response.stateDelta.confirmedDecisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ topic: "tariff_permission" }),
       ]),
     );
   });

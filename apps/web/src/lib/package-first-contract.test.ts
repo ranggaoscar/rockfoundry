@@ -21,7 +21,10 @@ test("PackageJob is deterministic and contains no AI prototype stage", async () 
     "totalMs",
   ]);
 
-  const source = await fs.readFile(new URL("./package-jobs.ts", import.meta.url), "utf8");
+  const source = await fs.readFile(
+    new URL("./package-jobs.ts", import.meta.url),
+    "utf8",
+  );
   assert.equal(source.includes("@rockfoundry/ai"), false);
   assert.equal(source.includes("generateProjectDesign"), false);
   assert.equal(source.includes("prototype_generation"), false);
@@ -33,12 +36,22 @@ test("PackageJob is deterministic and contains no AI prototype stage", async () 
     return new Promise<never>(() => undefined);
   };
   const packageResult = await generateExport(
-    createInitialProjectState({ id: "package-contract", name: "Contract", rawIdea: "Kasir" }),
+    createInitialProjectState({
+      id: "package-contract",
+      name: "Contract",
+      rawIdea: "Kasir",
+    }),
   );
   assert.equal(providerCalls, 0);
   void neverResolvingProvider;
-  assert.equal(packageResult.metadata.fileCount, 8);
-  assert.ok(packageResult.documents.AGENT_HANDOFF.includes("Product Truth is authoritative"));
+  assert.equal(packageResult.metadata.fileCount, 17);
+  assert.ok(
+    packageResult.documents.AGENT_HANDOFF.includes(
+      "Product Truth is authoritative",
+    ),
+  );
   assert.ok(packageResult.buffer.length > 0);
-  assert.ok(packageResult.documents.DECISIONS.startsWith("# Confirmed Decisions"));
+  assert.ok(
+    packageResult.documents.DECISIONS.startsWith("# Confirmed Decisions"),
+  );
 });

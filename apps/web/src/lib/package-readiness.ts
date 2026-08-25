@@ -1,11 +1,6 @@
 import type { ReadinessResult } from "@rockfoundry/core";
 
 export function getPackageEligibility(readiness: ReadinessResult) {
-  const canBuildPackage = readiness.level === "BUILD_READY";
-  if (canBuildPackage) {
-    return { canBuildPackage: true, packageBlockers: [] as string[] };
-  }
-
   const packageBlockers = [
     ...readiness.blocking,
     ...readiness.decisionDebt.topRisks.map(
@@ -21,12 +16,9 @@ export function getPackageEligibility(readiness: ReadinessResult) {
     .slice(0, 6);
 
   return {
-    canBuildPackage: false,
-    packageBlockers:
-      packageBlockers.length > 0
-        ? packageBlockers
-        : [
-            `Readiness is ${readiness.level}. Resolve the remaining product requirements before building the package.`,
-          ],
+    // Readiness remains useful diagnostics, but it must not gate a user-chosen
+    // handoff. The route still rejects an actually empty product idea.
+    canBuildPackage: true,
+    packageBlockers,
   };
 }
