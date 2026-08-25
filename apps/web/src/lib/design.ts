@@ -7,6 +7,7 @@ import {
   approveDesign,
   classifyDesignRevision,
   evaluateDesignReadiness,
+  evaluateReadinessDirectly,
   generateMockPrototype,
   markDesignStale,
   validatePrototypeFiles,
@@ -123,22 +124,133 @@ export function designSnapshot(state: ProjectState) {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function hasExplicitUserProvenance(
+  state: ProjectState,
+  prefixes: string[],
+  value: string,
+) {
+  return prefixes.some((prefix) => {
+    const provenance = state.provenance[`${prefix}.${value}`];
+    return provenance?.source === "USER" && provenance.confidence === "EXPLICIT";
+  });
+}
+
+function explicitValues(
+  state: ProjectState,
+  values: string[],
+  prefixes: string[],
+) {
+  return values.filter((value) =>
+    hasExplicitUserProvenance(state, prefixes, value),
+  );
+}
+
+function explicitAcceptedDecisions(state: ProjectState) {
+  return state.decisions.filter(
+    (decision) =>
+      decision.status === "ACCEPTED" &&
+      decision.source === "USER" &&
+      decision.confidence === "EXPLICIT" &&
+      hasExplicitUserProvenance(state, ["decision"], decision.topic),
+  );
+}
+
+function explicitDesignState(state: ProjectState) {
+  return {
+    productType:
+      state.productType &&
+      hasExplicitUserProvenance(state, ["productType"], state.productType)
+        ? state.productType
+        : null,
+    targetUsers: explicitValues(state, state.targetUsers, ["targetUsers", "user"]),
+    roles: explicitValues(state, state.roles, ["roles", "role"]),
+    entities: explicitValues(state, state.entities, ["entities", "entity"]),
+    workflows: explicitValues(state, state.workflows, ["workflows", "workflow"]),
+    features: explicitValues(state, state.features, ["features", "feature"]),
+    constraints: explicitValues(state, state.constraints, ["constraints", "constraint"]),
+    decisions: explicitAcceptedDecisions(state),
+  };
+}
+
+function designInputSnapshot(state: ProjectState) {
+  const explicit = explicitDesignState(state);
+  const acceptedDecisions = explicit.decisions.map(({ topic, decision, affects }) => ({
+    topic,
+    decision,
+    affects,
+  }));
+  const actors = [...explicit.targetUsers, ...explicit.roles];
+  const rawProposals = state.generationMetadata.conversationProposals;
+  const proposals = Array.isArray(rawProposals)
+    ? rawProposals
+        .filter(isRecord)
+        .map((proposal) => ({
+          topic: typeof proposal.topic === "string" ? proposal.topic : null,
+          statement:
+            typeof proposal.statement === "string" ? proposal.statement : null,
+          status: typeof proposal.status === "string" ? proposal.status : "PROPOSED",
+        }))
+        .filter((proposal) => proposal.topic || proposal.statement)
+    : [];
+  const rawDesignSignals = state.generationMetadata.designSignals;
+  const designSignals = [
+    ...state.design,
+    ...(Array.isArray(rawDesignSignals) ? rawDesignSignals : []),
+  ]
+    .map((signal) => {
+      if (typeof signal === "string") return signal;
+      if (isRecord(signal) && typeof signal.value === "string") return signal.value;
+      return null;
+    })
+    .filter((signal): signal is string => Boolean(signal));
+
+  return {
+    confirmedTruth: {
+      actors: [...new Set(actors)],
+      workflows: explicit.workflows,
+      scope: explicit.features,
+      constraints: explicit.constraints,
+      acceptedDecisions,
+    },
+    draftSpec: {
+      productName: state.name,
+      summary: state.normalizedSummary || state.rawIdea,
+    },
+    labeled: {
+      assumptions: state.assumptions
+        .filter((assumption) => !assumption.resolved)
+        .map((assumption) => assumption.statement),
+      proposals,
+      openQuestions: [...state.openQuestions],
+    },
+    designSignals: [...new Set(designSignals)],
+  };
+}
+
 function designProductContext(state: ProjectState) {
+  const explicit = explicitDesignState(state);
   return {
     name: state.name,
     summary: state.normalizedSummary || state.rawIdea,
-    productType: state.productType || null,
-    targetUsers: state.targetUsers,
-    roles: state.roles,
-    entities: state.entities,
-    workflows: state.workflows,
-    features: state.features,
-    decisions: state.decisions
-      .filter((decision) => decision.status === "ACCEPTED")
-      .map(({ topic, decision, affects }) => ({ topic, decision, affects })),
+    productType: explicit.productType,
+    targetUsers: explicit.targetUsers,
+    roles: explicit.roles,
+    entities: explicit.entities,
+    workflows: explicit.workflows,
+    features: explicit.features,
+    decisions: explicit.decisions.map(({ topic, decision, affects }) => ({
+      topic,
+      decision,
+      affects,
+    })),
     assumptions: state.assumptions
       .filter((assumption) => !assumption.resolved)
       .map((assumption) => assumption.statement),
+    designInputSnapshot: designInputSnapshot(state),
   };
 }
 
@@ -245,8 +357,10 @@ export async function generateProjectDesign(
   } = {},
 ) {
   const totalStarted = Date.now();
-  const readiness = evaluateDesignReadiness(state);
-  if (readiness.level === "BLOCKED") throw new Error("DESIGN_BLOCKED");
+  const draftSpecReady =
+    state.draftSpecReady || evaluateReadinessDirectly(state).draftSpecReady;
+  if (!draftSpecReady) throw new Error("DESIGN_BLOCKED");
+  const product = designProductContext(state);
   const settings = deps.providerSettings || resolveProviderSettings();
   const generated =
     settings.mode === "openai-compatible"
@@ -290,7 +404,17 @@ export async function generateProjectDesign(
     try {
       await deps.onStage?.("QUALITY_REVIEW");
       review = await gateway.runDesignQualityReview({
-        productSummary: JSON.stringify({ name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows }),
+        productSummary: JSON.stringify({
+          name: product.name,
+          productType: product.productType,
+          targetUsers: product.targetUsers,
+          roles: product.roles,
+          entities: product.entities,
+          workflows: product.workflows,
+          features: product.features,
+          decisions: product.decisions,
+          designInputSnapshot: product.designInputSnapshot,
+        }),
         screenMap: reviewed.screenMap,
         designSpec: reviewed.designSpec,
         prototype: { html: files["index.html"] || "", css: files["styles.css"] || "", js: files["app.js"] || "" },
@@ -313,7 +437,7 @@ export async function generateProjectDesign(
       try {
         await deps.onStage?.("PROTOTYPE_REPAIR");
         const repaired = await gateway.runPrototypeRepair({
-          product: { name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows },
+          product,
           screenMap: reviewed.screenMap,
           designSpec: reviewed.designSpec,
           existingFiles: reviewed.files,

@@ -170,9 +170,10 @@ export function evaluateReadinessDirectly(
     /\b(?:application|aplikasi|platform|website|web app|mobile app|system|sistem|software|social media platform)\b/i.test(
       state.rawIdea,
     );
+  const actorGrounded = state.targetUsers.length > 0 || state.roles.length > 0;
   const foundationGrounded =
     !requiresFoundation ||
-    (state.targetUsers.length > 0 &&
+    (actorGrounded &&
       state.entities.length > 0 &&
       (state.objectives.length > 0 || state.workflows.length > 0));
   const draftMaturity = evaluateDraftSpecMaturity(state);

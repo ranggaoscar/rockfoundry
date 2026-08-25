@@ -63,10 +63,23 @@ const DESIGN_PROGRESS = [
   ["QUALITY_REVIEW", "Reviewing result", "Meninjau hasil"],
 ] as const;
 
+export function designGenerationReady(input: {
+  packageReady: boolean;
+  draftSpecReady: boolean;
+  packageDesignReady?: boolean;
+}) {
+  return (
+    input.packageReady ||
+    input.draftSpecReady ||
+    Boolean(input.packageDesignReady)
+  );
+}
+
 export function DesignStudio({
   projectId,
   studio,
   packageReady = false,
+  draftSpecReady = false,
   packageDesign,
   language = "en",
   onState,
@@ -79,6 +92,7 @@ export function DesignStudio({
   projectId: string;
   studio?: Studio;
   packageReady?: boolean;
+  draftSpecReady?: boolean;
   packageDesign?: PackageDesign | null;
   language?: "id" | "en";
   onState: (state: unknown, version: number) => void;
@@ -104,7 +118,11 @@ export function DesignStudio({
   const previewUrl = `/api/projects/${projectId}/design/preview?v=${studio?.currentVersion || 0}`;
   const baseline = remotePackageDesign || packageDesign || null;
   const hasDesign = Boolean(studio && studio.currentVersion > 0);
-  const effectivePackageReady = packageReady || Boolean(baseline) || hasDesign;
+  const effectivePackageReady = designGenerationReady({
+    packageReady,
+    draftSpecReady,
+    packageDesignReady: Boolean(baseline) || hasDesign,
+  });
   const designBusy =
     working || ["QUEUED", "RUNNING"].includes(designJob?.status || "");
 
@@ -123,7 +141,6 @@ export function DesignStudio({
       cancelled = true;
     };
   }, [projectId]);
-
   useEffect(() => {
     if (!designJob || !["QUEUED", "RUNNING"].includes(designJob.status)) return;
     const poll = window.setInterval(async () => {

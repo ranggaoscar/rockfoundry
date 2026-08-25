@@ -123,4 +123,34 @@ describe("Draft specification maturity", () => {
 
     expect(evaluateDraftSpecMaturity(state)).toEqual({ ready: true, missing: [] });
   });
+  it("allows a becak product shape by turn four without unrelated requirements", () => {
+    const state = createInitialProjectState({
+      id: "becak-fourth-turn",
+      name: "Becak Online",
+      rawIdea: "Saya mau buat aplikasi becak online",
+    });
+    state.roles = ["driver becak"];
+    state.entities = ["booking", "pangkalan becak"];
+    state.objectives = ["booking perjalanan"];
+    state.features = ["booking becak online"];
+    state.workflows = ["penumpang booking becak"];
+    state.constraints = ["satu kota dulu"];
+    state.provenance = {
+      "roles.driver becak": { source: "USER", confidence: "EXPLICIT", evidence: "driver becak" },
+      "objectives.booking perjalanan": { source: "USER", confidence: "EXPLICIT", evidence: "booking perjalanan" },
+      "features.booking becak online": { source: "USER", confidence: "EXPLICIT", evidence: "booking becak online" },
+      "workflows.penumpang booking becak": { source: "USER", confidence: "EXPLICIT", evidence: "penumpang booking becak" },
+      "constraints.satu kota dulu": { source: "USER", confidence: "EXPLICIT", evidence: "satu kota dulu" },
+    };
+
+    const readiness = evaluateReadinessDirectly(state);
+
+    expect(readiness.draftSpecReady).toBe(true);
+    expect(readiness.level).toBe("DRAFT_READY");
+    expect(readiness.discovery.unresolvedTopics).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/timeout|cancellation|payment|rating|promo/i),
+      ]),
+    );
+  });
 });

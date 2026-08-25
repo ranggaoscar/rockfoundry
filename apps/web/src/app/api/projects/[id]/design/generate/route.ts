@@ -1,9 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
+import { evaluateReadinessDirectly } from "@rockfoundry/core";
 import {
   getLocalProject,
   jsonError,
+  parseProjectState,
 } from "@/lib/local-project";
 import {
   enqueueDesignGenerationJob,
@@ -19,6 +21,19 @@ export async function POST(
     const { id } = await params;
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
+    const state = parseProjectState(project);
+    const directReadiness = evaluateReadinessDirectly(state);
+    const draftSpecReady = Boolean(
+      state.draftSpecReady || directReadiness.draftSpecReady,
+    );
+    const packageReady = state.readiness === "BUILD_READY";
+    if (!packageReady && !draftSpecReady) {
+      return jsonError(
+        "A draft-ready product specification is required before creating a design preview.",
+        422,
+        { code: "DESIGN_BLOCKED", draftSpecReady: false },
+      );
+    }
     const enqueued = await enqueueDesignGenerationJob(prisma, id, project.version);
     return Response.json(
       {

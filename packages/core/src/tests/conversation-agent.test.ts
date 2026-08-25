@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   ConversationAgentResponseSchema,
   applyConversationResponse,
+  applyConversationResponseWithPolicy,
   createInitialProjectState,
   type ConversationAgentResponse,
+  enforceConversationQuestionPolicy,
 } from "../index";
 
 function conversationDelta(
@@ -123,6 +125,7 @@ describe("Conversation Agent contract", () => {
           corrections: [
             {
               path: "roles",
+
               value: "owner",
               replaces: "employee",
               evidence: "owner saja untuk MVP",
@@ -360,4 +363,155 @@ describe("Conversation Agent contract", () => {
       ]),
     );
   });
+});
+
+  it("rejects normalized duplicate contextual questions and suppresses asks after draft readiness", () => {
+    const state = createInitialProjectState({
+      id: "conversation-question-policy",
+      name: "Becak",
+      rawIdea: "Aplikasi becak online",
+    });
+    state.openQuestions = ["Siapa pengguna utama aplikasi ini?"];
+
+    const duplicate = enforceConversationQuestionPolicy(
+      conversationDelta({
+        suggestedNextAction: {
+          type: "ASK_CONTEXTUAL_QUESTION",
+          question: "  Siapa   pengguna utama aplikasi ini? ",
+          quickReplies: [],
+        },
+      }),
+      state,
+    );
+    expect(duplicate.suggestedNextAction).toEqual({ type: "NONE" });
+
+    state.draftSpecReady = true;
+    const ready = enforceConversationQuestionPolicy(
+      conversationDelta({
+        suggestedNextAction: {
+          type: "ASK_CONTEXTUAL_QUESTION",
+          question: "Driver dipilih otomatis atau manual?",
+          quickReplies: [],
+        },
+      }),
+      state,
+    );
+    expect(ready.suggestedNextAction).toEqual({ type: "CREATE_SPEC" });
+  });
+
+  it("deduplicates contextual questions when applying a response", () => {
+    const state = createInitialProjectState({
+      id: "conversation-question-apply",
+      name: "Becak",
+      rawIdea: "Aplikasi becak online",
+    });
+    state.openQuestions = ["Driver dipilih otomatis atau manual?"];
+
+    const next = applyConversationResponse(
+      state,
+      conversationDelta({
+        suggestedNextAction: {
+          type: "ASK_CONTEXTUAL_QUESTION",
+          question: "driver   dipilih otomatis atau manual?",
+          quickReplies: [],
+        },
+      }),
+      "Saya masih memikirkan alur booking.",
+    );
+
+    expect(next.openQuestions).toEqual(["Driver dipilih otomatis atau manual?"]);
+  });
+
+it("returns CREATE_SPEC and removes a stale ask after this turn becomes draft-ready", () => {
+  const state = createInitialProjectState({
+    id: "conversation-post-turn-ready",
+    name: "Becak Online",
+    rawIdea: "Saya mau buat aplikasi becak online",
+  });
+  state.roles = ["driver becak"];
+  state.entities = ["booking", "pangkalan becak"];
+  const latestUserMessage =
+    "penumpang booking perjalanan booking becak online satu kota dulu";
+  const response = conversationDelta({
+    stateDelta: {
+      explicitFacts: [
+        { path: "targetUsers", value: "penumpang", evidence: "penumpang" },
+        { path: "objectives", value: "booking perjalanan", evidence: "booking perjalanan" },
+        { path: "features", value: "booking becak online", evidence: "booking becak online" },
+        { path: "workflows", value: "penumpang booking becak", evidence: "penumpang booking becak" },
+        { path: "constraints", value: "satu kota dulu", evidence: "satu kota dulu" },
+      ],
+    },
+    suggestedNextAction: {
+      type: "ASK_CONTEXTUAL_QUESTION",
+      question: "Driver dipilih otomatis atau manual?",
+      quickReplies: [],
+    },
+  });
+
+  const applied = applyConversationResponseWithPolicy(
+    state,
+    response,
+    latestUserMessage,
+  );
+
+  expect(applied.readiness.draftSpecReady).toBe(true);
+  expect(applied.response.suggestedNextAction).toEqual({ type: "CREATE_SPEC" });
+  expect(applied.state.openQuestions).not.toContain(
+    "Driver dipilih otomatis atau manual?",
+  );
+});
+it("keeps timeout cancellation and payment open while recording a soft clarification advisory", () => {
+  const state = createInitialProjectState({
+    id: "conversation-soft-advisory",
+    name: "Becak Online",
+    rawIdea: "Aplikasi becak online",
+  });
+  const response = conversationDelta({
+    unresolvedRisks: [
+      { topic: "timeout", title: "Booking timeout", reason: "Belum diputuskan.", priority: 8 },
+      { topic: "cancellation", title: "Cancellation handling", reason: "Belum diputuskan.", priority: 8 },
+      { topic: "payment", title: "Payment responsibility", reason: "Belum diputuskan.", priority: 8 },
+    ],
+    proposals: [
+      {
+        topic: "payment",
+        statement: "Payment policy remains open.",
+        reason: "Needs an explicit product decision.",
+        affects: ["payment"],
+      },
+    ],
+    suggestedNextAction: {
+      type: "ASK_CONTEXTUAL_QUESTION",
+      question: "Driver dipilih otomatis atau manual?",
+      quickReplies: [],
+    },
+  });
+
+  const applied = applyConversationResponseWithPolicy(
+    state,
+    response,
+    "Saya masih merancang alur booking.",
+  );
+  const advisory = applied.state.generationMetadata.conversationClarificationAdvisory;
+
+  expect(advisory).toMatchObject({
+    maxQuestionsPerTurn: 1,
+    requestedThisTurn: 1,
+    voluntaryContinuationAllowed: true,
+    unresolvedDetailTopics: ["timeout", "cancellation", "payment"],
+  });
+  expect(applied.state.risks).toEqual(
+    expect.arrayContaining([
+      "Booking timeout: Belum diputuskan.",
+      "Cancellation handling: Belum diputuskan.",
+      "Payment responsibility: Belum diputuskan.",
+    ]),
+  );
+  expect(applied.state.generationMetadata.conversationProposals).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ topic: "payment", status: "PROPOSED" }),
+    ]),
+  );
+  expect(applied.readiness.blocking).toEqual([]);
 });

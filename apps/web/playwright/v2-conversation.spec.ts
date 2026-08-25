@@ -111,6 +111,7 @@ test.describe("V2 Conversation Agent product flow", () => {
 
   test("takes a finance idea through natural chat, draft spec, design, and handoff", async ({
     page,
+    request,
   }) => {
     await page.goto("/");
     await page.locator("#idea-composer").fill(
@@ -137,12 +138,64 @@ test.describe("V2 Conversation Agent product flow", () => {
     expect(conversationBody.message).toMatch(/owner|transaksi|kas/i);
     await expect(page.locator(".rf-option")).toHaveCount(0);
 
+
+    const projectId = new URL(page.url()).pathname.split("/").filter(Boolean).pop();
+    if (!projectId) throw new Error("Project id was not present in the URL.");
+    const detail = await request.get(`/api/projects/${projectId}`);
+    expect(detail.ok()).toBeTruthy();
+    const persisted = (await detail.json()).project as {
+      version: number;
+      canonicalState: Record<string, unknown>;
+    };
+    const matureState = {
+      ...persisted.canonicalState,
+      rawIdea: "A cashflow tracker",
+      targetUsers: ["owner"],
+      objectives: ["record cashflow"],
+      workflows: ["record transactions"],
+      constraints: ["MVP excludes approvals"],
+      provenance: {
+        "targetUsers.owner": {
+          source: "USER",
+          confidence: "EXPLICIT",
+          evidence: "owner",
+        },
+        "objectives.record cashflow": {
+          source: "USER",
+          confidence: "EXPLICIT",
+          evidence: "record cashflow",
+        },
+        "workflows.record transactions": {
+          source: "USER",
+          confidence: "EXPLICIT",
+          evidence: "record transactions",
+        },
+        "constraints.MVP excludes approvals": {
+          source: "USER",
+          confidence: "EXPLICIT",
+          evidence: "MVP excludes approvals",
+        },
+      },
+      generationMetadata: {
+        ...((persisted.canonicalState.generationMetadata || {}) as Record<string, unknown>),
+        initialConversation: { status: "COMPLETED" },
+      },
+    };
+    const patched = await request.patch(`/api/projects/${projectId}`, {
+      data: { canonicalState: matureState, expectedVersion: persisted.version },
+    });
+    expect(patched.ok()).toBeTruthy();
+    const patchedProject = (await patched.json()).project;
+    expect(patchedProject.canonicalState.draftSpecReady).toBe(true);
+    expect(patchedProject.canonicalState.readiness).not.toBe("BUILD_READY");
+
+    await page.reload();
+    await expect(page.locator("#project-composer")).toBeVisible();
     await page.getByRole("button", { name: "Spec", exact: true }).first().click();
     await expect(page.getByRole("complementary", { name: "Product workbench" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Product Overview" })).toBeVisible();
     await page.getByRole("button", { name: "Generate Handoff" }).click();
-    await expect(page.getByText("Draft Spec sudah dibuat.")).toBeVisible({ timeout: 15_000 });
-
+    await expect(page.getByText(/Draft Spec sudah dibuat\.|The draft spec is ready\./)).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: "Close workbench" }).click();
     await page.getByRole("button", { name: "Design", exact: true }).first().click();
     await expect(page.getByRole("complementary", { name: "Product workbench" })).toBeVisible();
@@ -267,6 +320,17 @@ test.describe("V2 Conversation Agent product flow", () => {
     await cta.click();
     expect((await specResponse).status()).toBe(200);
     await expect(page.getByRole("complementary", { name: "Product workbench" })).toBeVisible();
+    await page.getByRole("button", { name: "Close workbench" }).click();
+    await page.getByRole("button", { name: "Design", exact: true }).first().click();
+    await expect(page.getByRole("complementary", { name: "Product workbench" })).toBeVisible();
+    const prototypeButton = page.getByRole("button", {
+      name: /Buat prototype dengan AI|Generate Prototype with AI/i,
+    });
+    await expect(prototypeButton).toBeEnabled({ timeout: 15_000 });
+    await prototypeButton.click();
+    await expect(page.locator('iframe[title="Product prototype"]')).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test("progresses becak HTTP turns into grounded mature state", async ({ page, request }) => {

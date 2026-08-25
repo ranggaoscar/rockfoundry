@@ -615,7 +615,7 @@ export default function ProjectWorkspace({
   const packageReady = Boolean(
     exportReady || packageJob?.status === "COMPLETED",
   );
-  const designReady = Boolean(packageReady || project?.description || state.rawIdea);
+  const designReady = packageReady || Boolean(state.draftSpecReady);
 
   const visibleMessages = useMemo(() => {
     if (
@@ -1334,14 +1334,28 @@ export default function ProjectWorkspace({
                       )}
                     </button>
                     {state.draftSpecReady ? (
-                      <button
-                        className="rf-primary-button"
-                        type="button"
-                        onClick={() => void buildDraftSpec()}
-                        disabled={working}
-                      >
-                        {indo ? "Buat Draft Spec" : "Create Draft Spec"}
-                      </button>
+                      <>
+                        <button
+                          className="rf-primary-button"
+                          type="button"
+                          onClick={() => void buildDraftSpec()}
+                          disabled={working}
+                        >
+                          {indo ? "Buat Draft Spec" : "Create Draft Spec"}
+                        </button>
+                        <button
+                          className="rf-primary-button"
+                          type="button"
+                          onClick={() => {
+                            pendingDesignRef.current = false;
+                            setWorkbench("design");
+                            setPrototypeLaunchRequested(true);
+                          }}
+                          disabled={working}
+                        >
+                          {indo ? "Buat Design Preview" : "Create Design Preview"}
+                        </button>
+                      </>
                     ) : null}
                   </div>
                 </div>
@@ -1392,6 +1406,7 @@ export default function ProjectWorkspace({
                   projectId={project.id}
                   studio={state.studio}
                   packageReady={designReady}
+                  draftSpecReady={Boolean(state.draftSpecReady)}
                   showDownloadHandoff={packageJob?.status !== "COMPLETED"}
                   showPrototypeAction
                   autoGenerate={prototypeLaunchRequested}

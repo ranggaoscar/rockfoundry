@@ -381,6 +381,34 @@ describe("Conversation Agent gateway", () => {
     );
     vi.unstubAllGlobals();
   });
+  it("sends the bounded recent conversation transcript in the provider payload", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(providerResponse(JSON.stringify(validConversation())));
+    vi.stubGlobal("fetch", fetchMock);
+    const recentConversation = [
+      { role: "user" as const, text: "Saya ingin mulai dari satu kota." },
+      { role: "assistant" as const, text: "Baik, kita fokus pada satu kota dulu." },
+      { role: "user" as const, text: "Ya, satu kota untuk MVP." },
+    ];
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway("https://provider.example/v1", "test-key", "test-model"),
+    );
+
+    await gateway.runConversationAgent({
+      project: { rawIdea: "Build a city-first delivery app" },
+      latestUserMessage: "Ya, satu kota untuk MVP.",
+      mode: "CLARIFICATION",
+      riskContext: [],
+      recentConversation,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const userPayload = JSON.parse(body.messages.find((message: { role: string }) => message.role === "user").content);
+    expect(userPayload.recentConversation).toEqual(recentConversation);
+    vi.unstubAllGlobals();
+  });
 
   it("responds to domain-specific follow-up context instead of repeating the first template", async () => {
     const response = await new AiGateway(new MockGatewayProvider()).runConversationAgent({

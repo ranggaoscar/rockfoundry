@@ -5,6 +5,7 @@ import {
   type ProjectState,
 } from "../schema";
 import { recordDecision } from "../decision-graph";
+import { evaluateReadinessDirectly } from "../graph/evaluator";
 
 export const ConversationModeSchema = z.enum([
   "BRAINSTORM",
@@ -243,7 +244,7 @@ function isGroundedConfirmedDecision(
   );
 }
 
-/** Keep only state deltas whose evidence and proposed values are meaningful substrings of the latest user turn. */
+/** Keep canonical deltas grounded and allow at most one contextual ask. */
 export function groundConversationResponse(
   rawResponse: ConversationAgentResponse,
   latestUserMessage: string,
@@ -269,6 +270,34 @@ export function groundConversationResponse(
       ),
     },
   };
+}
+
+export function enforceConversationQuestionPolicy(
+  rawResponse: ConversationAgentResponse,
+  state: ProjectState,
+  options: { draftSpecReady?: boolean } = {},
+): ConversationAgentResponse {
+  const response = ConversationAgentResponseSchema.parse(rawResponse);
+  const action = response.suggestedNextAction;
+  if (action.type !== "ASK_CONTEXTUAL_QUESTION") return response;
+  if (options.draftSpecReady ?? state.draftSpecReady) {
+    return { ...response, suggestedNextAction: { type: "CREATE_SPEC" } };
+  }
+  const normalizedQuestion = normalizeConversationText(action.question);
+  const previousResolutions = state.generationMetadata.conversationResolutions;
+  const resolvedQuestions = Array.isArray(previousResolutions)
+    ? previousResolutions.flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || !("question" in entry)) return [];
+        const question = entry.question;
+        return typeof question === "string" ? [question] : [];
+      })
+    : [];
+  const duplicate = [...state.openQuestions, ...resolvedQuestions].some(
+    (question) => normalizeConversationText(question) === normalizedQuestion,
+  );
+  return duplicate
+    ? { ...response, suggestedNextAction: { type: "NONE" } }
+    : response;
 }
 function cloneState(state: ProjectState): ProjectState {
   return ProjectStateSchema.parse(JSON.parse(JSON.stringify(state)));
@@ -410,8 +439,11 @@ export function applyConversationResponse(
   rawResponse: ConversationAgentResponse,
   latestUserMessage: string,
 ): ProjectState {
-  const response = groundConversationResponse(rawResponse, latestUserMessage);
   const state = cloneState(currentState);
+  const response = enforceConversationQuestionPolicy(
+    groundConversationResponse(rawResponse, latestUserMessage),
+    state,
+  );
   const existingAssumptionIds = new Set(
     state.assumptions.map((assumption) => assumption.id),
   );
@@ -518,4 +550,72 @@ export function applyConversationResponse(
     lastConversationAction: response.suggestedNextAction.type,
   };
   return ProjectStateSchema.parse(state);
+}
+export function applyConversationResponseWithPolicy(
+  currentState: ProjectState,
+  rawResponse: ConversationAgentResponse,
+  latestUserMessage: string,
+) {
+  const grounded = groundConversationResponse(rawResponse, latestUserMessage);
+  const state = applyConversationResponse(
+    currentState,
+    grounded,
+    latestUserMessage,
+  );
+  const readiness = evaluateReadinessDirectly(state);
+  const response = enforceConversationQuestionPolicy(
+    grounded,
+    currentState,
+    { draftSpecReady: readiness.draftSpecReady },
+  );
+  if (
+    grounded.suggestedNextAction.type === "ASK_CONTEXTUAL_QUESTION" &&
+    response.suggestedNextAction.type !== "ASK_CONTEXTUAL_QUESTION"
+  ) {
+    const normalizedQuestion = normalizeConversationText(
+      grounded.suggestedNextAction.question,
+    );
+    const previousCount = currentState.openQuestions.filter(
+      (question) => normalizeConversationText(question) === normalizedQuestion,
+    ).length;
+    for (
+      let index = state.openQuestions.length - 1;
+      index >= 0 &&
+      state.openQuestions.filter(
+        (question) => normalizeConversationText(question) === normalizedQuestion,
+      ).length > previousCount;
+      index -= 1
+    ) {
+      if (normalizeConversationText(state.openQuestions[index]) === normalizedQuestion) {
+        state.openQuestions.splice(index, 1);
+      }
+    }
+  }
+  const unresolvedDetailTopics = [
+    ...new Set(
+      grounded.unresolvedRisks
+        .filter((risk) =>
+          /timeout|cancellation|payment/i.test(
+            `${risk.topic} ${risk.title} ${risk.reason}`,
+          ),
+        )
+        .map((risk) => risk.topic),
+    ),
+  ];
+  state.generationMetadata = {
+    ...state.generationMetadata,
+    conversationClarificationAdvisory: {
+      maxQuestionsPerTurn: 1,
+      requestedThisTurn:
+        grounded.suggestedNextAction.type === "ASK_CONTEXTUAL_QUESTION" ? 1 : 0,
+      voluntaryContinuationAllowed: true,
+      unresolvedDetailTopics,
+    },
+    lastConversationAction: response.suggestedNextAction.type,
+  };
+  return {
+    state: ProjectStateSchema.parse(state),
+    response,
+    readiness,
+  };
 }
