@@ -1,6 +1,7 @@
 import {
   ConversationAgentResponseSchema,
   applyConversationResponse,
+  evaluateReadinessDirectly,
   generateGenericDecisionCandidates,
   type ConversationAgentResponse,
   type ProjectState,
@@ -76,14 +77,21 @@ function projectContext(state: ProjectState) {
 }
 
 export async function runConversationAgent(input: ConversationAgentInput) {
+  const readiness = evaluateReadinessDirectly(input.state);
+  const highestImpactRisk = readiness.decisionDebt.topRisks[0] || null;
   const response = await getAiGateway().runConversationAgent({
     project: projectContext(input.state),
     latestUserMessage: input.text,
     mode: input.mode,
     riskContext: relevantRisks(input.state),
+    draftSpecReady: input.state.draftSpecReady || readiness.draftSpecReady,
+    importantUnresolvedCount:
+      input.state.openQuestions.length +
+      input.state.assumptions.filter((assumption) => !assumption.resolved).length,
+    highestImpactRisk,
   });
   const parsed = ConversationAgentResponseSchema.parse(response);
-  const nextState = applyConversationResponse(input.state, parsed);
+  const nextState = applyConversationResponse(input.state, parsed, input.text);
   await persistConversationActivities(input.projectId, parsed);
   return { response: parsed, state: nextState };
 }

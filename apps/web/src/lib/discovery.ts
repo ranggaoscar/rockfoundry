@@ -297,7 +297,7 @@ export async function runInitialConversation(
       const latest = await getLocalProject(projectId);
       if (!latest) throw new Error("PROJECT_NOT_FOUND");
       const mergedState = withInitialTurnMetadata(
-        applyConversationResponse(parseProjectState(latest), turn.response),
+        applyConversationResponse(parseProjectState(latest), turn.response, idea),
         {
           status: "COMPLETED",
           attempt,

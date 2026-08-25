@@ -57,10 +57,22 @@ export type ConversationCorrection = z.infer<
   typeof ConversationCorrectionSchema
 >;
 
+export const ConversationResolvedQuestionSchema = z.object({
+  question: z.string().min(1),
+  evidence: z.string().min(1),
+});
+export const ConversationResolvedAssumptionSchema = z.object({
+  statement: z.string().min(1),
+  resolution: z.string().min(1),
+  evidence: z.string().min(1),
+});
+
 export const ConversationStateDeltaSchema = z.object({
   explicitFacts: z.array(ConversationExplicitFactSchema).default([]),
   confirmedDecisions: z.array(ConversationConfirmedDecisionSchema).default([]),
   corrections: z.array(ConversationCorrectionSchema).default([]),
+  resolvedQuestions: z.array(ConversationResolvedQuestionSchema).default([]),
+  resolvedAssumptions: z.array(ConversationResolvedAssumptionSchema).default([]),
 });
 export type ConversationStateDelta = z.infer<
   typeof ConversationStateDeltaSchema
@@ -117,6 +129,8 @@ export const ConversationAgentResponseSchema = z.object({
     explicitFacts: [],
     confirmedDecisions: [],
     corrections: [],
+    resolvedQuestions: [],
+    resolvedAssumptions: [],
   }),
   proposals: z.array(ConversationProposalSchema).default([]),
   assumptions: z.array(ConversationAssumptionSchema).default([]),
@@ -143,6 +157,119 @@ const ARRAY_FACT_PATHS = new Set([
   "businessRules",
 ]);
 
+/** Normalize user/evidence text before deterministic substring matching. */
+export function normalizeConversationText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[’‘“”"`]/g, "")
+    .replace(/[‐‑‒–—―-]/g, " ")
+    .replace(/[,.!?;:()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function isGroundedConversationEvidence(
+  evidence: string,
+  latestUserMessage: string,
+): boolean {
+  const normalizedEvidence = normalizeConversationText(evidence);
+  const normalizedLatest = normalizeConversationText(latestUserMessage);
+  return (
+    normalizedEvidence.length >= 3 &&
+    /[\p{L}\p{N}]/u.test(normalizedEvidence) &&
+    normalizedLatest.includes(normalizedEvidence)
+  );
+}
+
+function isGroundedConversationValue(value: string, latestUserMessage: string) {
+  const normalizedValue = normalizeConversationText(value);
+  const normalizedLatest = normalizeConversationText(latestUserMessage);
+  return (
+    normalizedValue.length >= 3 &&
+    /[\p{L}\p{N}]/u.test(normalizedValue) &&
+    normalizedLatest.includes(normalizedValue)
+  );
+}
+
+function isGroundedConversationDecision(
+  topic: string,
+  decision: string,
+  latestUserMessage: string,
+) {
+  if (!isGroundedConversationValue(decision, latestUserMessage)) return false;
+  const normalizedTopic = normalizeConversationText(topic.replace(/[_-]+/g, " "));
+  const topicIsIdentifier = /^[\p{L}\p{N}]+(?:[_-][\p{L}\p{N}]+)+$/u.test(
+    topic.trim(),
+  );
+  return (
+    topicIsIdentifier ||
+    (normalizedTopic.length >= 3 &&
+      normalizeConversationText(latestUserMessage).includes(normalizedTopic))
+  );
+}
+function isGroundedExplicitFact(
+  item: ConversationExplicitFact,
+  latestUserMessage: string,
+) {
+  return (
+    isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
+    isGroundedConversationValue(item.value, latestUserMessage)
+  );
+}
+
+function isGroundedCorrection(
+  item: ConversationCorrection,
+  latestUserMessage: string,
+) {
+  return (
+    isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
+    isGroundedConversationValue(item.value, latestUserMessage) &&
+    (!item.replaces || isGroundedConversationValue(item.replaces, latestUserMessage))
+  );
+}
+
+function isGroundedResolutionTarget(target: string, latestUserMessage: string) {
+  return isGroundedConversationValue(target, latestUserMessage);
+}
+
+function isGroundedConfirmedDecision(
+  item: ConversationConfirmedDecision,
+  latestUserMessage: string,
+) {
+  return (
+    isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
+    isGroundedConversationDecision(item.topic, item.decision, latestUserMessage)
+  );
+}
+
+/** Keep only state deltas whose evidence and proposed values are meaningful substrings of the latest user turn. */
+export function groundConversationResponse(
+  rawResponse: ConversationAgentResponse,
+  latestUserMessage: string,
+): ConversationAgentResponse {
+  const response = ConversationAgentResponseSchema.parse(rawResponse);
+  return {
+    ...response,
+    stateDelta: {
+      explicitFacts: response.stateDelta.explicitFacts.filter((item) =>
+        isGroundedExplicitFact(item, latestUserMessage),
+      ),
+      confirmedDecisions: response.stateDelta.confirmedDecisions.filter((item) =>
+        isGroundedConfirmedDecision(item, latestUserMessage),
+      ),
+      corrections: response.stateDelta.corrections.filter((item) =>
+        isGroundedCorrection(item, latestUserMessage),
+      ),
+      resolvedQuestions: response.stateDelta.resolvedQuestions.filter((item) =>
+        isGroundedConversationEvidence(item.evidence, latestUserMessage),
+      ),
+      resolvedAssumptions: response.stateDelta.resolvedAssumptions.filter((item) =>
+        isGroundedConversationEvidence(item.evidence, latestUserMessage),
+      ),
+    },
+  };
+}
 function cloneState(state: ProjectState): ProjectState {
   return ProjectStateSchema.parse(JSON.parse(JSON.stringify(state)));
 }
@@ -253,12 +380,41 @@ function applyAssumption(state: ProjectState, assumption: ConversationAssumption
   );
 }
 
+function appendConversationResolution(
+  state: ProjectState,
+  resolution: {
+    kind: "QUESTION" | "ASSUMPTION";
+    question?: string;
+    statement?: string;
+    resolution: string;
+    evidence: string;
+  },
+) {
+  const history = Array.isArray(state.generationMetadata.conversationResolutions)
+    ? state.generationMetadata.conversationResolutions
+    : [];
+  history.push({
+    ...resolution,
+    source: "USER",
+    confidence: "EXPLICIT",
+    createdAt: new Date().toISOString(),
+  });
+  state.generationMetadata = {
+    ...state.generationMetadata,
+    conversationResolutions: history,
+  };
+}
+
 export function applyConversationResponse(
   currentState: ProjectState,
   rawResponse: ConversationAgentResponse,
+  latestUserMessage: string,
 ): ProjectState {
-  const response = ConversationAgentResponseSchema.parse(rawResponse);
+  const response = groundConversationResponse(rawResponse, latestUserMessage);
   const state = cloneState(currentState);
+  const existingAssumptionIds = new Set(
+    state.assumptions.map((assumption) => assumption.id),
+  );
 
   for (const fact of response.stateDelta.explicitFacts) {
     applyExplicitFact(state, fact);
@@ -285,6 +441,53 @@ export function applyConversationResponse(
   }
   for (const assumption of response.assumptions) {
     applyAssumption(state, assumption);
+  }
+
+  for (const resolved of response.stateDelta.resolvedQuestions) {
+    const index = state.openQuestions.findIndex(
+      (question) =>
+        normalizeConversationText(question) ===
+        normalizeConversationText(resolved.question),
+    );
+    if (index < 0 || !isGroundedConversationEvidence(resolved.evidence, latestUserMessage)) continue;
+    const question = state.openQuestions[index];
+    state.openQuestions.splice(index, 1);
+    addProvenance(
+      state,
+      `resolvedQuestion.${question}`,
+      resolved.evidence,
+      "USER",
+      "EXPLICIT",
+    );
+    appendConversationResolution(state, {
+      kind: "QUESTION",
+      question,
+      resolution: resolved.evidence,
+      evidence: resolved.evidence,
+    });
+  }
+  for (const resolved of response.stateDelta.resolvedAssumptions) {
+    const assumption = state.assumptions.find(
+      (item) =>
+        existingAssumptionIds.has(item.id) &&
+        normalizeConversationText(item.statement) ===
+          normalizeConversationText(resolved.statement),
+    );
+    if (!assumption || !isGroundedConversationEvidence(resolved.evidence, latestUserMessage)) continue;
+    assumption.resolved = true;
+    addProvenance(
+      state,
+      `assumption.${assumption.statement}`,
+      resolved.evidence,
+      "USER",
+      "EXPLICIT",
+    );
+    appendConversationResolution(state, {
+      kind: "ASSUMPTION",
+      statement: assumption.statement,
+      resolution: resolved.resolution,
+      evidence: resolved.evidence,
+    });
   }
 
   const proposals = Array.isArray(state.generationMetadata.conversationProposals)

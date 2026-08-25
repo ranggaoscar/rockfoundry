@@ -120,8 +120,11 @@ export function resolveProviderSettings(
       source: "mock",
     };
   }
-  if (environment) return environment;
   const persisted = readPersistedSettings();
+  if (env.PLAYWRIGHT_PLANNER_FAILURE === "true" && persisted?.mode === "mock") {
+    return { ...persisted, source: "app-data" };
+  }
+  if (environment) return environment;
   if (persisted) return { ...persisted, source: "app-data" };
   return {
     mode: "mock",

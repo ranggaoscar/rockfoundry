@@ -78,6 +78,37 @@ test.describe("V2 Conversation Agent product flow", () => {
     ).toHaveLength(1);
   });
 
+  test("deduplicates concurrent normal turns by request id", async ({ request }) => {
+    const created = await request.post("/api/projects", {
+      data: { description: "" },
+    });
+    expect(created.status()).toBe(201);
+    const project = (await created.json()).project as { id: string };
+    const requestId = `e2e-concurrent-${Date.now()}`;
+    const headers = {
+      "x-conversation-request-id": requestId,
+    };
+    const [first, second] = await Promise.all([
+      request.post(`/api/projects/${project.id}/conversation`, {
+        headers,
+        data: { text: "Saya ingin aplikasi catat uang masuk keluar." },
+      }),
+      request.post(`/api/projects/${project.id}/conversation`, {
+        headers,
+        data: { text: "Saya ingin aplikasi catat uang masuk keluar." },
+      }),
+    ]);
+    expect([first.status(), second.status()]).toEqual(
+      expect.arrayContaining([200, 202]),
+    );
+    const completed = first.status() === 200 ? await first.json() : await second.json();
+    expect(completed.turn).toMatchObject({ status: "COMPLETED", providerCalls: 1 });
+    const detail = await request.get(`/api/projects/${project.id}`);
+    const messages = (await detail.json()).messages as Array<{ role: string }>;
+    expect(messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(messages.filter((message) => message.role === "assistant")).toHaveLength(1);
+  });
+
   test("takes a finance idea through natural chat, draft spec, design, and handoff", async ({
     page,
   }) => {
@@ -131,5 +162,167 @@ test.describe("V2 Conversation Agent product flow", () => {
     await page.getByRole("button", { name: "Handoff", exact: true }).click();
     await expect(page.getByText("PRODUCT_SPEC.md")).toBeVisible();
     await expect(page.getByText("AGENT_HANDOFF.md")).toBeVisible();
+  });
+  test("normal second turn preserves optimistic state and exact request payload", async ({
+    page,
+    request,
+  }) => {
+    const created = await request.post("/api/projects", { data: { description: "" } });
+    expect(created.status()).toBe(201);
+    const project = (await created.json()).project as {
+      id: string;
+      version: number;
+      canonicalState: Record<string, unknown>;
+    };
+    const state = {
+      ...project.canonicalState,
+      rawIdea: "saya mau buat aplikasi becak online",
+      generationMetadata: {
+        ...(project.canonicalState.generationMetadata as Record<string, unknown>),
+        initialConversation: { status: "COMPLETED" },
+      },
+    };
+    const patched = await request.patch(`/api/projects/${project.id}`, {
+      data: { canonicalState: state, expectedVersion: project.version },
+    });
+    expect(patched.ok()).toBeTruthy();
+
+    const text = "mirip gojek, tapi cuma becak di satu kota dulu";
+    await page.goto(`/project/${project.id}`);
+    await expect(page.locator("#project-composer")).toBeVisible();
+    const responsePromise = page.waitForResponse(
+      (item) =>
+        item.url().includes(`/api/projects/${project.id}/conversation`) &&
+        item.request().method() === "POST",
+    );
+    const requestPromise = page.waitForRequest(
+      (item) =>
+        item.url().includes(`/api/projects/${project.id}/conversation`) &&
+        item.method() === "POST",
+    );
+    await page.locator("#project-composer").fill(text);
+    await page.locator("#project-composer").press("Enter");
+    const observed = await requestPromise;
+    expect(observed.postDataJSON()).toEqual({ text });
+    expect(observed.headers()["x-conversation-request-id"]).toBeTruthy();
+    await expect(page.getByText(text, { exact: true })).toBeVisible();
+    await expect(page.locator("#project-composer")).toHaveValue("");
+    await expect(page.getByText(/Gojek|satu kota/i)).toBeVisible({ timeout: 30_000 });
+    expect((await responsePromise).status()).toBe(200);
+    await page.reload();
+    await expect(page.getByText(text, { exact: true })).toHaveCount(1);
+    const detail = await request.get(`/api/projects/${project.id}`);
+    const messages = (await detail.json()).messages as Array<{ role: string; text: string }>;
+    expect(messages.filter((message) => message.role === "user" && message.text === text)).toHaveLength(1);
+    expect(messages.filter((message) => message.role === "assistant")).toHaveLength(1);
+  });
+
+  test("shows the mature Draft Spec CTA before BUILD_READY and opens Product Spec", async ({
+    page,
+    request,
+  }) => {
+    const created = await request.post("/api/projects", { data: { description: "" } });
+    expect(created.status()).toBe(201);
+    const project = (await created.json()).project as {
+      id: string;
+      version: number;
+      canonicalState: Record<string, unknown>;
+    };
+    const patched = await request.patch(`/api/projects/${project.id}`, {
+      data: {
+        expectedVersion: project.version,
+        canonicalState: {
+          ...project.canonicalState,
+          rawIdea: "A cashflow tracker",
+          targetUsers: ["owner"],
+          objectives: ["record cashflow"],
+          workflows: ["record transactions"],
+          constraints: ["MVP excludes approvals"],
+          provenance: {
+            "targetUsers.owner": { source: "USER", confidence: "EXPLICIT", evidence: "owner" },
+            "objectives.record cashflow": { source: "USER", confidence: "EXPLICIT", evidence: "record cashflow" },
+            "workflows.record transactions": { source: "USER", confidence: "EXPLICIT", evidence: "record transactions" },
+            "constraints.MVP excludes approvals": { source: "USER", confidence: "EXPLICIT", evidence: "MVP excludes approvals" },
+          },
+          generationMetadata: {
+            ...(project.canonicalState.generationMetadata as Record<string, unknown>),
+            initialConversation: { status: "COMPLETED" },
+          },
+        },
+      },
+    });
+    expect(patched.ok()).toBeTruthy();
+    const updated = (await patched.json()).project;
+    expect(updated.canonicalState.draftSpecReady).toBe(true);
+    expect(updated.canonicalState.readiness).not.toBe("BUILD_READY");
+
+    await page.goto(`/project/${project.id}`);
+    const cta = page.getByRole("button", { name: /Buat Draft Spec|Create Draft Spec/ });
+    await expect(cta).toBeVisible();
+    const specResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/projects/${project.id}/spec`) &&
+        response.request().method() === "POST",
+    );
+    await cta.click();
+    expect((await specResponse).status()).toBe(200);
+    await expect(page.getByRole("complementary", { name: "Product workbench" })).toBeVisible();
+  });
+
+  test("progresses becak HTTP turns into grounded mature state", async ({ page, request }) => {
+    const firstText = "saya mau buat aplikasi becak online";
+    const cityQuestion = "Untuk awal, layanan ini dibatasi di satu kota atau langsung lintas kota?";
+    const driverQuestion = "Driver-nya berasal dari pangkalan becak terdaftar atau pendaftaran terbuka?";
+    const created = await request.post("/api/projects", { data: { description: firstText } });
+    expect(created.status()).toBe(201);
+    const project = (await created.json()).project as { id: string };
+    async function turn(text: string, index: number) {
+      return request.post(`/api/projects/${project.id}/conversation`, {
+        headers: { "x-conversation-request-id": `becak-acceptance-${index}` },
+        data: { text },
+      });
+    }
+    const initial = await request.post(`/api/projects/${project.id}/extract`, { data: { rawIdea: firstText } });
+    expect(initial.status()).toBe(200);
+    const second = await turn("mirip gojek, booking perjalanan dengan booking becak online cuma di satu kota dulu", 2);
+    expect(second.status()).toBe(200);
+    const secondBody = await second.json();
+    expect(secondBody.state.openQuestions).toEqual(expect.arrayContaining([driverQuestion]));
+    const third = await turn("driver nya driver becak dari pangkalan becak yang sudah terdaftar; MVP boundary satu kota dulu; objective booking perjalanan", 3);
+    expect(third.status()).toBe(200);
+    const thirdBody = await third.json();
+    expect(thirdBody.state.features).toEqual(expect.arrayContaining(["booking becak online"]));
+    expect(thirdBody.state.constraints).toEqual(expect.arrayContaining(["satu kota dulu"]));
+    expect(thirdBody.state.roles).toEqual(expect.arrayContaining(["driver becak"]));
+    expect(thirdBody.state.entities).toEqual(expect.arrayContaining(["pangkalan becak"]));
+    expect(thirdBody.state.openQuestions).not.toEqual(expect.arrayContaining([cityQuestion, driverQuestion]));
+    expect(thirdBody.state.draftSpecReady).toBe(true);
+
+    await page.goto(`/project/${project.id}`);
+    await expect(page.getByRole("button", { name: /Buat Draft Spec|Create Draft Spec/ })).toBeVisible();
+  });
+
+  test("retry after refresh is covered when deterministic provider failure is enabled", async ({ page, request }) => {
+    test.skip(
+      process.env.PLAYWRIGHT_PLANNER_FAILURE !== "true",
+      "Requires PLAYWRIGHT_PLANNER_FAILURE=true; this environment cannot force a durable provider failure without it.",
+    );
+    const created = await request.post("/api/projects", { data: { description: "" } });
+    expect(created.status()).toBe(201);
+    const project = (await created.json()).project as { id: string };
+    await page.goto(`/project/${project.id}`);
+    const text = "Saya ingin aplikasi booking becak.";
+    await page.locator("#project-composer").fill(text);
+    await page.locator("#project-composer").press("Enter");
+    await expect(page.getByText("RockFoundry couldn't finish this response.", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await page.reload();
+    await expect(page.getByRole("button", { name: /Retry|Coba lagi/i }).last()).toBeVisible();
+    await request.put("/api/provider", { data: { mode: "mock" } });
+    await page.getByRole("button", { name: /Retry|Coba lagi/i }).last().click();
+    await expect(page.locator(".rf-message-agent")).toHaveCount(1, { timeout: 30_000 });
+    const detail = await request.get(`/api/projects/${project.id}`);
+    const messages = (await detail.json()).messages as Array<{ role: string }>;
+    expect(messages.filter((message) => message.role === "user")).toHaveLength(1);
+    expect(messages.filter((message) => message.role === "assistant")).toHaveLength(1);
   });
 });

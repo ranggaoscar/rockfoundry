@@ -66,6 +66,12 @@ type Message = {
   topic?: string;
   category?: string;
   createdAt?: string;
+  requestId?: string;
+  userMessageId?: string;
+  conversationTurnId?: string;
+  turnStatus?: string;
+  turnError?: string;
+  retryable?: boolean;
   collapsed?: boolean;
 };
 type Activity = {
@@ -303,6 +309,7 @@ export default function ProjectWorkspace({
   const [workbench, setWorkbench] = useState<Workbench>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [retryingTurnId, setRetryingTurnId] = useState<string | null>(null);
   const [initialTurnStatus, setInitialTurnStatus] = useState<
     "IDLE" | "RUNNING" | "COMPLETED" | "FAILED"
   >("IDLE");
@@ -331,6 +338,11 @@ export default function ProjectWorkspace({
   const conversationRef = useRef<HTMLDivElement>(null);
   const pendingDesignRef = useRef(false);
   const initialTurnStartedRef = useRef(false);
+  const activeConversationRef = useRef<{
+    controller: AbortController;
+    generation: number;
+  } | null>(null);
+  const conversationGenerationRef = useRef(0);
   const provider = useProviderStatus();
 
   const fetchProject = useCallback(async (id: string) => {
@@ -636,21 +648,73 @@ export default function ProjectWorkspace({
 
   async function sendMessage(event?: FormEvent, directText?: string) {
     event?.preventDefault();
-    const text = (directText || composer).trim();
-    if (!text || working) return;
+    const submittedText = (directText ?? composer).trim();
+    if (!submittedText || working || initialTurnStatus === "RUNNING") return;
     setComposer("");
+    const optimisticId = `user-${crypto.randomUUID()}`;
+    const controller = new AbortController();
+    const generation = conversationGenerationRef.current + 1;
+    conversationGenerationRef.current = generation;
+    activeConversationRef.current = { controller, generation };
+    const isCurrent = () => activeConversationRef.current?.generation === generation;
+    setMessages((current) => [
+      ...current,
+      { id: optimisticId, role: "user", text: submittedText },
+    ]);
     setWorking(true);
     try {
+      const requestId = crypto.randomUUID();
       const response = await fetch(`/api/projects/${projectId}/conversation`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        headers: {
+          "Content-Type": "application/json",
+          "x-conversation-request-id": requestId,
+        },
+        body: JSON.stringify({ text: submittedText }),
+        signal: controller.signal,
       });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "RockFoundry couldn't process that message.",
+      if (!isCurrent()) return;
+      const data = await response.json().catch(() => ({}));
+      if (!isCurrent()) return;
+      if (response.status === 202 || data.turn?.status === "RUNNING") {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === optimisticId
+              ? {
+                  ...message,
+                  userMessageId: data.userMessageId || message.userMessageId,
+                  conversationTurnId: data.turn?.id || message.conversationTurnId,
+                  turnStatus: "RUNNING",
+                  retryable: false,
+                }
+              : message,
+          ),
         );
+        return;
+      }
+      if (!response.ok) {
+        if (data.retryable && data.userMessageId) {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === optimisticId
+                ? {
+                    ...message,
+                    userMessageId: data.userMessageId,
+                    conversationTurnId: data.turn?.id,
+                    turnStatus: "FAILED",
+                    turnError: "RockFoundry couldn't finish this response.",
+                    retryable: true,
+                  }
+                : message,
+            ),
+          );
+        }
+        throw new Error(
+          data.retryable
+            ? "RockFoundry couldn't finish this response."
+            : data.error || "RockFoundry couldn't process that message.",
+        );
+      }
       setProject((current) =>
         current
           ? { ...current, canonicalState: data.state, version: data.version }
@@ -672,10 +736,18 @@ export default function ProjectWorkspace({
             }))
         : [];
       setMessages((current) => [
-        ...current,
-        { id: `user-${Date.now()}`, role: "user", text },
+        ...current.filter((message) => message.id !== optimisticId),
         {
-          id: `assistant-${Date.now()}`,
+          id: data.userMessageId || optimisticId,
+          role: "user",
+          text: submittedText,
+          requestId: data.requestId || requestId,
+          userMessageId: data.userMessageId,
+          conversationTurnId: data.turn?.id,
+          turnStatus: data.turn?.status,
+        },
+        {
+          id: `assistant-${crypto.randomUUID()}`,
           role: "assistant",
           text:
             typeof data.message === "string"
@@ -684,19 +756,50 @@ export default function ProjectWorkspace({
           options: quickReplies.length ? quickReplies : undefined,
         },
       ]);
-      if (isDesignIntent(text)) {
+      if (isDesignIntent(submittedText)) {
         pendingDesignRef.current = false;
         setWorkbench("design");
         setPrototypeLaunchRequested(true);
       }
       await fetchReferences();
     } catch (cause) {
+      if (!isCurrent() || controller.signal.aborted) return;
       setPageError(
         cause instanceof Error
           ? cause.message
           : "RockFoundry couldn't process that message.",
       );
     } finally {
+      if (!isCurrent()) return;
+      activeConversationRef.current = null;
+      setWorking(false);
+    }
+  }
+
+  async function retryMessage(message: Message) {
+    const userMessageId = message.userMessageId || message.id;
+    if (!projectId || !userMessageId || working || retryingTurnId) return;
+    setPageError("");
+    setRetryingTurnId(message.conversationTurnId || userMessageId);
+    setWorking(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/conversation/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userMessageId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Retry failed.");
+      setProject((current) =>
+        current
+          ? { ...current, canonicalState: data.state, version: data.version }
+          : current,
+      );
+      await fetchProject(projectId);
+    } catch (cause) {
+      setPageError(cause instanceof Error ? cause.message : "Retry failed.");
+    } finally {
+      setRetryingTurnId(null);
       setWorking(false);
     }
   }
@@ -1067,12 +1170,25 @@ export default function ProjectWorkspace({
                     onToggleActivity={() =>
                       setActivityOpen((current) => !current)
                     }
-                    onAnswer={(option) =>
+                    onAnswer={(option) => {
+                      if (
+                        typeof option === "object" &&
+                        option !== null &&
+                        "retryable" in option &&
+                        option.retryable
+                      ) {
+                        void retryMessage(option as Message);
+                        return;
+                      }
                       void sendMessage(
                         undefined,
-                        typeof option === "string" ? option : option.label,
-                      )
-                    }
+                        typeof option === "string"
+                          ? option
+                          : "label" in option
+                            ? option.label
+                            : "",
+                      );
+                    }}
                   />
                 );
               })}
@@ -1197,9 +1313,16 @@ export default function ProjectWorkspace({
                     <button
                       className="rf-send-button"
                       type={working ? "button" : "submit"}
-                      disabled={working ? false : !composer.trim()}
-                      onClick={working ? () => setWorking(false) : undefined}
-                      aria-label={working ? "Stop generation" : "Send message"}
+                      onClick={
+                        working
+                          ? () => {
+                              activeConversationRef.current?.controller.abort();
+                              conversationGenerationRef.current += 1;
+                              activeConversationRef.current = null;
+                              setWorking(false);
+                            }
+                          : undefined
+                      }
                     >
                       {working ? (
                         <Square className="size-3.5 fill-current" />
@@ -1207,6 +1330,16 @@ export default function ProjectWorkspace({
                         <ArrowUp className="size-4 shrink-0" />
                       )}
                     </button>
+                    {state.draftSpecReady ? (
+                      <button
+                        className="rf-primary-button"
+                        type="button"
+                        onClick={() => void buildDraftSpec()}
+                        disabled={working}
+                      >
+                        {indo ? "Buat Draft Spec" : "Create Draft Spec"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex items-center justify-between px-1 py-2 text-[0.72rem] text-muted-foreground">
@@ -1283,11 +1416,6 @@ export default function ProjectWorkspace({
           ) : null}
         </div>
       </section>
-
-      <SettingsPanel
-        open={drawer === "settings"}
-        onClose={() => setDrawer(null)}
-      />
       {drawer && drawer !== "settings" ? (
         <DrawerPanel
           drawer={drawer}
@@ -1325,7 +1453,7 @@ function MessageRow({
   working: boolean;
   activityOpen: boolean;
   onToggleActivity: () => void;
-  onAnswer: (option: QuestionOption | string) => void;
+  onAnswer: (option: QuestionOption | Message | string) => void;
 }) {
   if (message.role === "tool") {
     return (
@@ -1404,6 +1532,19 @@ function MessageRow({
         <div className={isQuestion ? "rf-question-text" : "rf-message-text"}>
           {message.text}
         </div>
+        {isUser && message.retryable ? (
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <span>RockFoundry couldn&apos;t finish this response.</span>
+            <button
+              type="button"
+              className="rf-header-action"
+              disabled={working}
+              onClick={() => onAnswer(message)}
+            >
+              {working ? "Retrying…" : language === "id" ? "Coba lagi" : "Retry"}
+            </button>
+          </div>
+        ) : null}
         {message.detail ? (
           <div className="mt-2 text-[0.875rem] leading-6 text-muted-foreground">
             {message.detail}

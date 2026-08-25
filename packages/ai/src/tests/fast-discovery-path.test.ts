@@ -20,6 +20,10 @@ describe("V2 initial conversation path", () => {
       resolve(process.cwd(), "../../apps/web/src/app/api/projects/[id]/conversation/route.ts"),
       "utf8",
     );
+    const conversationTurnSource = readFileSync(
+      resolve(process.cwd(), "../../apps/web/src/lib/conversation-turn.ts"),
+      "utf8",
+    );
     const extractSource = readFileSync(
       resolve(process.cwd(), "../../apps/web/src/app/api/projects/[id]/extract/route.ts"),
       "utf8",
@@ -39,7 +43,7 @@ describe("V2 initial conversation path", () => {
     expect(conversationSource).not.toContain("canonicalQuestion");
     expect(agentSource).toContain("runConversationAgent");
     expect(agentSource).toContain("generateGenericDecisionCandidates");
-    expect(routeSource).toContain("question: null");
+    expect(conversationTurnSource).toContain("question: null");
     expect(routeSource).not.toContain("QuestionEngine");
     expect(extractSource).toContain("retryable");
     expect(extractSource).toContain("runInitialConversation");

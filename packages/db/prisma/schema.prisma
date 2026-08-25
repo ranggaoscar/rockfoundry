@@ -17,6 +17,7 @@ model Project {
   updatedAt      DateTime @updatedAt
 
   messages       ConversationMessage[]
+  conversationTurns ConversationTurn[]
   decisions      Decision[]
   assumptions    Assumption[]
   questions      OpenQuestion[]
@@ -25,12 +26,35 @@ model Project {
   references     Reference[]
   toolRuns       ToolRun[]
   agentRuns      AgentRun[]
-  artifacts       Artifact[]
+  artifacts      Artifact[]
   packageJobs    PackageJob[]
   designGenerationJobs DesignGenerationJob[]
   revisions      ProjectStateRevision[]
 
   @@index([updatedAt])
+}
+
+model ConversationTurn {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requestId       String
+  text            String
+  status          String   @default("RUNNING")
+  attempt         Int      @default(1)
+  projectVersion  Int?
+  responsePayload String?
+  errorSummary    String?
+  providerCalls   Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  messages        ConversationMessage[]
+
+  @@unique([projectId, requestId])
+  @@index([projectId, createdAt])
+  @@index([projectId, status, updatedAt])
 }
 
 model PackageJob {
@@ -72,15 +96,20 @@ model DesignGenerationJob {
 }
 
 model ConversationMessage {
-  id        String   @id @default(cuid())
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  role      String
-  content   String
-  metadata  String?
-  createdAt DateTime @default(now())
+  id                 String   @id @default(cuid())
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role               String
+  content            String
+  metadata           String?
+  conversationTurnId String?
+  conversationTurn   ConversationTurn? @relation(fields: [conversationTurnId], references: [id], onDelete: SetNull)
+  requestId          String?
+  createdAt          DateTime @default(now())
 
   @@index([projectId, createdAt])
+  @@index([projectId, conversationTurnId])
+  @@index([projectId, requestId])
 }
 
 model Decision {

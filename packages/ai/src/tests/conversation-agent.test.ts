@@ -26,7 +26,9 @@ function validConversation(message = "Model-authored response") {
       explicitFacts: [],
       confirmedDecisions: [],
       corrections: [],
-    },
+      resolvedQuestions: [],
+      resolvedAssumptions: [],
+      },
     proposals: [],
     assumptions: [],
     unresolvedRisks: [],
@@ -185,7 +187,9 @@ describe("Conversation Agent gateway", () => {
                   explicitFacts: [],
                   confirmedDecisions: [],
                   corrections: [],
-                },
+                  resolvedQuestions: [],
+                  resolvedAssumptions: [],
+                  },
                 proposals: [],
                 assumptions: [],
                 unresolvedRisks: [],
@@ -243,5 +247,57 @@ describe("Conversation Agent gateway", () => {
 
     expect(response.message).toMatch(/jadwal|staf|booking/i);
     expect(response.message).not.toContain("apakah satu booking bisa mencakup beberapa layanan");
+  });
+
+  it("progresses a becak fixture across city, driver, and draft-spec decisions", async () => {
+    const gateway = new AiGateway(new MockGatewayProvider());
+    const first = await gateway.runConversationAgent({
+      project: { rawIdea: "saya mau buat aplikasi becak online", openQuestions: [] },
+      latestUserMessage: "saya mau buat aplikasi becak online",
+      mode: "BRAINSTORM",
+      riskContext: [],
+      draftSpecReady: false,
+      importantUnresolvedCount: 1,
+    });
+    expect(first.message).toMatch(/becak|booking/i);
+    expect(first.suggestedNextAction.type).toBe("ASK_CONTEXTUAL_QUESTION");
+
+    const second = await gateway.runConversationAgent({
+      project: {
+        rawIdea: "saya mau buat aplikasi becak online",
+        openQuestions: [
+          "Untuk awal, layanan ini dibatasi di satu kota atau langsung lintas kota?",
+        ],
+      },
+      latestUserMessage: "mirip gojek, tapi cuma becak di satu kota dulu",
+      mode: "CLARIFICATION",
+      riskContext: [],
+      draftSpecReady: false,
+      importantUnresolvedCount: 1,
+    });
+    expect(second.message).toMatch(/Gojek|satu kota/i);
+    expect(second.stateDelta.confirmedDecisions[0]?.evidence).toBe("satu kota dulu");
+    expect(second.suggestedNextAction.type).toBe("ASK_CONTEXTUAL_QUESTION");
+
+    const third = await gateway.runConversationAgent({
+      project: {
+        rawIdea: "saya mau buat aplikasi becak online",
+        openQuestions: [
+          "Driver-nya berasal dari pangkalan becak terdaftar atau pendaftaran terbuka?",
+        ],
+      },
+      latestUserMessage: "driver nya dari pangkalan becak yang sudah terdaftar",
+      mode: "CLARIFICATION",
+      riskContext: [],
+      draftSpecReady: false,
+      importantUnresolvedCount: 1,
+    });
+    expect(third.stateDelta.explicitFacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ evidence: "driver nya" }),
+        expect.objectContaining({ evidence: "pangkalan becak" }),
+      ]),
+    );
+    expect(third.suggestedNextAction).toEqual({ type: "CREATE_SPEC" });
   });
 });

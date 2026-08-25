@@ -64,11 +64,86 @@ function mockConversationAgent(
   const text = `${context} ${latest}`.toLowerCase();
   const base = {
     quickReplies: [],
-    stateDelta: { explicitFacts: [], confirmedDecisions: [], corrections: [] },
+    stateDelta: { explicitFacts: [], confirmedDecisions: [], corrections: [], resolvedQuestions: [], resolvedAssumptions: [] },
     proposals: [],
     assumptions: [],
     unresolvedRisks: [],
   } satisfies Pick<ConversationAgentResponse, "quickReplies" | "stateDelta" | "proposals" | "assumptions" | "unresolvedRisks">;
+  const latestLower = latest.toLowerCase();
+  if (/becak/.test(text)) {
+    const cityQuestion =
+      "Untuk awal, layanan ini dibatasi di satu kota atau langsung lintas kota?";
+    const driverQuestion =
+      "Driver-nya berasal dari pangkalan becak terdaftar atau pendaftaran terbuka?";
+    if (/driver\s+nya|pangkalan becak/.test(latestLower)) {
+      return {
+        ...base,
+        message:
+          "Sip, mulai dari driver pangkalan becak yang sudah terdaftar membuat operasi dan kepercayaan lebih mudah dijaga. Setelah ini Draft Spec sudah cukup untuk ditinjau.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "roles", value: "driver becak", evidence: "driver nya" },
+            { path: "entities", value: "pangkalan becak", evidence: "pangkalan becak" },
+          ],
+          confirmedDecisions: [],
+          corrections: [],
+          resolvedQuestions: [
+            {
+              question: driverQuestion,
+              evidence: "pangkalan becak yang sudah terdaftar",
+            },
+          ],
+          resolvedAssumptions: [],
+        },
+        suggestedNextAction: { type: "CREATE_SPEC" },
+      };
+    }
+    if (/mirip gojek|satu kota/.test(latestLower)) {
+      return {
+        ...base,
+        message:
+          "Mulai dari pola booking seperti Gojek, tetapi batasi layanan ke satu kota dulu supaya supply, tarif, dan operasionalnya bisa diuji dengan jelas.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "features", value: "booking becak online", evidence: "mirip gojek" },
+            { path: "objectives", value: "booking perjalanan", evidence: "mirip gojek" },
+            { path: "constraints", value: "satu kota dulu", evidence: "satu kota dulu" },
+          ],
+          confirmedDecisions: [
+            {
+              topic: "service_area",
+              decision: "satu kota dulu",
+              evidence: "satu kota dulu",
+              affects: ["workflows", "constraints"],
+            },
+          ],
+          corrections: [],
+          resolvedQuestions: [
+            { question: cityQuestion, evidence: "satu kota dulu" },
+          ],
+          resolvedAssumptions: [],
+        },
+        suggestedNextAction: {
+          type: "ASK_CONTEXTUAL_QUESTION",
+          question: driverQuestion,
+          quickReplies: [],
+        },
+      };
+    }
+    return {
+      ...base,
+      message:
+        "Becak online bisa dimulai sebagai layanan booking yang menghubungkan penumpang dengan pengemudi lokal. Batas wilayah akan menentukan operasi MVP.",
+      mode: "BRAINSTORM",
+      suggestedNextAction: {
+        type: "ASK_CONTEXTUAL_QUESTION",
+        question: cityQuestion,
+        quickReplies: [],
+      },
+    };
+  }
 
   if (/owner|warung|usaha kecil/.test(text) && /uang|cash|keuangan|finance/.test(text)) {
     return {
@@ -79,6 +154,8 @@ function mockConversationAgent(
         explicitFacts: [{ path: "roles", value: "owner", evidence: latest }],
         confirmedDecisions: [],
         corrections: [],
+        resolvedQuestions: [],
+        resolvedAssumptions: [],
       },
       suggestedNextAction: { type: "CREATE_SPEC" },
     };
@@ -110,6 +187,8 @@ function mockConversationAgent(
           ],
           confirmedDecisions: [],
           corrections: [],
+        resolvedQuestions: [],
+        resolvedAssumptions: [],
         },
         suggestedNextAction: { type: "CREATE_SPEC" },
       };
@@ -126,6 +205,8 @@ function mockConversationAgent(
           ],
           confirmedDecisions: [],
           corrections: [],
+        resolvedQuestions: [],
+        resolvedAssumptions: [],
         },
         suggestedNextAction: {
           type: "ASK_CONTEXTUAL_QUESTION",
@@ -162,6 +243,8 @@ function mockConversationAgent(
           ],
           confirmedDecisions: [],
           corrections: [],
+        resolvedQuestions: [],
+        resolvedAssumptions: [],
         },
         suggestedNextAction: { type: "CREATE_SPEC" },
       };
@@ -178,6 +261,8 @@ function mockConversationAgent(
           ],
           confirmedDecisions: [],
           corrections: [],
+        resolvedQuestions: [],
+        resolvedAssumptions: [],
         },
         suggestedNextAction: {
           type: "ASK_CONTEXTUAL_QUESTION",
@@ -212,6 +297,8 @@ function mockConversationAgent(
           ],
           confirmedDecisions: [],
           corrections: [],
+        resolvedQuestions: [],
+        resolvedAssumptions: [],
         },
         suggestedNextAction: { type: "CREATE_SPEC" },
       };
@@ -227,6 +314,8 @@ function mockConversationAgent(
           ],
           confirmedDecisions: [],
           corrections: [],
+        resolvedQuestions: [],
+        resolvedAssumptions: [],
         },
         suggestedNextAction: { type: "CREATE_SPEC" },
       };
@@ -757,7 +846,15 @@ export class AiGateway {
     latestUserMessage: string;
     mode: string;
     riskContext: unknown[];
+    draftSpecReady?: boolean;
+    importantUnresolvedCount?: number;
+    highestImpactRisk?: unknown;
   }): Promise<ConversationAgentResponse> {
+    const maturityContext = {
+      draftSpecReady: input.draftSpecReady ?? false,
+      importantUnresolvedCount: input.importantUnresolvedCount ?? null,
+      highestImpactRisk: input.highestImpactRisk ?? null,
+    };
     const baseRequest: InferenceRequest<unknown> = {
       taskType: "conversation_agent",
       modelTier: "default",
@@ -765,7 +862,7 @@ export class AiGateway {
         {
           role: "system",
           content:
-            "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Keep the response concise but useful.",
+            "You are RockFoundry's Conversation Agent. Reply in the user's language, usually natural Indonesian when they write Indonesian. Address the idea first, provide useful product thinking, simplify MVP scope, and ask a contextual question only when it materially helps. When draftSpecReady is false, prioritize one important product-shape uncertainty from the supplied context instead of interrogating for completeness. When draftSpecReady is true, stop completeness interrogation, summarize the current product truth, and offer the Draft Spec action when appropriate. Never expose internal archetype names, decision debt jargon, planner terminology, or canned questionnaire language. The visible message must be authored naturally by you. Return JSON only. State delta rules: explicitFacts and confirmedDecisions require direct user evidence; AI proposals belong in proposals and must never become accepted decisions; inferences belong in assumptions. quickReplies are optional shortcuts, never required. Keep the response concise but useful.",
         },
         {
           role: "user",
@@ -774,6 +871,7 @@ export class AiGateway {
             latestUserMessage: input.latestUserMessage,
             mode: input.mode,
             relevantRisks: input.riskContext,
+            maturityContext,
           }),
         },
       ],
