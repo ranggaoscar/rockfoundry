@@ -1,4 +1,10 @@
 import {
+  ArtifactComposerInputSchema,
+  ArtifactComposerOutputSchema,
+  buildArtifactComposerInput,
+  normalizeArtifactComposerOutput,
+  type ArtifactComposerInput,
+  type ArtifactComposerOutput,
   ConversationAgentResponseSchema,
   ConversationAssumptionSchema,
   ConversationConfirmedDecisionSchema,
@@ -560,10 +566,79 @@ function mockConversationAgent(
     },
   };
 }
+function mockArtifactComposer(req: InferenceRequest<unknown>): ArtifactComposerOutput {
+  let input: ArtifactComposerInput;
+  try {
+    input = ArtifactComposerInputSchema.parse(
+      JSON.parse(req.messages.at(-1)?.content || "{}"),
+    );
+  } catch {
+    input = {
+      rawIdea: "the described product",
+      conversation: { recent: [], fullUseful: [] },
+      canonicalTruth: { facts: [], provenance: {} },
+      groundedUserFacts: [],
+      unresolved: { assumptions: [], proposals: [], openQuestions: [], contradictions: [] },
+      previousDraft: { version: null, artifacts: [] },
+    };
+  }
+  const laundry = /laundry|cucian|kiloan/i.test(input.rawIdea);
+  const subject = laundry ? "laundry shop" : input.rawIdea.trim() || "the product";
+  const facts = input.groundedUserFacts;
+  const factItems = facts.slice(0, 4).map((fact, index) => ({
+    id: `confirmed-${index + 1}`,
+    text: `${fact.path}: ${fact.value}`,
+    label: "CONFIRMED" as const,
+    evidenceIds: [fact.id],
+  }));
+  const proposed = laundry
+    ? [
+        ["Owner reviews active orders", "PROPOSAL"],
+        ["Karyawan updates order status", "ASSUMPTION"],
+        ["Customer and order records support the workflow", "PROPOSAL"],
+        ["Orders can move from received to ready for pickup", "PROPOSAL"],
+        ["Owner dashboard — Route: `#/orders` — Purpose: Review active laundry orders", "PROPOSAL"],
+        ["Order detail — Route: `#/orders/detail` — Purpose: Update order status", "PROPOSAL"],
+      ]
+    : [
+        [`A primary workflow for ${subject}`, "PROPOSAL"],
+        [`A lightweight record for the main ${subject} subject`, "ASSUMPTION"],
+        ["The first screen should show the user's main task", "PROPOSAL"],
+      ];
+  const item = (text: string, label: "ASSUMPTION" | "PROPOSAL" | "OPEN_QUESTION") => ({
+    id: `${label.toLowerCase()}-${text.slice(0, 12).replace(/\\W+/g, "-")}`,
+    text,
+    label,
+    evidenceIds: [],
+  });
+  const section = (title: string, extras: Array<{ text: string; label: "ASSUMPTION" | "PROPOSAL" | "OPEN_QUESTION" }>) => ({
+    id: title.toLowerCase().replace(/\\W+/g, "-"),
+    title,
+    paragraphs: [`A first draft for ${subject}; unsupported details remain visibly labeled for review.`],
+    items: [...factItems, ...extras.map((entry) => item(entry.text, entry.label))],
+  });
+  const question = input.unresolved.openQuestions[0] || `Which workflow matters most for ${subject}?`;
+  const documents = {
+    BRD: { title: "Business Requirements Document", summary: `Clarify the business outcome for ${subject} without inventing operating rules.`, sections: [section("Business intent", proposed.slice(0, 3).map(([text, label]) => ({ text, label: label as "ASSUMPTION" | "PROPOSAL" })))] },
+    PRD: { title: "Product Requirements Document", summary: `Shape a useful MVP for ${subject} while preserving unresolved decisions.`, sections: [section("MVP behavior", proposed.slice(0, 4).map(([text, label]) => ({ text, label: label as "ASSUMPTION" | "PROPOSAL" })))] },
+    ERD: { title: "Entity Relationship Document", summary: `Describe candidate records for ${subject}; confirm fields and relationships later.`, sections: [section("Candidate data", proposed.slice(2, 5).map(([text, label]) => ({ text, label: label as "ASSUMPTION" | "PROPOSAL" })))] },
+    USER_FLOWS: { title: "User Flows", summary: `Map the first user journeys for ${subject} and leave completion rules open.`, sections: [section("Primary journeys", [{ text: proposed[0][0], label: "PROPOSAL" }, { text: proposed[3]?.[0] || proposed[0][0], label: "PROPOSAL" }, { text: question, label: "OPEN_QUESTION" }])] },
+    SCREEN_MAP: { title: "Screen Map", summary: `Propose a small screen set for ${subject}; routes remain proposals until confirmed.`, sections: [section("Starting screens", [{ text: proposed[4]?.[0] || "Main task screen", label: "PROPOSAL" }, { text: "Which screen should be the first priority?", label: "OPEN_QUESTION" }])] },
+    DESIGN_BRIEF: { title: "Design Brief", summary: `Keep the preview grounded in ${subject} while showing assumptions and questions.`, sections: [section("Design direction", [{ text: "Use clear status and next-action hierarchy", label: "PROPOSAL" }, { text: "What tone and density fit the primary users?", label: "OPEN_QUESTION" }])] },
+  };
+  return ArtifactComposerOutputSchema.parse(documents);
+}
+
 export class MockGatewayProvider implements AiGatewayProvider {
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
     await new Promise((resolve) => setTimeout(resolve, 80));
     const taskType = req.taskType || "initial_idea_extraction";
+    if (taskType === "artifact_composer")
+      return {
+        data: mockArtifactComposer(req) as T,
+        usage: { promptTokens: 260, completionTokens: 720, totalTokens: 980 },
+        metadata: { provider: "mock", model: "mock", latency: 80 },
+      };
     if (taskType === "initial_idea_extraction")
       return this.mockExtraction(req) as InferenceResponse<T>;
     if (taskType === "conversation_agent")
@@ -1456,6 +1531,27 @@ export class AiGateway {
   private providerDiagnostic(stage: string) {
     const diagnostics = this.provider.diagnostics;
     return `task=conversation_agent provider=${diagnostics?.provider || "unknown"}${diagnostics?.model ? ` model=${diagnostics.model}` : ""} stage=${stage}`;
+  }
+
+  async runArtifactComposer(input: ArtifactComposerInput): Promise<ArtifactComposerOutput> {
+    const parsedInput = ArtifactComposerInputSchema.parse(input);
+    const result = await this.completeWithSchemaRepair(
+      {
+        taskType: "artifact_composer",
+        modelTier: TASK_MODEL_TIER.artifact_composer,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPTS.artifact_composer },
+          { role: "user", content: JSON.stringify(parsedInput) },
+        ],
+        temperature: TASK_TEMPERATURE.artifact_composer,
+        responseFormat: "json",
+        responseSchema: ArtifactComposerOutputSchema.toJSONSchema(),
+        maxRetries: 0,
+        providerDiagnostics: this.provider.diagnostics,
+      },
+      ArtifactComposerOutputSchema,
+    );
+    return normalizeArtifactComposerOutput(result.data, parsedInput);
   }
 
   async runDesignArchitecture(input: {

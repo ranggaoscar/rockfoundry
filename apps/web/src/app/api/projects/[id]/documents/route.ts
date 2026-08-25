@@ -1,12 +1,14 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { prisma } from "@rockfoundry/db";
 import {
-  DRAFT_ARTIFACT_TYPES,
-  persistDraftArtifacts,
+  artifactComposerErrorPayload,
+  composeDraftArtifacts,
+  latestDraftArtifacts,
   publicDraftArtifact,
-} from "@/lib/artifacts";
+  DRAFT_ARTIFACT_FILES,
+  DRAFT_ARTIFACT_TYPES,
+} from "@/lib/artifact-composer";
 import {
   getLocalProject,
   jsonError,
@@ -20,26 +22,20 @@ export async function GET(
   const { id } = await params;
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
-
-  const artifacts = await prisma.artifact.findMany({
-    where: { projectId: id, type: { in: [...DRAFT_ARTIFACT_TYPES] } },
-    orderBy: [{ version: "desc" }, { generatedAt: "desc" }],
-  });
-  const latestByType = new Map<string, (typeof artifacts)[number]>();
-  for (const artifact of artifacts) {
-    if (!latestByType.has(artifact.type))
-      latestByType.set(artifact.type, artifact);
-  }
-
+  const latest = await latestDraftArtifacts(id, project.version);
+  const artifacts = latest?.artifacts || [];
   return Response.json({
     currentVersion: project.version,
-    documents: [...latestByType.values()].map((artifact) => ({
-      ...publicDraftArtifact(artifact),
-      current: artifact.version === project.version,
-    })),
-    hasCurrentDraft: artifacts.some(
-      (artifact) => artifact.version === project.version,
-    ),
+    generation: latest?.generation
+      ? {
+          id: latest.generation.id,
+          generationNumber: latest.generation.generationNumber,
+          canonicalVersion: latest.generation.canonicalVersion,
+          status: latest.generation.status,
+        }
+      : null,
+    documents: artifacts.map((artifact) => publicDraftArtifact(artifact, project.version)),
+    hasCurrentDraft: artifacts.length === DRAFT_ARTIFACT_TYPES.length,
   });
 }
 
@@ -58,15 +54,23 @@ export async function POST(
         422,
         { code: "DRAFT_INPUT_REQUIRED" },
       );
-
-    const generated = await persistDraftArtifacts(id, project.version, state);
+    const generated = await composeDraftArtifacts(id, project.version, state);
     return Response.json({
       currentVersion: project.version,
-      documents: generated.artifacts.map(publicDraftArtifact),
-      consistency: generated.consistency,
-      generated: DRAFT_ARTIFACT_TYPES.map((type) => `${type}.md`),
+      generation: {
+        id: generated.generation.id,
+        generationNumber: generated.generation.generationNumber,
+        canonicalVersion: generated.generation.canonicalVersion,
+        status: generated.generation.status,
+      },
+      documents: generated.artifacts.map((artifact) => publicDraftArtifact(artifact, project.version)),
+      generated: DRAFT_ARTIFACT_TYPES.map((type) => DRAFT_ARTIFACT_FILES[type]),
     });
-  } catch {
-    return jsonError("RockFoundry couldn't generate the Product Draft.", 422);
+  } catch (error) {
+    const payload = artifactComposerErrorPayload(error);
+    return jsonError(payload.error, 422, {
+      code: payload.code,
+      retryable: payload.retryable,
+    });
   }
 }

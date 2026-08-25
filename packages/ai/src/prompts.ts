@@ -57,6 +57,12 @@ export const PROMPT_VERSIONS: Record<string, PromptVersion> = {
     createdAt: "2026-07-23",
     description: "Final consistency check across all generated documents",
   },
+  artifact_composer: {
+    id: "artifact_composer",
+    version: "1.0.0",
+    createdAt: "2026-08-25",
+    description: "Compose labeled six-document Product Draft from grounded context",
+  },
 };
 
 // ── Schema versioning ──────────────────────────────────────────
@@ -65,6 +71,7 @@ export const SCHEMA_VERSIONS: Record<string, string> = {
   QuestionSchema: "1.0.0",
   ReferenceAnalysisSchema: "1.0.0",
   GitHubAnalysisSchema: "1.0.0",
+  ArtifactComposerOutputSchema: "1.0.0",
   ConsistencyReviewSchema: "1.0.0",
 };
 
@@ -171,6 +178,8 @@ RULES:
 - Do NOT access private repositories or attempt to clone
 - Do NOT try to execute any code from the repository
 - Flag any license restrictions that may apply`,
+
+  artifact_composer: `You are RockFoundry's Artifact Composer. Return JSON only for all six Product Draft documents. Use raw idea and conversation for context, but only canonicalTruth facts with valid evidence IDs may be CONFIRMED. Label every item CONFIRMED, ASSUMPTION, PROPOSAL, or OPEN_QUESTION. Never invent confirmed behavior, actors, entities, workflows, routes, or fields. Keep assumptions and proposals visibly labeled; unresolved questions must remain open. Write useful summaries and paragraphs even for sparse ideas. Preserve prior artifacts when revising unless new grounded truth requires change.`,
 };
 
 export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> = {
@@ -184,6 +193,7 @@ export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> = 
   design_quality_review: "high",
   prototype_repair: "high",
   final_consistency_review: "max",
+  artifact_composer: "high",
 };
 
 export function reasoningEffortForTask(taskType: string, override?: string) {
@@ -199,6 +209,7 @@ export const TASK_MODEL_TIER: Record<string, "cheap" | "default" | "strong"> = {
   github_reference_analysis: "default",
   documentation_enrichment: "cheap",
   final_consistency_review: "strong",
+  artifact_composer: "strong",
 };
 
 export const TASK_TEMPERATURE: Record<string, number> = {
@@ -211,6 +222,7 @@ export const TASK_TEMPERATURE: Record<string, number> = {
   github_reference_analysis: 0.1,
   documentation_enrichment: 0.4,
   final_consistency_review: 0.1,
+  artifact_composer: 0.2,
 };
 
 export const TASK_TIMEOUT: Record<string, number> = {
@@ -225,6 +237,7 @@ export const TASK_TIMEOUT: Record<string, number> = {
   github_reference_analysis: 120000,
   documentation_enrichment: 90000,
   final_consistency_review: 120000,
+  artifact_composer: 120000,
 };
 
 // Task max retries
@@ -240,4 +253,5 @@ export const TASK_MAX_RETRIES: Record<string, number> = {
   github_reference_analysis: 1,
   documentation_enrichment: 2,
   final_consistency_review: 1,
+  artifact_composer: 1,
 };

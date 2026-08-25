@@ -20,4 +20,5 @@ export * from "./agent/conversation";
 export * from "./eval/invention-harness";
 export * from "./eval/generalization";
 export * from "./export/derived";
+export * from "./ai/artifact-composer";
 export * from "./design";

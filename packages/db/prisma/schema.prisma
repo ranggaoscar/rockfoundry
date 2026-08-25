@@ -16,21 +16,21 @@ model Project {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  messages       ConversationMessage[]
-  conversationTurns ConversationTurn[]
-  decisions      Decision[]
-  assumptions    Assumption[]
-  questions      OpenQuestion[]
-  contradictions Contradiction[]
-  requirements   Requirement[]
-  references     Reference[]
-  toolRuns       ToolRun[]
-  agentRuns      AgentRun[]
-  artifacts      Artifact[]
-  packageJobs    PackageJob[]
+  messages             ConversationMessage[]
+  conversationTurns   ConversationTurn[]
+  decisions           Decision[]
+  assumptions         Assumption[]
+  questions           OpenQuestion[]
+  contradictions      Contradiction[]
+  requirements        Requirement[]
+  references           Reference[]
+  toolRuns             ToolRun[]
+  agentRuns            AgentRun[]
+  artifacts            Artifact[]
+  packageJobs          PackageJob[]
   designGenerationJobs DesignGenerationJob[]
-  revisions      ProjectStateRevision[]
-
+  revisions            ProjectStateRevision[]
+  draftGenerations     DraftGeneration[]
   @@index([updatedAt])
 }
 
@@ -242,17 +242,43 @@ model AgentRun {
 }
 
 model Artifact {
-  id          String   @id @default(cuid())
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  type        String
-  status      String   @default("DRAFT")
-  content     String
-  version     Int      @default(1)
-  generatedAt DateTime @default(now())
+  id               String          @id @default(cuid())
+  projectId        String
+  project          Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  draftGenerationId String?
+  draftGeneration  DraftGeneration? @relation(fields: [draftGenerationId], references: [id], onDelete: SetNull)
+  type             String
+  status           String          @default("DRAFT")
+  content          String
+  version          Int             @default(1)
+  canonicalVersion Int?
+  generatedAt      DateTime        @default(now())
 
   @@unique([projectId, type, version])
   @@index([projectId, type, generatedAt])
+  @@index([draftGenerationId, type])
+}
+
+model DraftGeneration {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  canonicalVersion  Int
+  generationNumber  Int
+  status            String   @default("RUNNING")
+  sourceGenerationId String?
+  sourceGeneration  DraftGeneration? @relation("DraftGenerationSource", fields: [sourceGenerationId], references: [id], onDelete: SetNull)
+  derivedGenerations DraftGeneration[] @relation("DraftGenerationSource")
+  composerInput     String
+  composerMetadata  String?
+  errorSummary      String?
+  createdAt         DateTime @default(now())
+  completedAt       DateTime?
+
+  artifacts         Artifact[]
+
+  @@unique([projectId, generationNumber])
+  @@index([projectId, canonicalVersion, status, generationNumber])
 }
 
 model ProjectStateRevision {

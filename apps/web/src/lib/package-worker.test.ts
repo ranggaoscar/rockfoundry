@@ -17,7 +17,7 @@ async function tempDb() {
   await db.$executeRawUnsafe(`DROP TABLE IF EXISTS "Artifact"`);
   await db.$executeRawUnsafe(`DROP TABLE IF EXISTS "PackageJob"`);
   await db.$executeRawUnsafe(`CREATE TABLE "PackageJob" ("id" TEXT PRIMARY KEY, "projectId" TEXT NOT NULL, "projectVersion" INTEGER NOT NULL, "status" TEXT NOT NULL DEFAULT 'QUEUED', "stage" TEXT NOT NULL DEFAULT 'PREPARING_PRODUCT', "completedStages" TEXT NOT NULL DEFAULT '[]', "progress" TEXT NOT NULL DEFAULT '{}', "errorSummary" TEXT, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "startedAt" DATETIME, "completedAt" DATETIME, "heartbeatAt" DATETIME)`);
-  await db.$executeRawUnsafe(`CREATE TABLE "Artifact" ("id" TEXT PRIMARY KEY, "projectId" TEXT NOT NULL, "type" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'DRAFT', "content" TEXT NOT NULL, "version" INTEGER NOT NULL DEFAULT 1, "generatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+  await db.$executeRawUnsafe(`CREATE TABLE "Artifact" ("id" TEXT PRIMARY KEY, "projectId" TEXT NOT NULL, "draftGenerationId" TEXT, "type" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'DRAFT', "content" TEXT NOT NULL, "version" INTEGER NOT NULL DEFAULT 1, "canonicalVersion" INTEGER, "generatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
   await db.$executeRawUnsafe(`CREATE UNIQUE INDEX "Artifact_projectId_type_version_key" ON "Artifact" ("projectId", "type", "version")`);
   return db;
 }

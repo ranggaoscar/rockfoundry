@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { createInitialProjectState, deriveScreenMap } from "@rockfoundry/core";
+import { createInitialProjectState, deriveScreenMap, generateMockPrototype } from "@rockfoundry/core";
 import type { AiGateway } from "@rockfoundry/ai";
-import { generateProjectDesign } from "./design";
+import { generateProjectDesign, reviseMockDesign } from "./design";
 
 function readyState() {
   const state = createInitialProjectState({
@@ -653,7 +653,33 @@ describe("generateProjectDesign executable review cases", () => {
       failureCategory: "TIMEOUT",
     });
   });
+  it("keeps persisted Product Draft screens during mock revision", async () => {
+    const state = readyState();
+    state.generationMetadata.designPackage = {
+      spec: undefined,
+      summary: "Existing prototype",
+      files: generatedFiles,
+    };
+    const current = {
+      ...generateMockPrototype(state),
+      screenMap: [
+        {
+          id: "orders",
+          name: "Order board",
+          actorIds: ["owner"],
+          purpose: "Review orders",
+          route: "#/orders",
+          status: "DRAFT" as const,
+          source: "INFERRED" as const,
+        },
+      ],
+    };
+    const generated = reviseMockDesign(state, current, "Add a delivery note", current.screenMap);
+    expect(generated.screenMap.map((screen) => screen.route)).toEqual(["#/orders"]);
+    expect(generated.files[0]?.content).toContain("#/orders");
+  });
 });
+
 
 it("rejects a blocked project before invoking generation", async () => {
   const state = createInitialProjectState({

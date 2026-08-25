@@ -15,6 +15,7 @@ import {
   DesignGenerationResultSchema,
   deriveScreenMap,
   type DesignGenerationResult,
+  type DesignScreen,
   type ProjectState,
 } from "@rockfoundry/core";
 import { resolveProviderSettings } from "./provider-config";
@@ -27,6 +28,8 @@ import {
   formatDesignFailureDiagnostics,
   safeDesignFailureMessage,
 } from "@rockfoundry/ai";
+import { latestDraftArtifacts, DRAFT_ARTIFACT_TYPES } from "./artifact-composer";
+import { parsePersistedScreenMap } from "./design-draft-bridge";
 
 export class DesignGenerationError extends Error {
   constructor(
@@ -84,6 +87,7 @@ async function persistDesignArtifacts(
   version: number,
   generated: DesignGenerationResult,
   status: string,
+  canonicalVersion?: number,
 ) {
   const files = Object.fromEntries(
     generated.files.map((file) => [file.path, file.content]),
@@ -97,6 +101,7 @@ async function persistDesignArtifacts(
     PROTOTYPE_JS: files["app.js"] || "",
     DESIGN_MANIFEST: JSON.stringify({
       version,
+      canonicalVersion: canonicalVersion ?? null,
       status,
       screens: generated.screenMap.map((screen) => screen.id),
     }),
@@ -109,15 +114,20 @@ async function persistDesignArtifacts(
           projectId,
           type,
           version,
+          canonicalVersion: canonicalVersion ?? null,
           status,
           content: payloads[type],
         },
-        update: { status, content: payloads[type], generatedAt: new Date() },
+        update: {
+          status,
+          canonicalVersion: canonicalVersion ?? null,
+          content: payloads[type],
+          generatedAt: new Date(),
+        },
       }),
     ),
   );
 }
-
 export function designSnapshot(state: ProjectState) {
   const pack = state.generationMetadata.designPackage as
     | { files?: Array<{ path: string; content: string }>; spec?: unknown }
@@ -252,9 +262,22 @@ function designInputSnapshot(state: ProjectState) {
   };
 }
 
-function designProductContext(state: ProjectState) {
+export type PersistedDraftArtifacts = Partial<
+  Record<"PRD" | "USER_FLOWS" | "SCREEN_MAP" | "DESIGN_BRIEF", string>
+>;
+
+export function designProductContext(
+  state: ProjectState,
+  persistedDraft?: PersistedDraftArtifacts,
+) {
   const explicit = explicitDesignState(state);
-  const draftArtifacts = renderDraftArtifacts(state);
+  const fallback = renderDraftArtifacts(state);
+  const draftArtifacts = {
+    PRD: persistedDraft?.PRD || fallback.PRD,
+    USER_FLOWS: persistedDraft?.USER_FLOWS || fallback.USER_FLOWS,
+    SCREEN_MAP: persistedDraft?.SCREEN_MAP || fallback.SCREEN_MAP,
+    DESIGN_BRIEF: persistedDraft?.DESIGN_BRIEF || fallback.DESIGN_BRIEF,
+  };
   return {
     name: state.name,
     summary: state.normalizedSummary || state.rawIdea,
@@ -272,15 +295,16 @@ function designProductContext(state: ProjectState) {
     assumptions: state.assumptions
       .filter((assumption) => !assumption.resolved)
       .map((assumption) => assumption.statement),
-    draftArtifacts: {
-      PRD: draftArtifacts.PRD,
-      USER_FLOWS: draftArtifacts.USER_FLOWS,
-      SCREEN_MAP: draftArtifacts.SCREEN_MAP,
-      DESIGN_BRIEF: draftArtifacts.DESIGN_BRIEF,
-    },
+    draftArtifacts,
     designInputSnapshot: designInputSnapshot(state),
   };
 }
+
+type DesignGenerationStage =
+  | "DESIGN_ARCHITECTURE"
+  | "PROTOTYPE_GENERATION"
+  | "QUALITY_REVIEW"
+  | "PROTOTYPE_REPAIR";
 
 type ArchitectureResolution = {
   designSpec: DesignSpec;
@@ -291,27 +315,25 @@ type ArchitectureResolution = {
   failure?: ReturnType<typeof classifyDesignGenerationFailure>;
 };
 
-export type DesignGenerationStage =
-  | "DESIGN_ARCHITECTURE"
-  | "PROTOTYPE_GENERATION"
-  | "QUALITY_REVIEW"
-  | "PROTOTYPE_REPAIR";
-
 async function generateWithRealProvider(
   state: ProjectState,
   input: { request?: string; existing?: DesignGenerationResult } = {},
   gateway = getAiGateway(),
   onStage?: (stage: DesignGenerationStage) => void | Promise<void>,
+  persistedDraft?: PersistedDraftArtifacts,
+  persistedScreenMap?: DesignScreen[],
 ): Promise<
   DesignGenerationResult & {
     architectureResolution: ArchitectureResolution;
     prototypeMs: number;
   }
 > {
-  const product = designProductContext(state);
-  const screenMap = state.studio.screenMap.length
-    ? state.studio.screenMap
-    : deriveScreenMap(state);
+  const product = designProductContext(state, persistedDraft);
+  const screenMap = persistedScreenMap?.length
+    ? persistedScreenMap
+    : state.studio.screenMap.length
+      ? state.studio.screenMap
+      : deriveScreenMap(state);
   const baseline = buildDesignSpec(state, screenMap);
   const architectureStarted = Date.now();
   let architecture: ArchitectureResolution;
@@ -391,12 +413,21 @@ export async function generateProjectDesign(
     save?: typeof saveProjectState;
     persist?: typeof persistDesignArtifacts;
     onStage?: (stage: DesignGenerationStage) => void | Promise<void>;
+    persistedDraft?: PersistedDraftArtifacts;
   } = {},
 ) {
   const totalStarted = Date.now();
   if (!state.rawIdea.trim() && !state.normalizedSummary?.trim())
     throw new Error("DESIGN_BLOCKED");
-  const product = designProductContext(state);
+  const persistedScreenMap = deps.persistedDraft?.SCREEN_MAP
+    ? parsePersistedScreenMap(deps.persistedDraft.SCREEN_MAP)
+    : [];
+  const effectiveScreenMap = persistedScreenMap.length
+    ? persistedScreenMap
+    : state.studio.screenMap.length
+      ? state.studio.screenMap
+      : deriveScreenMap(state);
+  const product = designProductContext(state, deps.persistedDraft);
   const settings = deps.providerSettings || resolveProviderSettings();
   const generated =
     settings.mode === "openai-compatible"
@@ -405,9 +436,11 @@ export async function generateProjectDesign(
           { request },
           deps.gateway,
           deps.onStage,
+          deps.persistedDraft,
+          effectiveScreenMap,
         )
       : (await deps.onStage?.("PROTOTYPE_GENERATION"),
-        generateMockPrototype(state, { request }));
+        generateMockPrototype(state, { request, screenMap: effectiveScreenMap }));
   const architectureResolution: ArchitectureResolution =
     "architectureResolution" in generated
       ? (generated.architectureResolution as ArchitectureResolution)
@@ -543,6 +576,7 @@ export async function generateProjectDesign(
     saved.state.studio.currentVersion,
     reviewed,
     saved.state.studio.status,
+    version,
   );
   saved = await (deps.save || saveProjectState)(
     projectId,
@@ -590,6 +624,22 @@ export async function generateProjectDesign(
   };
 }
 
+export function reviseMockDesign(
+  state: ProjectState,
+  current: DesignGenerationResult,
+  request: string,
+  persistedScreenMap: DesignScreen[] = [],
+) {
+  const screenMap = persistedScreenMap.length
+    ? persistedScreenMap
+    : current.screenMap.length
+      ? current.screenMap
+      : state.studio.screenMap.length
+        ? state.studio.screenMap
+        : deriveScreenMap(state);
+  if (/compact/i.test(request)) return applyVisualRevision(current, request);
+  return generateMockPrototype(state, { request, screenMap });
+}
 export async function reviseProjectDesign(
   projectId: string,
   state: ProjectState,
@@ -614,9 +664,19 @@ export async function reviseProjectDesign(
       }
     | undefined;
   if (!pack?.files) throw new Error("NO_DESIGN");
+  const persistedDraft = await latestDraftArtifacts(projectId, version);
+  const persistedScreenMap = persistedDraft
+    ? parsePersistedScreenMap(
+        persistedDraft.artifacts.find((artifact) => artifact.type === "SCREEN_MAP")?.content || "",
+      )
+    : [];
   const current: DesignGenerationResult = {
-    designSpec: pack.spec || generateMockPrototype(state).designSpec,
-    screenMap: state.studio.screenMap,
+    designSpec: pack.spec || generateMockPrototype(state, { screenMap: persistedScreenMap }).designSpec,
+    screenMap: persistedScreenMap.length
+      ? persistedScreenMap
+      : state.studio.screenMap.length
+        ? state.studio.screenMap
+        : deriveScreenMap(state),
     files: pack.files,
     summary: pack.summary || "",
     assumptions: state.studio.assumptions,
@@ -624,13 +684,8 @@ export async function reviseProjectDesign(
   const settings = resolveProviderSettings();
   const generated =
     settings.mode === "openai-compatible"
-      ? await generateWithRealProvider(state, {
-          request: text,
-          existing: current,
-        })
-      : impact === "VISUAL_ONLY" || /compact/i.test(text)
-        ? applyVisualRevision(current, text)
-        : generateMockPrototype(state, { request: text });
+      ? await generateWithRealProvider(state, { request: text, existing: current }, undefined, undefined, undefined, current.screenMap)
+      : reviseMockDesign(state, current, text, current.screenMap);
   const validation = validatePrototypeFiles(
     generated.files,
     generated.screenMap,
@@ -656,6 +711,7 @@ export async function reviseProjectDesign(
     saved.state.studio.currentVersion,
     generated,
     saved.state.studio.status,
+    version,
   );
   return { impact, ...saved, generated };
 }

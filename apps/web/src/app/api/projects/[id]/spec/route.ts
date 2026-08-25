@@ -1,7 +1,12 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { DRAFT_ARTIFACT_TYPES, persistDraftArtifacts } from "@/lib/artifacts";
+import {
+  artifactComposerErrorPayload,
+  composeDraftArtifacts,
+  DRAFT_ARTIFACT_FILES,
+  DRAFT_ARTIFACT_TYPES,
+} from "@/lib/artifact-composer";
 import {
   getLocalProject,
   jsonError,
@@ -17,26 +22,27 @@ export async function POST(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
-    if (!state.rawIdea.trim() && !state.normalizedSummary?.trim()) {
-      return jsonError(
-        "Add a product idea before generating a Product Draft.",
-        422,
-        { code: "DRAFT_INPUT_REQUIRED" },
-      );
-    }
-    const generated = await persistDraftArtifacts(id, project.version, state);
+    if (!state.rawIdea.trim() && !state.normalizedSummary?.trim())
+      return jsonError("Add a product idea before generating a Product Draft.", 422, {
+        code: "DRAFT_INPUT_REQUIRED",
+      });
+    const generated = await composeDraftArtifacts(id, project.version, state);
     return Response.json({
       spec: {
         status: generated.consistency.status,
         unresolvedQuestions: state.openQuestions,
         assumptions: state.assumptions,
-        documents: DRAFT_ARTIFACT_TYPES.map((type) => `${type}.md`),
+        documents: DRAFT_ARTIFACT_TYPES.map((type) => DRAFT_ARTIFACT_FILES[type]),
       },
       version: project.version,
       consistency: generated.consistency,
       documents: generated.artifacts,
     });
-  } catch {
-    return jsonError("RockFoundry couldn't create the draft spec.", 422);
+  } catch (error) {
+    const payload = artifactComposerErrorPayload(error);
+    return jsonError(payload.error, 422, {
+      code: payload.code,
+      retryable: payload.retryable,
+    });
   }
 }

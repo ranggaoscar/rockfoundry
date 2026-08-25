@@ -1,21 +1,20 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
+import { prisma } from "@rockfoundry/db";
 import {
   getLocalProject,
   jsonError,
   parseProjectState,
 } from "@/lib/local-project";
+import { DESIGN_PREVIEW_ARTIFACT_TYPES, selectCoherentPrototypeSet } from "@/lib/design-preview";
 
 function previewDocument(files: Array<{ path: string; content: string }>) {
   const html = files.find((file) => file.path === "index.html")?.content || "";
   const css = files.find((file) => file.path === "styles.css")?.content || "";
   const js = files.find((file) => file.path === "app.js")?.content || "";
   return html
-    .replace(
-      `<link rel="stylesheet" href="styles.css">`,
-      `<style>${css}</style>`,
-    )
+    .replace(`<link rel="stylesheet" href="styles.css">`, `<style>${css}</style>`)
     .replace(`<script src="app.js"></script>`, `<script>${js}</script>`);
 }
 
@@ -26,6 +25,31 @@ export async function GET(
   const { id } = await params;
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
+  const artifacts = await prisma.artifact.findMany({
+    where: {
+      projectId: id,
+      type: { in: [...DESIGN_PREVIEW_ARTIFACT_TYPES, "DESIGN_MANIFEST"] },
+    },
+    orderBy: [{ version: "desc" }, { generatedAt: "desc" }],
+  });
+  const selected = selectCoherentPrototypeSet(artifacts, project.version);
+  if (selected) {
+    return new Response(
+      previewDocument([
+        { path: "index.html", content: selected.html.content },
+        { path: "styles.css", content: selected.css.content },
+        { path: "app.js", content: selected.js.content },
+      ]),
+      {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Security-Policy":
+            "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:;",
+          "X-Frame-Options": "SAMEORIGIN",
+        },
+      },
+    );
+  }
   const pack = parseProjectState(project).generationMetadata.designPackage as
     | { files?: Array<{ path: string; content: string }> }
     | undefined;

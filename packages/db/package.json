@@ -5,7 +5,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "echo \"No database unit tests\""
+    "test": "tsx --test draft-generation-migration.test.ts"
   },
   "keywords": [],
   "author": "",
