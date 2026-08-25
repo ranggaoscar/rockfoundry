@@ -202,7 +202,45 @@ function canonicalValueFromEvidence(
   const normalizedValue = normalizeConversationText(value);
   const normalizedEvidence = normalizeConversationText(evidence);
   if (normalizedValue.length < 3 || !/[\p{L}\p{N}]/u.test(normalizedValue)) return null;
-  return normalizedEvidence.includes(normalizedValue) ? value : evidence;
+  return normalizedEvidence.includes(normalizedValue) ? value : null;
+}
+
+function groundedNeutralFacts(
+  response: ConversationAgentResponse,
+  latestUserMessage: string,
+) {
+  const candidates = [
+    ...response.stateDelta.explicitFacts.map((item) => ({
+      path: item.path,
+      proposedValue: item.value,
+      evidence: item.evidence,
+    })),
+    ...response.stateDelta.corrections.map((item) => ({
+      path: item.path,
+      proposedValue: item.value,
+      evidence: item.evidence,
+    })),
+    ...response.stateDelta.confirmedDecisions.map((item) => ({
+      path: `decision.${item.topic}`,
+      proposedValue: item.decision,
+      evidence: item.evidence,
+    })),
+  ];
+  return candidates.flatMap((item) => {
+    const normalizedProposed = normalizeConversationText(item.proposedValue);
+    const normalizedEvidence = normalizeConversationText(item.evidence);
+    const directlySupported = item.path.startsWith("decision.")
+      ? normalizedEvidence.includes(normalizedProposed)
+      : canonicalValueFromEvidence(item.path, item.proposedValue, item.evidence, latestUserMessage);
+    if (directlySupported) return [];
+    if (
+      (!item.path.startsWith("decision.") && !isAllowedCanonicalPath(item.path)) ||
+      !isGroundedConversationEvidence(item.evidence, latestUserMessage)
+    ) {
+      return [];
+    }
+    return [{ ...item, source: "USER", confidence: "EXPLICIT" }];
+  });
 }
 
 function groundedExplicitFact(
@@ -246,13 +284,13 @@ function groundedConfirmedDecision(
   if (!topicInMessage && !traceableAffect) return null;
   const normalizedDecision = normalizeConversationText(item.decision);
   const normalizedEvidence = normalizeConversationText(item.evidence);
-  if (normalizedDecision.length < 3 || !/[\p{L}\p{N}]/u.test(normalizedDecision)) return null;
-  return {
-    ...item,
-    decision: normalizedEvidence.includes(normalizedDecision) ? item.decision : item.evidence,
-  };
+  if (
+    normalizedDecision.length < 3 ||
+    !/[\p{L}\p{N}]/u.test(normalizedDecision) ||
+    !normalizedEvidence.includes(normalizedDecision)
+  ) return null;
+  return item;
 }
-
 /** Keep canonical deltas grounded and allow at most one contextual ask. */
 export function groundConversationResponse(
   rawResponse: ConversationAgentResponse,
@@ -452,10 +490,16 @@ export function applyConversationResponse(
   latestUserMessage: string,
 ): ProjectState {
   const state = cloneState(currentState);
+  const raw = ConversationAgentResponseSchema.parse(rawResponse);
   const response = enforceConversationQuestionPolicy(
-    groundConversationResponse(rawResponse, latestUserMessage),
+    groundConversationResponse(raw, latestUserMessage),
     state,
   );
+  const groundedUserFacts = Array.isArray(state.generationMetadata.groundedUserFacts)
+    ? state.generationMetadata.groundedUserFacts
+    : [];
+  groundedUserFacts.push(...groundedNeutralFacts(raw, latestUserMessage));
+  state.generationMetadata = { ...state.generationMetadata, groundedUserFacts };
   const existingAssumptionIds = new Set(
     state.assumptions.map((assumption) => assumption.id),
   );
@@ -574,7 +618,7 @@ export function applyConversationResponseWithPolicy(
   const grounded = groundConversationResponse(rawResponse, latestUserMessage);
   const state = applyConversationResponse(
     currentState,
-    grounded,
+    rawResponse,
     latestUserMessage,
   );
   const readiness = evaluateReadinessDirectly(state);
