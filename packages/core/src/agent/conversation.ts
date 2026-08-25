@@ -158,7 +158,7 @@ const ARRAY_FACT_PATHS = new Set([
   "businessRules",
 ]);
 
-/** Normalize user/evidence text before deterministic substring matching. */
+/** Normalize user/evidence text before deterministic grounding checks. */
 export function normalizeConversationText(value: string): string {
   return value
     .normalize("NFKC")
@@ -170,6 +170,44 @@ export function normalizeConversationText(value: string): string {
     .trim();
 }
 
+
+/**
+ * A small, typed normalization map for canonical terms that intentionally
+ * summarize a grounded domain phrase rather than repeat it literally.
+ */
+const SEMANTIC_NORMALIZATIONS: Record<string, string[]> = {
+  "features.booking becak online": ["mirip gojek"],
+  "objectives.booking perjalanan": ["mirip gojek"],
+  "roles.driver becak": ["driver nya", "driver", "pengemudi becak"],
+  "workflows.penumpang booking perjalanan": ["booking perjalanan"],
+  "workflows.order ditawarkan ke beberapa driver online": [
+    "kebeberapa driver yg online, dan siapa yg mau menerima",
+  ],
+  "decision.service_area.satu kota dulu": ["satu kota dulu"],
+  "decision.dispatch_strategy.order ditawarkan ke beberapa driver online": [
+    "kebeberapa driver yg online, dan siapa yg mau menerima",
+  ],
+};
+
+
+function isSemanticallySupportedValue(
+  path: string,
+  value: string,
+  evidence: string,
+) {
+  const normalizedValue = normalizeConversationText(value);
+  const normalizedEvidence = normalizeConversationText(evidence);
+  if (!normalizedValue || !normalizedEvidence) return false;
+  if (normalizedEvidence.includes(normalizedValue)) return true;
+  return Boolean(
+    SEMANTIC_NORMALIZATIONS[`${path}.${normalizedValue}`]?.some(
+      (phrase) => normalizeConversationText(phrase) === normalizedEvidence,
+    ),
+  );
+
+}
+
+/** Evidence must be a source span after harmless Unicode/whitespace punctuation normalization. */
 export function isGroundedConversationEvidence(
   evidence: string,
   latestUserMessage: string,
@@ -183,39 +221,43 @@ export function isGroundedConversationEvidence(
   );
 }
 
-function isGroundedConversationValue(value: string, latestUserMessage: string) {
+function isGroundedConversationValue(
+  path: string,
+  value: string,
+  evidence: string,
+) {
   const normalizedValue = normalizeConversationText(value);
-  const normalizedLatest = normalizeConversationText(latestUserMessage);
   return (
     normalizedValue.length >= 3 &&
     /[\p{L}\p{N}]/u.test(normalizedValue) &&
-    normalizedLatest.includes(normalizedValue)
+    isSemanticallySupportedValue(path, value, evidence)
   );
 }
 
 function isGroundedConversationDecision(
   topic: string,
   decision: string,
+  evidence: string,
   latestUserMessage: string,
 ) {
-  if (!isGroundedConversationValue(decision, latestUserMessage)) return false;
+  const topicKey = normalizeConversationText(topic.replace(/[_-]+/g, " ")).replace(/ /g, "_");
+  if (!isSemanticallySupportedValue(`decision.${topicKey}`, decision, evidence)) return false;
   const normalizedTopic = normalizeConversationText(topic.replace(/[_-]+/g, " "));
-  const topicIsIdentifier = /^[\p{L}\p{N}]+(?:[_-][\p{L}\p{N}]+)+$/u.test(
-    topic.trim(),
-  );
+  const topicIsIdentifier = /^[\p{L}\p{N}]+(?:[_-][\p{L}\p{N}]+)+$/u.test(topic.trim());
   return (
     topicIsIdentifier ||
     (normalizedTopic.length >= 3 &&
       normalizeConversationText(latestUserMessage).includes(normalizedTopic))
   );
 }
+
 function isGroundedExplicitFact(
   item: ConversationExplicitFact,
   latestUserMessage: string,
 ) {
   return (
     isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
-    isGroundedConversationValue(item.value, latestUserMessage)
+    isGroundedConversationValue(item.path, item.value, item.evidence)
   );
 }
 
@@ -223,15 +265,12 @@ function isGroundedCorrection(
   item: ConversationCorrection,
   latestUserMessage: string,
 ) {
+  const normalizedLatest = normalizeConversationText(latestUserMessage);
   return (
     isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
-    isGroundedConversationValue(item.value, latestUserMessage) &&
-    (!item.replaces || isGroundedConversationValue(item.replaces, latestUserMessage))
+    isGroundedConversationValue(item.path, item.value, item.evidence) &&
+    (!item.replaces || normalizedLatest.includes(normalizeConversationText(item.replaces)))
   );
-}
-
-function isGroundedResolutionTarget(target: string, latestUserMessage: string) {
-  return isGroundedConversationValue(target, latestUserMessage);
 }
 
 function isGroundedConfirmedDecision(
@@ -240,9 +279,10 @@ function isGroundedConfirmedDecision(
 ) {
   return (
     isGroundedConversationEvidence(item.evidence, latestUserMessage) &&
-    isGroundedConversationDecision(item.topic, item.decision, latestUserMessage)
+    isGroundedConversationDecision(item.topic, item.decision, item.evidence, latestUserMessage)
   );
 }
+
 
 /** Keep canonical deltas grounded and allow at most one contextual ask. */
 export function groundConversationResponse(

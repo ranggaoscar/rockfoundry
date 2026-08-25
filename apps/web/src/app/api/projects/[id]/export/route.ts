@@ -1,11 +1,12 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
-import { prisma } from "@rockfoundry/db";
 import {
   evaluateDecisionDebt,
+  evaluateDraftSpecMaturity,
   generateExport,
   validateConsistency,
 } from "@rockfoundry/core";
+import { prisma } from "@rockfoundry/db";
 import {
   getLocalProject,
   jsonError,
@@ -20,6 +21,13 @@ export async function POST(
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
   const state = parseProjectState(project);
+  const maturity = evaluateDraftSpecMaturity(state);
+  if (!maturity.ready)
+    return jsonError(
+      "A canonical product truth is required before generating a handoff.",
+      422,
+      { code: "HANDOFF_BLOCKED", missing: maturity.missing },
+    );
   const consistency = validateConsistency(state);
   try {
     const generated = await generateExport(state);
@@ -72,6 +80,14 @@ export async function GET(
   const { id } = await params;
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
+  const state = parseProjectState(project);
+  const maturity = evaluateDraftSpecMaturity(state);
+  if (!maturity.ready)
+    return jsonError(
+      "A canonical product truth is required before downloading a handoff.",
+      422,
+      { code: "HANDOFF_BLOCKED", missing: maturity.missing },
+    );
   try {
     const generated = await generateExport(parseProjectState(project));
     return new Response(new Uint8Array(generated.buffer), {

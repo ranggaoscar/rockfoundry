@@ -86,6 +86,33 @@ function mockConversationAgent(
       "Untuk awal, layanan ini dibatasi di satu kota atau langsung lintas kota?";
     const driverQuestion =
       "Driver-nya berasal dari pangkalan becak terdaftar atau pendaftaran terbuka?";
+    if (/beberapa driver|siapa yg mau menerima|first accept|menerima dulu/i.test(latestLower)) {
+      const dispatchEvidence = "kebeberapa driver yg online, dan siapa yg mau menerima";
+      return {
+        ...base,
+        message:
+          "Oke, order ditawarkan ke beberapa driver online; yang menerima dulu mendapat order. Pembayaran dilakukan setelah perjalanan selesai.",
+        mode: "CLARIFICATION",
+        stateDelta: {
+          explicitFacts: [
+            { path: "targetUsers", value: "penumpang", evidence: "penumpang" },
+            { path: "workflows", value: "order ditawarkan ke beberapa driver online", evidence: dispatchEvidence },
+          ],
+          confirmedDecisions: [
+            {
+              topic: "dispatch_strategy",
+              decision: "order ditawarkan ke beberapa driver online",
+              evidence: dispatchEvidence,
+              affects: ["workflows", "booking"],
+            },
+          ],
+          corrections: [],
+          resolvedQuestions: [],
+          resolvedAssumptions: [],
+        },
+        suggestedNextAction: { type: "CREATE_SPEC" },
+      };
+    }
     if (/driver\s+nya|pangkalan becak/.test(latestLower)) {
       return {
         ...base,
@@ -94,8 +121,10 @@ function mockConversationAgent(
         mode: "CLARIFICATION",
         stateDelta: {
           explicitFacts: [
+            { path: "targetUsers", value: "penumpang", evidence: "penumpang" },
             { path: "roles", value: "driver becak", evidence: "driver nya" },
             { path: "entities", value: "pangkalan becak", evidence: "pangkalan becak" },
+            { path: "workflows", value: "penumpang booking perjalanan", evidence: "booking perjalanan" },
           ],
           confirmedDecisions: [],
           corrections: [],
@@ -118,8 +147,10 @@ function mockConversationAgent(
         mode: "CLARIFICATION",
         stateDelta: {
           explicitFacts: [
+            { path: "targetUsers", value: "penumpang", evidence: "penumpang" },
             { path: "features", value: "booking becak online", evidence: "mirip gojek" },
-            { path: "objectives", value: "booking perjalanan", evidence: "mirip gojek" },
+            { path: "objectives", value: "booking perjalanan", evidence: "booking perjalanan" },
+            { path: "workflows", value: "penumpang booking perjalanan", evidence: "booking perjalanan" },
             { path: "constraints", value: "satu kota dulu", evidence: "satu kota dulu" },
           ],
           confirmedDecisions: [

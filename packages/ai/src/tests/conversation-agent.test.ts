@@ -483,4 +483,28 @@ describe("Conversation Agent gateway", () => {
     );
     expect(third.suggestedNextAction).toEqual({ type: "CREATE_SPEC" });
   });
+  it("grounds becak dispatch semantics from the real user phrase", async () => {
+    const response = await new AiGateway(new MockGatewayProvider()).runConversationAgent({
+      project: { rawIdea: "saya mau buat aplikasi becak online", openQuestions: [] },
+      latestUserMessage: "kebeberapa driver yg online, dan siapa yg mau menerima",
+      mode: "CLARIFICATION",
+      riskContext: [],
+      draftSpecReady: false,
+    });
+
+    expect(response.stateDelta.explicitFacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "workflows",
+          value: "order ditawarkan ke beberapa driver online",
+          evidence: "kebeberapa driver yg online, dan siapa yg mau menerima",
+        }),
+      ]),
+    );
+    expect(response.stateDelta.confirmedDecisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ topic: "dispatch_strategy" }),
+      ]),
+    );
+  });
 });

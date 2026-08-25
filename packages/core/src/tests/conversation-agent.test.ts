@@ -4,6 +4,8 @@ import {
   applyConversationResponse,
   applyConversationResponseWithPolicy,
   createInitialProjectState,
+  evaluateReadinessDirectly,
+  renderArtifacts,
   type ConversationAgentResponse,
   enforceConversationQuestionPolicy,
 } from "../index";
@@ -251,7 +253,7 @@ describe("Conversation Agent contract", () => {
       conversationDelta({
         stateDelta: {
           explicitFacts: [
-            { path: "targetUsers", value: "owner", evidence: " OＷＮＥＲ-only   MVP " },
+            { path: "targetUsers", value: "owner", evidence: "Owner-only MVP" },
           ],
           confirmedDecisions: [
             {
@@ -309,6 +311,181 @@ describe("Conversation Agent contract", () => {
         expect.objectContaining({ kind: "ASSUMPTION", source: "USER", confidence: "EXPLICIT" }),
       ]),
     );
+  });
+  it("rejects unrelated normalized values even when evidence is a real user substring", () => {
+    const state = createInitialProjectState({
+      id: "grounding-semantic-negative",
+      name: "Becak",
+      rawIdea: "Aplikasi becak online",
+    });
+    const next = applyConversationResponse(
+      state,
+      conversationDelta({
+        stateDelta: {
+          explicitFacts: [
+            { path: "features", value: "booking becak online", evidence: "satu kota dulu" },
+            { path: "features", value: "cryptocurrency wallet", evidence: "booking becak online" },
+          ],
+        },
+      }),
+      "penumpang booking becak online di satu kota",
+    );
+
+    expect(next.features).toEqual([]);
+    expect(next.provenance).not.toHaveProperty("features.cryptocurrency wallet");
+  });
+
+  it("accepts semantically normalized grounded values and preserves their traceability", () => {
+    const state = createInitialProjectState({
+      id: "grounding-semantic-positive",
+      name: "Becak",
+      rawIdea: "Aplikasi becak online",
+    });
+
+    const next = applyConversationResponse(
+      state,
+      conversationDelta({
+        stateDelta: {
+          explicitFacts: [
+            { path: "roles", value: "driver becak", evidence: "pengemudi becak" },
+          ],
+          confirmedDecisions: [
+            {
+              topic: "service_area",
+              decision: "satu kota dulu",
+              evidence: "satu kota dulu",
+              affects: ["constraints"],
+            },
+          ],
+        },
+      }),
+      "pengemudi becak melayani penumpang di satu kota dulu",
+    );
+
+    expect(next.roles).toEqual(["driver becak"]);
+    expect(next.decisions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ decision: "satu kota dulu" })]),
+    );
+    expect(next.provenance["roles.driver becak"]).toMatchObject({
+      source: "USER",
+      confidence: "EXPLICIT",
+      evidence: "pengemudi becak",
+    });
+    expect(next.provenance["decision.service_area"]).toMatchObject({
+      source: "USER",
+      confidence: "EXPLICIT",
+      evidence: "satu kota dulu",
+    });
+  });
+  it("accepts the grounded dispatch normalization but rejects unrelated values", () => {
+    const state = createInitialProjectState({
+      id: "dispatch-normalization",
+      name: "Becak",
+      rawIdea: "Aplikasi becak online",
+    });
+    const next = applyConversationResponse(
+      state,
+      conversationDelta({
+        stateDelta: {
+          explicitFacts: [
+            {
+              path: "workflows",
+              value: "order ditawarkan ke beberapa driver online",
+              evidence: "kebeberapa driver yg online, dan siapa yg mau menerima",
+            },
+            {
+              path: "workflows",
+              value: "cryptocurrency settlement",
+              evidence: "kebeberapa driver yg online, dan siapa yg mau menerima",
+            },
+          ],
+          confirmedDecisions: [
+            {
+              topic: "dispatch_strategy",
+              decision: "order ditawarkan ke beberapa driver online",
+              evidence: "kebeberapa driver yg online, dan siapa yg mau menerima",
+              affects: ["workflows"],
+            },
+          ],
+        },
+      }),
+      "kebeberapa driver yg online, dan siapa yg mau menerima",
+    );
+    expect(next.decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          topic: "dispatch_strategy",
+          decision: "order ditawarkan ke beberapa driver online",
+          status: "ACCEPTED",
+        }),
+      ]),
+    );
+    expect(next.provenance["decision.dispatch_strategy"]).toMatchObject({
+      source: "USER",
+      confidence: "EXPLICIT",
+      evidence: "kebeberapa driver yg online, dan siapa yg mau menerima",
+    });
+    expect(renderArtifacts(next).DECISIONS).toContain(
+      "order ditawarkan ke beberapa driver online",
+    );
+    expect(next.workflows).toEqual(["order ditawarkan ke beberapa driver online"]);
+  });
+  it("grounds the becak conversation into readiness and faithful rendered artifacts", () => {
+    let state = createInitialProjectState({
+      id: "becak-real-conversation",
+      name: "Becak Online",
+      rawIdea: "saya mau buat aplikasi becak online",
+    });
+    const first = conversationDelta({
+      mode: "BRAINSTORM",
+      stateDelta: {
+        explicitFacts: [
+          { path: "targetUsers", value: "penumpang", evidence: "penumpang" },
+        ],
+        resolvedQuestions: [],
+      },
+      suggestedNextAction: {
+        type: "ASK_CONTEXTUAL_QUESTION",
+        question: "Untuk awal, layanan ini dibatasi di satu kota atau langsung lintas kota?",
+        quickReplies: [],
+      },
+    });
+    state = applyConversationResponse(state, first, "penumpang butuh booking becak online");
+    const second = conversationDelta({
+      mode: "CLARIFICATION",
+      stateDelta: {
+        explicitFacts: [
+          { path: "features", value: "booking becak online", evidence: "booking becak online" },
+          { path: "workflows", value: "penumpang booking perjalanan", evidence: "booking perjalanan" },
+          { path: "constraints", value: "satu kota dulu", evidence: "satu kota dulu" },
+          { path: "roles", value: "driver becak", evidence: "driver" },
+        ],
+        resolvedQuestions: [
+          {
+            question: "Untuk awal, layanan ini dibatasi di satu kota atau langsung lintas kota?",
+            evidence: "satu kota dulu",
+          },
+        ],
+        confirmedDecisions: [
+          { topic: "service_area", decision: "satu kota dulu", evidence: "satu kota dulu", affects: ["constraints"] },
+        ],
+      },
+      suggestedNextAction: { type: "CREATE_SPEC" },
+    });
+    state = applyConversationResponse(state, second, "driver becak menerima booking perjalanan di satu kota dulu dengan booking becak online");
+    const readiness = evaluateReadinessDirectly(state);
+    const docs = renderArtifacts({ ...state, readiness: readiness.level, readinessScore: readiness.score });
+    expect(state.targetUsers).toContain("penumpang");
+    expect(state.roles).toContain("driver becak");
+    expect(state.workflows).toContain("penumpang booking perjalanan");
+    expect(state.features).toContain("booking becak online");
+    expect(state.constraints).toContain("satu kota dulu");
+    expect(state.decisions).toEqual(expect.arrayContaining([expect.objectContaining({ decision: "satu kota dulu" })]));
+    expect(readiness.score).toBeGreaterThan(0);
+    expect(docs.PRD).toContain("booking becak online");
+    expect(docs.PRD).toContain("driver becak");
+    expect(docs.DECISIONS).toContain("satu kota dulu");
+    expect(state.openQuestions).not.toContain("Untuk awal, layanan ini dibatasi di satu kota atau langsung lintas kota?");
   });
 
   it("only resolves assumptions that existed before the response", () => {

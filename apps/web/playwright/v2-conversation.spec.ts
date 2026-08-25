@@ -348,23 +348,53 @@ test.describe("V2 Conversation Agent product flow", () => {
     }
     const initial = await request.post(`/api/projects/${project.id}/extract`, { data: { rawIdea: firstText } });
     expect(initial.status()).toBe(200);
-    const second = await turn("mirip gojek, booking perjalanan dengan booking becak online cuma di satu kota dulu", 2);
+    const second = await turn("mirip gojek, penumpang booking perjalanan dengan booking becak online cuma di satu kota dulu", 2);
     expect(second.status()).toBe(200);
     const secondBody = await second.json();
-    expect(secondBody.state.openQuestions).toEqual(expect.arrayContaining([driverQuestion]));
+    expect(secondBody.state.openQuestions).not.toEqual(expect.arrayContaining([driverQuestion]));
+    expect(secondBody.state.targetUsers).toEqual(expect.arrayContaining(["penumpang"]));
+    expect(secondBody.state.workflows).toEqual(expect.arrayContaining(["penumpang booking perjalanan"]));
     const third = await turn("driver nya driver becak dari pangkalan becak yang sudah terdaftar; MVP boundary satu kota dulu; objective booking perjalanan", 3);
     expect(third.status()).toBe(200);
     const thirdBody = await third.json();
+    expect(thirdBody.state.targetUsers).toEqual(expect.arrayContaining(["penumpang"]));
+    expect(thirdBody.state.workflows).toEqual(expect.arrayContaining(["penumpang booking perjalanan"]));
     expect(thirdBody.state.features).toEqual(expect.arrayContaining(["booking becak online"]));
     expect(thirdBody.state.constraints).toEqual(expect.arrayContaining(["satu kota dulu"]));
     expect(thirdBody.state.roles).toEqual(expect.arrayContaining(["driver becak"]));
     expect(thirdBody.state.entities).toEqual(expect.arrayContaining(["pangkalan becak"]));
+    expect(thirdBody.state.readinessScore).toBeGreaterThan(0);
     expect(thirdBody.state.openQuestions).not.toEqual(expect.arrayContaining([cityQuestion, driverQuestion]));
     expect(thirdBody.state.draftSpecReady).toBe(true);
+    const persisted = await request.get(`/api/projects/${project.id}`);
+    expect(persisted.status()).toBe(200);
+    const persistedState = (await persisted.json()).project.canonicalState;
+    expect(persistedState.targetUsers).toEqual(expect.arrayContaining(["penumpang"]));
+    expect(persistedState.workflows).toEqual(expect.arrayContaining(["penumpang booking perjalanan"]));
+    expect(persistedState.readinessScore).toBeGreaterThan(0);
+    const spec = await request.post(`/api/projects/${project.id}/spec`);
+    expect(spec.status()).toBe(200);
+    expect((await spec.json()).spec.documents).toEqual(expect.arrayContaining(["PRODUCT_SPEC.md"]));
 
     await page.goto(`/project/${project.id}`);
     await expect(page.getByRole("button", { name: /Buat Draft Spec|Create Draft Spec/ })).toBeVisible();
   });
+  test("blocks handoff generation and download when canonical product truth is absent", async ({ request }) => {
+    const created = await request.post("/api/projects", { data: { description: "" } });
+    expect(created.status()).toBe(201);
+    const project = (await created.json()).project as { id: string };
+
+    const spec = await request.post(`/api/projects/${project.id}/spec`);
+    expect(spec.status()).toBe(422);
+    expect(await spec.json()).toMatchObject({ code: "HANDOFF_BLOCKED" });
+    const generated = await request.post(`/api/projects/${project.id}/export`);
+    expect(generated.status()).toBe(422);
+    expect(await generated.json()).toMatchObject({ code: "HANDOFF_BLOCKED" });
+    const download = await request.get(`/api/projects/${project.id}/export`);
+    expect(download.status()).toBe(422);
+    expect(await download.json()).toMatchObject({ code: "HANDOFF_BLOCKED" });
+  });
+
 
   test("retry after refresh is covered when deterministic provider failure is enabled", async ({ page, request }) => {
     test.skip(

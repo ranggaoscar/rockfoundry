@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { generateExport, validateConsistency } from "@rockfoundry/core";
+import { evaluateDraftSpecMaturity, generateExport, validateConsistency } from "@rockfoundry/core";
 import { prisma } from "@rockfoundry/db";
 import {
   getLocalProject,
@@ -18,6 +18,14 @@ export async function POST(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
+    const maturity = evaluateDraftSpecMaturity(state);
+    if (!maturity.ready) {
+      return jsonError(
+        "A canonical product truth is required before generating a handoff.",
+        422,
+        { code: "HANDOFF_BLOCKED", missing: maturity.missing },
+      );
+    }
     const generated = await generateExport(state);
     const consistency = validateConsistency(state);
     await prisma.$transaction(
