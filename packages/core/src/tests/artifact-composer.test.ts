@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ArtifactComposerOutputSchema,
+  assessArtifactComposerQuality,
   buildArtifactComposerInput,
   createInitialProjectState,
   normalizeArtifactComposerOutput,
@@ -83,8 +84,157 @@ describe("Artifact Composer context", () => {
     expect(input.canonicalTruth.facts.map((fact) => fact.value)).not.toContain(
       "inferred payment",
     );
-    expect(input.groundedUserFacts.every((fact) => fact.source === "USER")).toBe(true);
-    expect(input.canonicalTruth.facts.every((fact) => fact.confidence === "EXPLICIT")).toBe(true);
+    expect(
+      input.groundedUserFacts.every((fact) => fact.source === "USER"),
+    ).toBe(true);
+    expect(
+      input.canonicalTruth.facts.every(
+        (fact) => fact.confidence === "EXPLICIT",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("Artifact Composer quality gate", () => {
+  it("rejects a six-document output when every document is only the fallback placeholder", () => {
+    const input = buildArtifactComposerInput(sparseState());
+    const output = normalizeArtifactComposerOutput({}, input);
+
+    expect(assessArtifactComposerQuality(output)).toMatchObject({
+      meaningful: false,
+      malformedTypes: [
+        "BRD",
+        "PRD",
+        "ERD",
+        "USER_FLOWS",
+        "SCREEN_MAP",
+        "DESIGN_BRIEF",
+      ],
+    });
+  });
+
+  it("accepts a substantive cashflow MVP across all six documents", () => {
+    const output = ArtifactComposerOutputSchema.parse({
+      BRD: {
+        title: "Cashflow BRD",
+        summary: "Track money in and out.",
+        sections: [
+          {
+            id: "goal",
+            title: "Goal",
+            paragraphs: ["A small cashflow tracker."],
+            items: [
+              {
+                id: "income-expense",
+                text: "Record income and expense transactions.",
+                label: "PROPOSAL",
+                evidenceIds: [],
+              },
+            ],
+          },
+        ],
+      },
+      PRD: {
+        title: "Cashflow PRD",
+        summary: "Support balance and history.",
+        sections: [
+          {
+            id: "mvp",
+            title: "MVP",
+            paragraphs: ["Keep the first release focused."],
+            items: [
+              {
+                id: "balance",
+                text: "Show current balance and transaction history.",
+                label: "PROPOSAL",
+                evidenceIds: [],
+              },
+            ],
+          },
+        ],
+      },
+      ERD: {
+        title: "Cashflow ERD",
+        summary: "Model transaction and category records.",
+        sections: [
+          {
+            id: "entities",
+            title: "Entities",
+            paragraphs: ["Store transaction data."],
+            items: [
+              {
+                id: "transaction",
+                text: "Transaction belongs to a Category.",
+                label: "PROPOSAL",
+                evidenceIds: [],
+              },
+            ],
+          },
+        ],
+      },
+      USER_FLOWS: {
+        title: "Cashflow User Flows",
+        summary: "A user records and reviews money movement.",
+        sections: [
+          {
+            id: "flow",
+            title: "Primary flow",
+            paragraphs: ["Start from the dashboard."],
+            items: [
+              {
+                id: "record",
+                text: "Open add transaction, choose income or expense, save, then review history.",
+                label: "PROPOSAL",
+                evidenceIds: [],
+              },
+            ],
+          },
+        ],
+      },
+      SCREEN_MAP: {
+        title: "Cashflow Screen Map",
+        summary: "Three focused screens.",
+        sections: [
+          {
+            id: "screens",
+            title: "Screens",
+            paragraphs: ["Keep navigation simple."],
+            items: [
+              {
+                id: "dashboard",
+                text: "Dashboard, Add Transaction, and History screens.",
+                label: "PROPOSAL",
+                evidenceIds: [],
+              },
+            ],
+          },
+        ],
+      },
+      DESIGN_BRIEF: {
+        title: "Cashflow Design Brief",
+        summary: "Prioritize balance and fast entry.",
+        sections: [
+          {
+            id: "direction",
+            title: "Direction",
+            paragraphs: ["Use a calm financial overview."],
+            items: [
+              {
+                id: "visual",
+                text: "Use balance hierarchy with clear income and expense states.",
+                label: "PROPOSAL",
+                evidenceIds: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(assessArtifactComposerQuality(output)).toMatchObject({
+      meaningful: true,
+      malformedTypes: [],
+    });
   });
 });
 
@@ -140,7 +290,10 @@ describe("Artifact Composer normalization", () => {
       {
         documents: {
           BRD: { document: valid.BRD },
-          PRD: { content: "# Product Requirements\n\nA focused product draft.\n\n## Scope\n\n- Keep the first workflow small." },
+          PRD: {
+            content:
+              "# Product Requirements\n\nA focused product draft.\n\n## Scope\n\n- Keep the first workflow small.",
+          },
           ERD: valid.ERD,
           USER_FLOWS: { artifact: valid.USER_FLOWS },
           SCREEN_MAP: valid.SCREEN_MAP,
@@ -152,8 +305,17 @@ describe("Artifact Composer normalization", () => {
 
     expect(output.BRD.title).toBe("Draft");
     expect(output.PRD.title).toBe("Product Requirements");
-    expect(output.PRD.sections[0].paragraphs[0]).toContain("focused product draft");
-    expect(output.PRD.sections.flatMap((section) => [...section.paragraphs, ...section.items.map((item) => item.text)]).join(" ")).toContain("Keep the first workflow small");
+    expect(output.PRD.sections[0].paragraphs[0]).toContain(
+      "focused product draft",
+    );
+    expect(
+      output.PRD.sections
+        .flatMap((section) => [
+          ...section.paragraphs,
+          ...section.items.map((item) => item.text),
+        ])
+        .join(" "),
+    ).toContain("Keep the first workflow small");
     expect(output.USER_FLOWS.title).toBe("Draft");
   });
 
@@ -170,6 +332,8 @@ describe("Artifact Composer normalization", () => {
     expect(output.ERD.sections).toHaveLength(1);
     expect(output.USER_FLOWS.sections).toHaveLength(1);
     expect(output.SCREEN_MAP.sections).toHaveLength(1);
-    expect(output.DESIGN_BRIEF.sections[0].items[0].label).toBe("OPEN_QUESTION");
+    expect(output.DESIGN_BRIEF.sections[0].items[0].label).toBe(
+      "OPEN_QUESTION",
+    );
   });
 });

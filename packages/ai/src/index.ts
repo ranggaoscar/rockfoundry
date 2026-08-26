@@ -588,6 +588,14 @@ function mockArtifactComposer(
         contradictions: [],
       },
       previousDraft: { version: null, artifacts: [] },
+      requestedDocumentTypes: [
+        "BRD",
+        "PRD",
+        "ERD",
+        "USER_FLOWS",
+        "SCREEN_MAP",
+        "DESIGN_BRIEF",
+      ],
     };
   }
   const laundry = /laundry|cucian|kiloan/i.test(input.rawIdea);

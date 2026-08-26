@@ -5,22 +5,30 @@ const { aiGateway, prismaMock, transactionMock } = vi.hoisted(() => {
   const transactionMock = {
     draftGeneration: {
       findFirst: vi.fn().mockResolvedValue(null),
-      create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
-        id: "generation-1",
-        ...data,
-      })),
+      create: vi
+        .fn()
+        .mockImplementation(
+          async ({ data }: { data: Record<string, unknown> }) => ({
+            id: "generation-1",
+            ...data,
+          }),
+        ),
     },
     artifact: {
       findFirst: vi.fn().mockResolvedValue(null),
-      create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
-        const artifact = {
-          id: `artifact-${createdArtifacts.length + 1}`,
-          generatedAt: new Date("2026-08-26T00:00:00.000Z"),
-          ...data,
-        };
-        createdArtifacts.push(artifact);
-        return artifact;
-      }),
+      create: vi
+        .fn()
+        .mockImplementation(
+          async ({ data }: { data: Record<string, unknown> }) => {
+            const artifact = {
+              id: `artifact-${createdArtifacts.length + 1}`,
+              generatedAt: new Date("2026-08-26T00:00:00.000Z"),
+              ...data,
+            };
+            createdArtifacts.push(artifact);
+            return artifact;
+          },
+        ),
     },
   };
   return {
@@ -28,8 +36,9 @@ const { aiGateway, prismaMock, transactionMock } = vi.hoisted(() => {
     prismaMock: {
       conversationMessage: { findMany: vi.fn().mockResolvedValue([]) },
       draftGeneration: { findMany: vi.fn().mockResolvedValue([]) },
-      $transaction: vi.fn(async (callback: (transaction: typeof transactionMock) => unknown) =>
-        callback(transactionMock),
+      $transaction: vi.fn(
+        async (callback: (transaction: typeof transactionMock) => unknown) =>
+          callback(transactionMock),
       ),
     },
     transactionMock,
@@ -114,7 +123,9 @@ describe("Artifact Composer error boundary", () => {
     const payload = artifactComposerErrorPayload(
       new Error("Prisma password=secret provider payload invalid JSON"),
     );
-    expect(payload.error).toBe("RockFoundry couldn't generate the Product Draft.");
+    expect(payload.error).toBe(
+      "RockFoundry couldn't generate the Product Draft.",
+    );
     expect(JSON.stringify(payload)).not.toContain("Prisma");
     expect(JSON.stringify(payload)).not.toContain("secret");
     expect(JSON.stringify(payload)).not.toContain("invalid JSON");
@@ -132,9 +143,24 @@ describe("Product Draft formatter compatibility", () => {
           title: "Overview",
           paragraphs: ["A grounded summary."],
           items: [
-            { id: "confirmed", text: "Owner", label: "CONFIRMED", evidenceIds: [] },
-            { id: "proposal", text: "Orders screen", label: "PROPOSAL", evidenceIds: [] },
-            { id: "question", text: "Delivery?", label: "OPEN_QUESTION", evidenceIds: [] },
+            {
+              id: "confirmed",
+              text: "Owner",
+              label: "CONFIRMED",
+              evidenceIds: [],
+            },
+            {
+              id: "proposal",
+              text: "Orders screen",
+              label: "PROPOSAL",
+              evidenceIds: [],
+            },
+            {
+              id: "question",
+              text: "Delivery?",
+              label: "OPEN_QUESTION",
+              evidenceIds: [],
+            },
           ],
         },
       ],
@@ -163,7 +189,9 @@ describe("Product Draft persistence with tolerant Luna output", () => {
     expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(1);
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(transactionMock.draftGeneration.create).toHaveBeenCalledTimes(1);
-    expect(transactionMock.draftGeneration.create.mock.calls[0][0].data).toMatchObject({
+    expect(
+      transactionMock.draftGeneration.create.mock.calls[0][0].data,
+    ).toMatchObject({
       canonicalVersion: 7,
       generationNumber: 1,
       status: "COMPLETE",
@@ -180,8 +208,14 @@ describe("Product Draft persistence with tolerant Luna output", () => {
       "SCREEN_MAP",
       "DESIGN_BRIEF",
     ]);
-    expect(artifactInputs.every((artifact) => artifact.status === "READY")).toBe(true);
-    expect(artifactInputs.every((artifact) => artifact.draftGenerationId === "generation-1")).toBe(true);
+    expect(
+      artifactInputs.every((artifact) => artifact.status === "READY"),
+    ).toBe(true);
+    expect(
+      artifactInputs.every(
+        (artifact) => artifact.draftGenerationId === "generation-1",
+      ),
+    ).toBe(true);
 
     const prd = result.documents.PRD;
     const screenMap = result.documents.SCREEN_MAP;
@@ -192,9 +226,64 @@ describe("Product Draft persistence with tolerant Luna output", () => {
     for (const artifact of artifactInputs) {
       const content = String(artifact.content);
       expect(content.length).toBeGreaterThan(100);
-      expect(content).not.toMatch(/needs review before it can be treated as complete/i);
+      expect(content).not.toMatch(
+        /needs review before it can be treated as complete/i,
+      );
       expect(content.match(/\[UNRESOLVED\]/g)?.length || 0).toBeLessThan(2);
     }
+  });
+});
+
+describe("Product Draft quality gate", () => {
+  it("persists FAILED and creates no READY artifacts when all six documents are fallback placeholders", async () => {
+    transactionMock.draftGeneration.create.mockClear();
+    transactionMock.artifact.create.mockClear();
+    aiGateway.runArtifactComposer.mockReset();
+    aiGateway.runArtifactComposer.mockResolvedValue({});
+    const state = createInitialProjectState({
+      id: "quality-gate-failure",
+      name: "Cashflow",
+      rawIdea: "aplikasi untuk mencatat duit masuk dan keluar",
+    });
+
+    await expect(composeDraftArtifacts("project-1", 8, state)).rejects.toThrow(
+      /quality gate/i,
+    );
+
+    expect(transactionMock.draftGeneration.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "FAILED" }),
+      }),
+    );
+    expect(transactionMock.artifact.create).not.toHaveBeenCalled();
+  });
+
+  it("repairs only the malformed document and preserves the five substantive documents", async () => {
+    transactionMock.draftGeneration.create.mockClear();
+    transactionMock.artifact.create.mockClear();
+    const valid = malformedLunaOutput().documents;
+    aiGateway.runArtifactComposer.mockReset();
+    aiGateway.runArtifactComposer
+      .mockResolvedValueOnce({ ...valid, DESIGN_BRIEF: {} })
+      .mockResolvedValueOnce({ ...valid, DESIGN_BRIEF: valid.DESIGN_BRIEF });
+    const state = createInitialProjectState({
+      id: "quality-gate-repair",
+      name: "Cashflow",
+      rawIdea: "aplikasi untuk mencatat duit masuk dan keluar",
+    });
+
+    await composeDraftArtifacts("project-1", 9, state);
+
+    expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(2);
+    expect(
+      aiGateway.runArtifactComposer.mock.calls[1][0].requestedDocumentTypes,
+    ).toEqual(["DESIGN_BRIEF"]);
+    expect(transactionMock.draftGeneration.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "COMPLETE" }),
+      }),
+    );
+    expect(transactionMock.artifact.create).toHaveBeenCalledTimes(6);
   });
 });
 
@@ -216,16 +305,24 @@ describe("Product Draft artifact current state", () => {
 });
 
 describe("legacy Product Draft accessor coherence", () => {
-  const types = ["BRD", "PRD", "ERD", "USER_FLOWS", "SCREEN_MAP", "DESIGN_BRIEF"];
-  const rows = (version: number) => types.map((type) => ({
-    id: `${type}-${version}`,
-    type,
-    status: "READY",
-    content: `${type}-${version}`,
-    version,
-    canonicalVersion: null,
-    generatedAt: new Date("2026-01-01T00:00:00.000Z"),
-  }));
+  const types = [
+    "BRD",
+    "PRD",
+    "ERD",
+    "USER_FLOWS",
+    "SCREEN_MAP",
+    "DESIGN_BRIEF",
+  ];
+  const rows = (version: number) =>
+    types.map((type) => ({
+      id: `${type}-${version}`,
+      type,
+      status: "READY",
+      content: `${type}-${version}`,
+      version,
+      canonicalVersion: null,
+      generatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    }));
 
   it("rejects mixed legacy versions and selects a coherent set", () => {
     const mixed = [...rows(1).slice(0, 3), ...rows(2).slice(3)];
@@ -248,8 +345,20 @@ describe("draft generation selection across canonical versions", () => {
     });
     const complete = typesForTest().map(artifact);
     const generations = [
-      { id: "g1", canonicalVersion: 4, generationNumber: 1, status: "COMPLETE", artifacts: complete },
-      { id: "g2", canonicalVersion: 5, generationNumber: 2, status: "COMPLETE", artifacts: complete },
+      {
+        id: "g1",
+        canonicalVersion: 4,
+        generationNumber: 1,
+        status: "COMPLETE",
+        artifacts: complete,
+      },
+      {
+        id: "g2",
+        canonicalVersion: 5,
+        generationNumber: 2,
+        status: "COMPLETE",
+        artifacts: complete,
+      },
     ];
     expect(selectLatestCompleteDraftGeneration(generations, 6)?.id).toBe("g2");
   });

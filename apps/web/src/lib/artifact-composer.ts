@@ -3,6 +3,7 @@ import {
   DRAFT_BRIDGE_TYPES,
 } from "./design-draft-bridge";
 import {
+  assessArtifactComposerQuality,
   buildArtifactComposerInput,
   normalizeArtifactComposerOutput,
   validateConsistency,
@@ -30,8 +31,12 @@ export function artifactComposerErrorPayload(error: unknown) {
 }
 
 export function logArtifactComposerFailure(error: unknown) {
-  const diagnostics = classifyDesignFailure(error, { task: "artifact_composer" });
-  console.error(`[artifact-composer] ${formatDesignFailureDiagnostics(diagnostics)}`);
+  const diagnostics = classifyDesignFailure(error, {
+    task: "artifact_composer",
+  });
+  console.error(
+    `[artifact-composer] ${formatDesignFailureDiagnostics(diagnostics)}`,
+  );
   return diagnostics;
 }
 
@@ -67,8 +72,10 @@ type DraftArtifactRow = {
 };
 
 function usefulMessage(message: { role: string; content: string }) {
-  return ["user", "assistant", "tool", "system"].includes(message.role) &&
-    message.content.trim().length > 0;
+  return (
+    ["user", "assistant", "tool", "system"].includes(message.role) &&
+    message.content.trim().length > 0
+  );
 }
 
 function formatItem(item: ArtifactComposerItem) {
@@ -85,7 +92,9 @@ function formatLedger(document: ArtifactComposerDocument) {
     items.filter((item) => item.label === label);
   const lines = (label: ArtifactComposerItem["label"]) => {
     const values = matching(label);
-    return values.length ? values.map(formatItem).join("\n") : "- None recorded.";
+    return values.length
+      ? values.map(formatItem).join("\n")
+      : "- None recorded.";
   };
   return [
     `## CONFIRMED\n\n${lines("CONFIRMED")}`,
@@ -109,7 +118,10 @@ export function formatComposedDocuments(
   output: Record<DraftArtifactType, ArtifactComposerDocument>,
 ) {
   return Object.fromEntries(
-    DRAFT_ARTIFACT_TYPES.map((type) => [type, formatComposedDocument(output[type])]),
+    DRAFT_ARTIFACT_TYPES.map((type) => [
+      type,
+      formatComposedDocument(output[type]),
+    ]),
   ) as Record<DraftArtifactType, string>;
 }
 
@@ -120,17 +132,22 @@ async function loadPreviousGeneration(projectId: string) {
     include: { artifacts: true },
     take: 8,
   });
-  return generations.find((generation) =>
-    DRAFT_ARTIFACT_TYPES.every((type) =>
-      generation.artifacts.some((artifact) => artifact.type === type),
-    ),
-  ) || null;
+  return (
+    generations.find((generation) =>
+      DRAFT_ARTIFACT_TYPES.every((type) =>
+        generation.artifacts.some((artifact) => artifact.type === type),
+      ),
+    ) || null
+  );
 }
 
 async function composerInput(
   projectId: string,
   state: ProjectState,
-): Promise<{ input: ArtifactComposerInput; previous: Awaited<ReturnType<typeof loadPreviousGeneration>> }> {
+): Promise<{
+  input: ArtifactComposerInput;
+  previous: Awaited<ReturnType<typeof loadPreviousGeneration>>;
+}> {
   const [messages, previous] = await Promise.all([
     prisma.conversationMessage.findMany({
       where: { projectId },
@@ -176,8 +193,72 @@ export async function composeDraftArtifacts(
 ) {
   const { getAiGateway } = await import("./ai-provider");
   const { input, previous } = await composerInput(projectId, state);
-  const rawOutput = await getAiGateway().runArtifactComposer(input);
-  const normalized = normalizeArtifactComposerOutput(rawOutput, input);
+  const gateway = getAiGateway();
+  let normalized = normalizeArtifactComposerOutput(
+    await gateway.runArtifactComposer(input),
+    input,
+  );
+  let quality = assessArtifactComposerQuality(normalized);
+
+  // Preserve the substantive first pass and spend one bounded repair only on bad documents.
+  if (quality.repairable) {
+    const repairInput = {
+      ...input,
+      requestedDocumentTypes: quality.malformedTypes,
+      previousDraft: {
+        ...input.previousDraft,
+        artifacts: DRAFT_ARTIFACT_TYPES.map((type) => ({
+          type,
+          version: input.previousDraft.version || 0,
+          content: formatComposedDocument(normalized[type]),
+        })),
+      },
+    };
+    const repaired = normalizeArtifactComposerOutput(
+      await gateway.runArtifactComposer(repairInput),
+      repairInput,
+    );
+    normalized = Object.fromEntries(
+      DRAFT_ARTIFACT_TYPES.map((type) => [
+        type,
+        quality.malformedTypes.includes(type)
+          ? repaired[type]
+          : normalized[type],
+      ]),
+    ) as typeof normalized;
+    quality = assessArtifactComposerQuality(normalized);
+  }
+
+  if (!quality.meaningful) {
+    await prisma.$transaction(async (transaction) => {
+      const latest = await transaction.draftGeneration.findFirst({
+        where: { projectId },
+        orderBy: { generationNumber: "desc" },
+        select: { generationNumber: true },
+      });
+      await transaction.draftGeneration.create({
+        data: {
+          projectId,
+          canonicalVersion,
+          generationNumber: (latest?.generationNumber || 0) + 1,
+          status: "FAILED",
+          sourceGenerationId: previous?.id || null,
+          composerInput: JSON.stringify(input),
+          composerMetadata: JSON.stringify({
+            source: "AI_ARTIFACT_COMPOSER",
+            malformedTypes: quality.malformedTypes,
+          }),
+          errorSummary:
+            "Artifact quality gate rejected incomplete Product Draft documents.",
+          completedAt: new Date(),
+        },
+      });
+    });
+    throw new Error(
+      "Artifact quality gate rejected incomplete Product Draft documents.",
+    );
+  }
+
   const documents = formatComposedDocuments(normalized);
   const consistency = validateConsistency(state);
 
@@ -235,10 +316,9 @@ type DraftGenerationWithArtifacts = {
   artifacts: DraftArtifactRow[];
 };
 
-export function selectLatestCompleteDraftGeneration<T extends DraftGenerationWithArtifacts>(
-  generations: T[],
-  currentCanonicalVersion: number,
-): T | null {
+export function selectLatestCompleteDraftGeneration<
+  T extends DraftGenerationWithArtifacts,
+>(generations: T[], currentCanonicalVersion: number): T | null {
   const complete = generations.filter(
     (generation) =>
       generation.status === "COMPLETE" &&
@@ -248,9 +328,14 @@ export function selectLatestCompleteDraftGeneration<T extends DraftGenerationWit
       ),
   );
   complete.sort((left, right) => {
-    const leftCurrent = left.canonicalVersion === currentCanonicalVersion ? 1 : 0;
-    const rightCurrent = right.canonicalVersion === currentCanonicalVersion ? 1 : 0;
-    return rightCurrent - leftCurrent || right.generationNumber - left.generationNumber;
+    const leftCurrent =
+      left.canonicalVersion === currentCanonicalVersion ? 1 : 0;
+    const rightCurrent =
+      right.canonicalVersion === currentCanonicalVersion ? 1 : 0;
+    return (
+      rightCurrent - leftCurrent ||
+      right.generationNumber - left.generationNumber
+    );
   });
   return complete[0] || null;
 }
@@ -263,7 +348,10 @@ export function selectLatestLegacyDraftArtifacts(
   return DRAFT_BRIDGE_TYPES.map((type) => selected[type] as DraftArtifactRow);
 }
 
-export async function latestDraftArtifacts(projectId: string, canonicalVersion: number) {
+export async function latestDraftArtifacts(
+  projectId: string,
+  canonicalVersion: number,
+) {
   const generations = await prisma.draftGeneration.findMany({
     where: {
       projectId,
@@ -282,7 +370,10 @@ export async function latestDraftArtifacts(projectId: string, canonicalVersion: 
     where: {
       projectId,
       type: { in: [...DRAFT_ARTIFACT_TYPES] },
-      OR: [{ canonicalVersion }, { canonicalVersion: null, version: canonicalVersion }],
+      OR: [
+        { canonicalVersion },
+        { canonicalVersion: null, version: canonicalVersion },
+      ],
     },
     orderBy: [{ version: "desc" }, { generatedAt: "desc" }],
   });

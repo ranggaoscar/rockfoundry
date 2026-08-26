@@ -79,6 +79,11 @@ export const ArtifactComposerInputSchema = z.object({
     version: z.number().int().nonnegative().nullable(),
     artifacts: z.array(ArtifactComposerPreviousArtifactSchema).default([]),
   }),
+  requestedDocumentTypes: z
+    .array(
+      z.enum(["BRD", "PRD", "ERD", "USER_FLOWS", "SCREEN_MAP", "DESIGN_BRIEF"]),
+    )
+    .default(["BRD", "PRD", "ERD", "USER_FLOWS", "SCREEN_MAP", "DESIGN_BRIEF"]),
 });
 export type ArtifactComposerInput = z.infer<typeof ArtifactComposerInputSchema>;
 
@@ -97,14 +102,18 @@ export const ArtifactComposerSectionSchema = z.object({
   paragraphs: z.array(z.string().min(1)).default([]),
   items: z.array(ArtifactComposerItemSchema).default([]),
 });
-export type ArtifactComposerSection = z.infer<typeof ArtifactComposerSectionSchema>;
+export type ArtifactComposerSection = z.infer<
+  typeof ArtifactComposerSectionSchema
+>;
 
 export const ArtifactComposerDocumentSchema = z.object({
   title: z.string().min(1),
   summary: z.string().min(1),
   sections: z.array(ArtifactComposerSectionSchema).min(1),
 });
-export type ArtifactComposerDocument = z.infer<typeof ArtifactComposerDocumentSchema>;
+export type ArtifactComposerDocument = z.infer<
+  typeof ArtifactComposerDocumentSchema
+>;
 
 export const ArtifactComposerOutputSchema = z.object({
   BRD: ArtifactComposerDocumentSchema,
@@ -114,7 +123,57 @@ export const ArtifactComposerOutputSchema = z.object({
   SCREEN_MAP: ArtifactComposerDocumentSchema,
   DESIGN_BRIEF: ArtifactComposerDocumentSchema,
 });
-export type ArtifactComposerOutput = z.infer<typeof ArtifactComposerOutputSchema>;
+export type ArtifactComposerOutput = z.infer<
+  typeof ArtifactComposerOutputSchema
+>;
+
+export const ARTIFACT_COMPOSER_DOCUMENT_TYPES = [
+  "BRD",
+  "PRD",
+  "ERD",
+  "USER_FLOWS",
+  "SCREEN_MAP",
+  "DESIGN_BRIEF",
+] as const;
+export type ArtifactComposerDocumentType =
+  (typeof ARTIFACT_COMPOSER_DOCUMENT_TYPES)[number];
+
+const FALLBACK_MARKER = "needs review before it can be treated as complete.";
+
+function isMeaningfulDocument(document: ArtifactComposerDocument) {
+  const content = [
+    document.title,
+    document.summary,
+    ...document.sections.flatMap((section) => [
+      section.title,
+      ...section.paragraphs,
+      ...section.items.map((item) => item.text),
+    ]),
+  ]
+    .join(" ")
+    .trim();
+  const itemCount = document.sections.reduce(
+    (count, section) => count + section.items.length,
+    0,
+  );
+  return (
+    !content.toLowerCase().includes(FALLBACK_MARKER) &&
+    content.length >= 80 &&
+    itemCount >= 1
+  );
+}
+
+/** Product truth may be tolerant; publication still requires substantive documents. */
+export function assessArtifactComposerQuality(output: ArtifactComposerOutput) {
+  const malformedTypes = ARTIFACT_COMPOSER_DOCUMENT_TYPES.filter(
+    (type) => !isMeaningfulDocument(output[type]),
+  );
+  return {
+    malformedTypes,
+    meaningful: malformedTypes.length === 0,
+    repairable: malformedTypes.length > 0 && malformedTypes.length <= 2,
+  };
+}
 
 const CANONICAL_ARRAY_FIELDS = [
   "targetUsers",
@@ -158,7 +217,11 @@ function canonicalFacts(state: ProjectState): ArtifactComposerFact[] {
       });
     }
   }
-  for (const field of ["rawIdea", "normalizedSummary", "productType"] as const) {
+  for (const field of [
+    "rawIdea",
+    "normalizedSummary",
+    "productType",
+  ] as const) {
     const value = state[field];
     if (!value || !explicitUserProvenance(state, field)) continue;
     const provenance = state.provenance[field];
@@ -238,12 +301,15 @@ export function buildArtifactComposerInput(
     canonicalTruth: {
       facts,
       provenance: Object.fromEntries(
-        facts.map((fact) => [fact.id, {
-          path: fact.path,
-          source: fact.source,
-          confidence: fact.confidence,
-          evidence: fact.evidence,
-        }]),
+        facts.map((fact) => [
+          fact.id,
+          {
+            path: fact.path,
+            source: fact.source,
+            confidence: fact.confidence,
+            evidence: fact.evidence,
+          },
+        ]),
       ),
     },
     groundedUserFacts: facts.filter(
@@ -257,9 +323,13 @@ export function buildArtifactComposerInput(
   });
 }
 
-function documentFallback(type: string, details?: string): ArtifactComposerDocument {
+function documentFallback(
+  type: string,
+  details?: string,
+): ArtifactComposerDocument {
   const title = type.replace(/_/g, " ");
-  const text = details || `${title} needs review before it can be treated as complete.`;
+  const text =
+    details || `${title} needs review before it can be treated as complete.`;
   return {
     title,
     summary: text,
@@ -274,7 +344,8 @@ function documentFallback(type: string, details?: string): ArtifactComposerDocum
             text,
             label: "OPEN_QUESTION",
             evidenceIds: [],
-            rationale: "The provider response was incomplete or malformed; no claims were confirmed.",
+            rationale:
+              "The provider response was incomplete or malformed; no claims were confirmed.",
           },
         ],
       },
@@ -282,7 +353,10 @@ function documentFallback(type: string, details?: string): ArtifactComposerDocum
   };
 }
 
-function markdownDocument(value: string, fallbackTitle: string): ArtifactComposerDocument | null {
+function markdownDocument(
+  value: string,
+  fallbackTitle: string,
+): ArtifactComposerDocument | null {
   const lines = value
     .replace(/```(?:markdown|md)?/gi, "")
     .split(/\r?\n/)
@@ -292,7 +366,9 @@ function markdownDocument(value: string, fallbackTitle: string): ArtifactCompose
 
   const titleLine = lines.find((line) => /^#\s+/.test(line));
   const title = titleLine?.replace(/^#\s+/, "").trim() || fallbackTitle;
-  const contentLines = titleLine ? lines.slice(lines.indexOf(titleLine) + 1) : lines;
+  const contentLines = titleLine
+    ? lines.slice(lines.indexOf(titleLine) + 1)
+    : lines;
   const sections: ArtifactComposerSection[] = [];
   let current: ArtifactComposerSection = {
     id: "overview",
@@ -310,7 +386,11 @@ function markdownDocument(value: string, fallbackTitle: string): ArtifactCompose
     if (heading) {
       flush();
       current = {
-        id: heading[1].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "section",
+        id:
+          heading[1]
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "") || "section",
         title: heading[1].trim(),
         paragraphs: [],
         items: [],
@@ -320,7 +400,9 @@ function markdownDocument(value: string, fallbackTitle: string): ArtifactCompose
     const bullet = line.match(/^[-*+]\s+(.+)$/);
     if (bullet) {
       const raw = bullet[1].trim();
-      const labelMatch = raw.match(/^\*\*(ASSUMPTION|PROPOSAL|OPEN_QUESTION|CONFIRMED)\*\*\s*(.*)$/i);
+      const labelMatch = raw.match(
+        /^\*\*(ASSUMPTION|PROPOSAL|OPEN_QUESTION|CONFIRMED)\*\*\s*(.*)$/i,
+      );
       const requestedLabel = labelMatch?.[1]?.toUpperCase();
       const label: ArtifactComposerLabel =
         requestedLabel === "ASSUMPTION" || requestedLabel === "OPEN_QUESTION"
@@ -344,81 +426,164 @@ function markdownDocument(value: string, fallbackTitle: string): ArtifactCompose
   const bodyText = contentLines
     .filter((line) => line && !/^#{1,6}\s+/.test(line))
     .join(" ");
-  if (bodyText && sections.length && !sections.flatMap((section) => section.paragraphs).join(" ").includes(bodyText)) {
+  if (
+    bodyText &&
+    sections.length &&
+    !sections
+      .flatMap((section) => section.paragraphs)
+      .join(" ")
+      .includes(bodyText)
+  ) {
     sections[0].paragraphs.push(bodyText);
   }
   return {
     title,
     summary,
-    sections: sections.length ? sections : [{ id: "overview", title: "Overview", paragraphs: [summary], items: [] }],
+    sections: sections.length
+      ? sections
+      : [
+          {
+            id: "overview",
+            title: "Overview",
+            paragraphs: [summary],
+            items: [],
+          },
+        ],
   };
 }
 
-function structuredDocument(value: Record<string, unknown>, type: string): ArtifactComposerDocument {
-  const title = typeof value.title === "string" && value.title.trim()
-    ? value.title.trim()
-    : type.replace(/_/g, " ");
+function structuredDocument(
+  value: Record<string, unknown>,
+  type: string,
+): ArtifactComposerDocument {
+  const title =
+    typeof value.title === "string" && value.title.trim()
+      ? value.title.trim()
+      : type.replace(/_/g, " ");
   const rawSections = Array.isArray(value.sections) ? value.sections : [];
-  if (!title.trim() || (!rawSections.length && typeof value.summary !== "string")) {
+  if (
+    !title.trim() ||
+    (!rawSections.length && typeof value.summary !== "string")
+  ) {
     return documentFallback(type);
   }
   const sections = rawSections.flatMap((rawSection, sectionIndex) => {
-    if (!rawSection || typeof rawSection !== "object" || Array.isArray(rawSection)) return [];
+    if (
+      !rawSection ||
+      typeof rawSection !== "object" ||
+      Array.isArray(rawSection)
+    )
+      return [];
     const section = rawSection as Record<string, unknown>;
     const rawItems = Array.isArray(section.items) ? section.items : [];
     const items = rawItems.flatMap((rawItem, itemIndex) => {
       const parsed = ArtifactComposerItemSchema.safeParse(rawItem);
       if (parsed.success) return [parsed.data];
-      if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) return [];
+      if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem))
+        return [];
       const item = rawItem as Record<string, unknown>;
       if (typeof item.text !== "string" || !item.text.trim()) return [];
       const label = ArtifactComposerLabelSchema.safeParse(item.label);
-      return [{
-        id: typeof item.id === "string" && item.id ? item.id : `item-${itemIndex + 1}`,
-        text: item.text.trim(),
-        label: label.success && label.data !== "CONFIRMED" ? label.data : "PROPOSAL",
-        evidenceIds: Array.isArray(item.evidenceIds) ? item.evidenceIds.filter((id): id is string => typeof id === "string") : [],
-        ...(typeof item.rationale === "string" ? { rationale: item.rationale } : {}),
-      } satisfies ArtifactComposerItem];
+      return [
+        {
+          id:
+            typeof item.id === "string" && item.id
+              ? item.id
+              : `item-${itemIndex + 1}`,
+          text: item.text.trim(),
+          label:
+            label.success && label.data !== "CONFIRMED"
+              ? label.data
+              : "PROPOSAL",
+          evidenceIds: Array.isArray(item.evidenceIds)
+            ? item.evidenceIds.filter(
+                (id): id is string => typeof id === "string",
+              )
+            : [],
+          ...(typeof item.rationale === "string"
+            ? { rationale: item.rationale }
+            : {}),
+        } satisfies ArtifactComposerItem,
+      ];
     });
     const paragraphs = Array.isArray(section.paragraphs)
-      ? section.paragraphs.filter((paragraph): paragraph is string => typeof paragraph === "string" && paragraph.trim().length > 0)
+      ? section.paragraphs.filter(
+          (paragraph): paragraph is string =>
+            typeof paragraph === "string" && paragraph.trim().length > 0,
+        )
       : [];
-    return [{
-      id: typeof section.id === "string" && section.id ? section.id : `section-${sectionIndex + 1}`,
-      title: typeof section.title === "string" && section.title ? section.title : "Overview",
-      paragraphs,
-      items,
-    } satisfies ArtifactComposerSection];
+    return [
+      {
+        id:
+          typeof section.id === "string" && section.id
+            ? section.id
+            : `section-${sectionIndex + 1}`,
+        title:
+          typeof section.title === "string" && section.title
+            ? section.title
+            : "Overview",
+        paragraphs,
+        items,
+      } satisfies ArtifactComposerSection,
+    ];
   });
-  const summary = typeof value.summary === "string" && value.summary.trim()
-    ? value.summary.trim()
-    : sections[0]?.paragraphs[0] || `Draft ${title} for review.`;
+  const summary =
+    typeof value.summary === "string" && value.summary.trim()
+      ? value.summary.trim()
+      : sections[0]?.paragraphs[0] || `Draft ${title} for review.`;
   return {
     title,
     summary,
-    sections: sections.length ? sections : [{ id: "overview", title: "Overview", paragraphs: [summary], items: [] }],
+    sections: sections.length
+      ? sections
+      : [
+          {
+            id: "overview",
+            title: "Overview",
+            paragraphs: [summary],
+            items: [],
+          },
+        ],
   };
 }
 
 function unwrapDocument(value: unknown, depth = 0): unknown {
-  if (depth > 4 || value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  if (
+    depth > 4 ||
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  )
+    return value;
   const record = value as Record<string, unknown>;
-  for (const key of ["document", "artifact", "data", "result", "value", "output"]) {
+  for (const key of [
+    "document",
+    "artifact",
+    "data",
+    "result",
+    "value",
+    "output",
+  ]) {
     if (key in record) return unwrapDocument(record[key], depth + 1);
   }
   if (typeof record.content === "string") return record.content;
   return value;
 }
 
-function normalizeDocument(value: unknown, type: string): ArtifactComposerDocument {
+function normalizeDocument(
+  value: unknown,
+  type: string,
+): ArtifactComposerDocument {
   const unwrapped = unwrapDocument(value);
   if (typeof unwrapped === "string") {
     let parsed: unknown = unwrapped;
     try {
       parsed = JSON.parse(unwrapped);
     } catch {
-      return markdownDocument(unwrapped, type.replace(/_/g, " ")) || documentFallback(type);
+      return (
+        markdownDocument(unwrapped, type.replace(/_/g, " ")) ||
+        documentFallback(type)
+      );
     }
     return normalizeDocument(parsed, type);
   }
@@ -429,31 +594,48 @@ function normalizeDocument(value: unknown, type: string): ArtifactComposerDocume
 }
 
 /** Normalize provider-specific wrappers and content without coupling document validity. */
-export function normalizeArtifactComposerOutputShape(output: unknown): ArtifactComposerOutput {
+export function normalizeArtifactComposerOutputShape(
+  output: unknown,
+): ArtifactComposerOutput {
   let source: unknown = output;
   for (let depth = 0; depth < 4; depth++) {
     if (!source || typeof source !== "object" || Array.isArray(source)) break;
     const record = source as Record<string, unknown>;
     const nested = ["documents", "artifacts", "output", "data", "result"].find(
-      (key) => record[key] && typeof record[key] === "object" && !Array.isArray(record[key]),
+      (key) =>
+        record[key] &&
+        typeof record[key] === "object" &&
+        !Array.isArray(record[key]),
     );
     if (!nested) break;
     source = record[nested];
   }
-  const record = source && typeof source === "object" && !Array.isArray(source)
-    ? source as Record<string, unknown>
-    : {};
+  const record =
+    source && typeof source === "object" && !Array.isArray(source)
+      ? (source as Record<string, unknown>)
+      : {};
   const entries = Array.isArray(record.documents) ? record.documents : [];
   const fromArray = Object.fromEntries(
     entries.flatMap((entry) => {
       if (!entry || typeof entry !== "object") return [];
       const item = entry as Record<string, unknown>;
-      return typeof item.type === "string" ? [[item.type, item.document ?? item.content ?? item.data]] : [];
+      return typeof item.type === "string"
+        ? [[item.type, item.document ?? item.content ?? item.data]]
+        : [];
     }),
   );
   const docs = { ...fromArray, ...record } as Record<string, unknown>;
-  const types = ["BRD", "PRD", "ERD", "USER_FLOWS", "SCREEN_MAP", "DESIGN_BRIEF"] as const;
-  return Object.fromEntries(types.map((type) => [type, normalizeDocument(docs[type], type)])) as ArtifactComposerOutput;
+  const types = [
+    "BRD",
+    "PRD",
+    "ERD",
+    "USER_FLOWS",
+    "SCREEN_MAP",
+    "DESIGN_BRIEF",
+  ] as const;
+  return Object.fromEntries(
+    types.map((type) => [type, normalizeDocument(docs[type], type)]),
+  ) as ArtifactComposerOutput;
 }
 
 /** Keep model output structured while preventing unsupported claims from becoming facts. */

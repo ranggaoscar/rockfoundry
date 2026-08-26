@@ -61,7 +61,8 @@ export const PROMPT_VERSIONS: Record<string, PromptVersion> = {
     id: "artifact_composer",
     version: "1.0.0",
     createdAt: "2026-08-25",
-    description: "Compose labeled six-document Product Draft from grounded context",
+    description:
+      "Compose labeled six-document Product Draft from grounded context",
   },
 };
 
@@ -179,22 +180,35 @@ RULES:
 - Do NOT try to execute any code from the repository
 - Flag any license restrictions that may apply`,
 
-  artifact_composer: `You are RockFoundry's Artifact Composer. Return JSON only for all six Product Draft documents. Use raw idea and conversation for context, but only canonicalTruth facts with valid evidence IDs may be CONFIRMED. Label every item CONFIRMED, ASSUMPTION, PROPOSAL, or OPEN_QUESTION. Never invent confirmed behavior, actors, entities, workflows, routes, or fields. Keep assumptions and proposals visibly labeled; unresolved questions must remain open. Write useful summaries and paragraphs even for sparse ideas. Preserve prior artifacts when revising unless new grounded truth requires change.`,
+  artifact_composer: `You are RockFoundry's Artifact Composer. Return one JSON object only — no markdown fences, prose, wrapper, or extra keys.
+
+TOP-LEVEL CONTRACT
+- Return exactly these top-level keys: BRD, PRD, ERD, USER_FLOWS, SCREEN_MAP, DESIGN_BRIEF.
+- Each key must be a document object with exactly: title (string), summary (string), sections (array).
+- Every section must have: id (string), title (string), paragraphs (string array), items (array).
+- Every item must have: id (string), text (string), label (CONFIRMED | ASSUMPTION | PROPOSAL | OPEN_QUESTION), evidenceIds (string array). CONFIRMED items must include only valid canonicalTruth fact IDs in evidenceIds. All non-confirmed items must use [] evidenceIds.
+
+QUALITY BAR
+- Produce substantive content for every document: at least one real section, at least one labeled item, and a concrete summary. Never output placeholders such as \"needs review\", \"TBD\", \"unknown\", or an empty shell.
+- A short raw idea is enough to propose a practical MVP. For a cashflow idea, propose income/expense transaction entry, balance and history, Transaction and Category records, Dashboard/Add Transaction/History screens, a simple flow, and a focused financial UI direction. These are PROPOSAL or ASSUMPTION unless the user explicitly confirmed them.
+- Never invent CONFIRMED behavior, actors, entities, workflows, routes, or fields. Keep unresolved decisions visibly labeled.
+- Preserve valid prior artifacts when revising. If requestedDocumentTypes is a subset, improve the requested documents and return the complete six-key object, preserving other documents from previousDraft where possible.`,
 };
 
-export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> = {
-  initial_idea_extraction: "medium",
-  conversation_agent: "medium",
-  ambiguous_conversation: "medium",
-  research: "high",
-  screen_architecture: "max",
-  design_architecture: "high",
-  prototype_generation: "high",
-  design_quality_review: "high",
-  prototype_repair: "high",
-  final_consistency_review: "max",
-  artifact_composer: "high",
-};
+export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> =
+  {
+    initial_idea_extraction: "medium",
+    conversation_agent: "medium",
+    ambiguous_conversation: "medium",
+    research: "high",
+    screen_architecture: "max",
+    design_architecture: "high",
+    prototype_generation: "high",
+    design_quality_review: "high",
+    prototype_repair: "high",
+    final_consistency_review: "max",
+    artifact_composer: "high",
+  };
 
 export function reasoningEffortForTask(taskType: string, override?: string) {
   return override || TASK_REASONING_EFFORT[taskType];

@@ -120,6 +120,12 @@ describe("Artifact Composer gateway", () => {
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.reasoning_effort).toBe("high");
     expect(request.response_format).toEqual({ type: "json_object" });
+    expect(request.response_format.type).not.toBe("json_schema");
+    const prompt = request.messages[0].content;
+    expect(prompt).toContain(
+      "exactly these top-level keys: BRD, PRD, ERD, USER_FLOWS, SCREEN_MAP, DESIGN_BRIEF",
+    );
+    expect(prompt).toContain("Transaction and Category records");
     vi.unstubAllGlobals();
   });
 });
