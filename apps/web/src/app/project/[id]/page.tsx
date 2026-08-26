@@ -321,6 +321,8 @@ export default function ProjectWorkspace({
   const [activity, setActivity] = useState<Activity[]>([]);
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [workbench, setWorkbench] = useState<Workbench>(null);
+  const [draftGenerationRequestId, setDraftGenerationRequestId] = useState(0);
+  const [draftGenerationInFlight, setDraftGenerationInFlight] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [retryingTurnId, setRetryingTurnId] = useState<string | null>(null);
@@ -842,35 +844,11 @@ export default function ProjectWorkspace({
   }
 
   async function buildProductDraft() {
-    if (!projectId || !project || working) return;
+    if (!projectId || !project || working || draftGenerationInFlight) return;
     setPageError("");
-    try {
-      const response = await fetch(`/api/projects/${projectId}/documents`, {
-        method: "POST",
-      });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "RockFoundry couldn't create the Product Draft.",
-        );
-      setWorkbench("documents");
-      setMessages((current) => [
-        ...current,
-        {
-          id: `draft-${Date.now()}`,
-          role: "assistant",
-          text: indo
-            ? "Product Draft sudah dibuat. Yang belum jelas tetap terlihat sebagai asumsi atau open question."
-            : "The Product Draft is ready. Unresolved details stay visible as assumptions or open questions.",
-        },
-      ]);
-    } catch (cause) {
-      setPageError(
-        cause instanceof Error
-          ? cause.message
-          : "RockFoundry couldn't create the Product Draft.",
-      );
-    }
+    setDraftGenerationInFlight(true);
+    setWorkbench("documents");
+    setDraftGenerationRequestId((current) => current + 1);
   }
 
   async function buildProductPackage() {
@@ -1367,7 +1345,7 @@ export default function ProjectWorkspace({
                           className="rf-primary-button"
                           type="button"
                           onClick={() => void buildProductDraft()}
-                          disabled={working}
+                          disabled={working || draftGenerationInFlight}
                         >
                           {indo
                             ? "Generate Product Draft"
@@ -1432,6 +1410,20 @@ export default function ProjectWorkspace({
                     setPrototypeLaunchRequested(true);
                   }}
                   onGenerateHandoff={() => void buildProductPackage()}
+                  generationRequestId={draftGenerationRequestId}
+                  onGenerated={() =>
+                    setMessages((current) => [
+                      ...current,
+                      {
+                        id: `draft-${Date.now()}`,
+                        role: "assistant",
+                        text: indo
+                          ? "Product Draft sudah dibuat. Yang belum jelas tetap terlihat sebagai asumsi atau open question."
+                          : "The Product Draft is ready. Unresolved details stay visible as assumptions or open questions.",
+                      },
+                    ])
+                  }
+                  onGenerationSettled={() => setDraftGenerationInFlight(false)}
                 />
               ) : (
                 <DesignStudio

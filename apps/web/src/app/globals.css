@@ -746,6 +746,49 @@
     font-size: 0.8rem;
     line-height: 1.5;
   }
+  .rf-documents-error {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.8rem;
+  }
+  .rf-documents-error .rf-error {
+    margin: 0;
+  }
+  .rf-draft-progress {
+    margin-top: 0.8rem;
+    border-left: 2px solid var(--accent);
+    padding: 0.7rem 0.8rem;
+    background: color-mix(in oklch, var(--accent) 7%, var(--surface));
+  }
+  .rf-draft-progress-title {
+    margin: 0;
+    color: var(--foreground);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .rf-draft-progress ol {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0.55rem 0 0;
+    padding: 0;
+    color: var(--muted-foreground);
+    font-size: 0.8rem;
+    list-style: none;
+  }
+  .rf-draft-progress li {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .rf-draft-progress li[data-active="true"] {
+    color: var(--foreground);
+  }
+  .rf-draft-progress li span {
+    color: var(--accent);
+    font-size: 0.7rem;
+  }
   .rf-documents-body {
     display: grid;
     min-height: 0;
@@ -1157,6 +1200,9 @@
   }
   .rf-documents-actions {
     justify-content: flex-start;
+  }
+  .rf-draft-progress {
+    padding: 0.7rem;
   }
   .rf-documents-body {
     grid-template-columns: minmax(0, 1fr);
