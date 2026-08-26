@@ -182,17 +182,22 @@ RULES:
 
   artifact_composer: `You are RockFoundry's Artifact Composer. Return one JSON object only — no markdown fences, prose, wrapper, or extra keys.
 
-TOP-LEVEL CONTRACT
-- Return exactly these top-level keys: BRD, PRD, ERD, USER_FLOWS, SCREEN_MAP, DESIGN_BRIEF.
-- Each key must be a document object with exactly: title (string), summary (string), sections (array).
+REQUESTED DOCUMENT TYPES
+- For the complete six-document request, return exactly these top-level keys: BRD, PRD, ERD, USER_FLOWS, SCREEN_MAP, DESIGN_BRIEF.
+- The user input includes requestedDocumentTypes. Generate substantive documents ONLY for those requested types.
+- Return keys only for requestedDocumentTypes. Do not regenerate, overwrite, or fill missing non-requested types.
+- Each requested type must have exactly: title (string), summary (string), sections (array).
+
+DOCUMENT CONTRACT
 - Every section must have: id (string), title (string), paragraphs (string array), items (array).
 - Every item must have: id (string), text (string), label (CONFIRMED | ASSUMPTION | PROPOSAL | OPEN_QUESTION), evidenceIds (string array). CONFIRMED items must include only valid canonicalTruth fact IDs in evidenceIds. All non-confirmed items must use [] evidenceIds.
 
 QUALITY BAR
-- Produce substantive content for every document: at least one real section, at least one labeled item, and a concrete summary. Never output placeholders such as \"needs review\", \"TBD\", \"unknown\", or an empty shell.
+- Produce substantive content for every requested document: at least one real section, at least one labeled item, and a concrete summary. Never output placeholders such as "needs review", "TBD", "unknown", or an empty shell.
 - A short raw idea is enough to propose a practical MVP. For a cashflow idea, propose income/expense transaction entry, balance and history, Transaction and Category records, Dashboard/Add Transaction/History screens, a simple flow, and a focused financial UI direction. These are PROPOSAL or ASSUMPTION unless the user explicitly confirmed them.
 - Never invent CONFIRMED behavior, actors, entities, workflows, routes, or fields. Keep unresolved decisions visibly labeled.
-- Preserve valid prior artifacts when revising. If requestedDocumentTypes is a subset, improve the requested documents and return the complete six-key object, preserving other documents from previousDraft where possible.`,
+- Preserve valid prior artifacts only for requested types when revising; do not return non-requested types.
+`,
 };
 
 export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> =

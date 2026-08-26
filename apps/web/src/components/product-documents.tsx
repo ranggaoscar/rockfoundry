@@ -16,6 +16,45 @@ type DraftDocument = {
   generatedAt: string;
 };
 
+export type DraftGenerationBatch = {
+  id: "BRD_PRD" | "ERD_USER_FLOWS" | "SCREEN_MAP_DESIGN_BRIEF";
+  label: string;
+  documentTypes: string[];
+  status: "PENDING" | "RUNNING" | "COMPLETE" | "FAILED";
+};
+
+type DraftGeneration = {
+  id: string;
+  generationNumber: number;
+  canonicalVersion: number;
+  status: "RUNNING" | "COMPLETE" | "FAILED";
+  batches: DraftGenerationBatch[];
+};
+
+type DraftBatchPresentation = "completed" | "active" | "failed" | "pending";
+
+export type DraftBatchProgress = DraftGenerationBatch & {
+  presentation: DraftBatchPresentation;
+};
+
+export function getDraftBatchProgress(
+  batches: DraftGenerationBatch[],
+): DraftBatchProgress[] {
+  return batches.map((batch) => ({
+    ...batch,
+    presentation:
+      batch.status === "COMPLETE"
+        ? "completed"
+        : batch.status === "RUNNING"
+          ? "active"
+          : batch.status === "FAILED"
+            ? "failed"
+            : "pending",
+  }));
+}
+
+const DRAFT_PROGRESS_POLL_INTERVAL_MS = 1500;
+
 const DOCUMENT_ORDER: DocumentType[] = [
   "BRD",
   "PRD",
@@ -40,28 +79,6 @@ const DOCUMENT_LABELS: Record<
   },
 };
 
-const DRAFT_GENERATION_STAGES = [
-  {
-    id: "context",
-    idLabel: "Memahami konteks produk",
-    enLabel: "Understanding the product context",
-  },
-  {
-    id: "core-documents",
-    idLabel: "Menyusun BRD, PRD, dan ERD",
-    enLabel: "Composing BRD, PRD, and ERD",
-  },
-  {
-    id: "flows-and-screens",
-    idLabel: "Membuat User Flows & Screen Map",
-    enLabel: "Creating User Flows & Screen Map",
-  },
-  {
-    id: "design-brief",
-    idLabel: "Menyiapkan Design Brief",
-    enLabel: "Preparing the Design Brief",
-  },
-] as const;
 
 export function ProductDocuments({
   projectId,
@@ -86,13 +103,17 @@ export function ProductDocuments({
   const [documents, setDocuments] = useState<DraftDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generation, setGeneration] = useState<DraftGeneration | null>(null);
   const [error, setError] = useState("");
   const [activeType, setActiveType] = useState<DocumentType>("PRD");
   const handledGenerationRequestRef = useRef<number | null>(null);
 
-  const loadDocuments = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadDocuments = useCallback(async (options?: { background?: boolean }) => {
+    const background = options?.background ?? false;
+    if (!background) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const response = await fetch(`/api/projects/${projectId}/documents`);
       const data = await response.json();
@@ -101,6 +122,7 @@ export function ProductDocuments({
       const nextDocuments = Array.isArray(data.documents)
         ? (data.documents as DraftDocument[])
         : [];
+      if (data.generation) setGeneration(data.generation as DraftGeneration);
       setDocuments(nextDocuments);
       setActiveType((current) =>
         nextDocuments.some((document) => document.type === current)
@@ -108,11 +130,12 @@ export function ProductDocuments({
           : nextDocuments[0]?.type || "PRD",
       );
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not load documents.",
-      );
+      if (!background)
+        setError(
+          cause instanceof Error ? cause.message : "Could not load documents.",
+        );
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [projectId]);
 
@@ -120,6 +143,24 @@ export function ProductDocuments({
     const timer = window.setTimeout(() => void loadDocuments(), 0);
     return () => window.clearTimeout(timer);
   }, [loadDocuments]);
+
+  useEffect(() => {
+    if (!generating) return;
+    let mounted = true;
+    let timer: number | undefined;
+
+    const poll = async () => {
+      await loadDocuments({ background: true });
+      if (mounted)
+        timer = window.setTimeout(poll, DRAFT_PROGRESS_POLL_INTERVAL_MS);
+    };
+
+    timer = window.setTimeout(poll, DRAFT_PROGRESS_POLL_INTERVAL_MS);
+    return () => {
+      mounted = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [generating, loadDocuments]);
 
   const activeDocument = useMemo(
     () => documents.find((document) => document.type === activeType) || null,
@@ -137,6 +178,7 @@ export function ProductDocuments({
         method: "POST",
       });
       const data = await response.json();
+      if (data.generation) setGeneration(data.generation as DraftGeneration);
       if (!response.ok)
         throw new Error(data.error || "Could not generate the Product Draft.");
       await loadDocuments();
@@ -262,10 +304,23 @@ export function ProductDocuments({
               : "RockFoundry is composing your product concept…"}
           </p>
           <ol>
-            {DRAFT_GENERATION_STAGES.map((stage, index) => (
-              <li key={stage.id} data-active={index === 0}>
-                <span aria-hidden="true">{index === 0 ? "●" : "○"}</span>
-                {indo ? stage.idLabel : stage.enLabel}
+            {getDraftBatchProgress(generation?.batches ?? []).map((batch) => (
+              <li
+                key={batch.id}
+                data-complete={batch.presentation === "completed"}
+                data-active={batch.presentation === "active"}
+                data-failed={batch.presentation === "failed"}
+              >
+                <span aria-hidden="true">
+                  {batch.presentation === "completed"
+                    ? "✓"
+                    : batch.presentation === "active"
+                      ? "●"
+                      : batch.presentation === "failed"
+                        ? "!"
+                        : "○"}
+                </span>
+                {batch.label}
               </li>
             ))}
           </ol>

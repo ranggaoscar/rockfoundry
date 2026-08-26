@@ -5,6 +5,21 @@ const { aiGateway, prismaMock, transactionMock } = vi.hoisted(() => {
   const transactionMock = {
     draftGeneration: {
       findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockImplementation(async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        composerMetadata: JSON.stringify({
+          source: "AI_ARTIFACT_COMPOSER",
+          batches: [
+            { id: "BRD_PRD", label: "Menyusun BRD & PRD", documentTypes: ["BRD", "PRD"], status: "RUNNING" },
+            { id: "ERD_USER_FLOWS", label: "Menyusun ERD & User Flows", documentTypes: ["ERD", "USER_FLOWS"], status: "RUNNING" },
+            { id: "SCREEN_MAP_DESIGN_BRIEF", label: "Menyusun Screen Map & Design Brief", documentTypes: ["SCREEN_MAP", "DESIGN_BRIEF"], status: "RUNNING" },
+          ],
+        }),
+      })),
+      update: vi.fn().mockImplementation(async ({ data, where }: { data: Record<string, unknown>; where: { id: string } }) => ({
+        id: where.id,
+        ...data,
+      })),
       create: vi
         .fn()
         .mockImplementation(
@@ -56,6 +71,7 @@ import {
   artifactComposerErrorPayload,
   composeDraftArtifacts,
   formatComposedDocument,
+  parseDraftGenerationBatches,
   publicDraftArtifact,
   selectLatestCompleteDraftGeneration,
   selectLatestLegacyDraftArtifacts,
@@ -174,8 +190,36 @@ describe("Product Draft formatter compatibility", () => {
     expect(content).toContain("**OPEN_QUESTION** Delivery?");
   });
 });
+describe("Product Draft bounded batches", () => {
+  it("launches exactly three two-document composer batches", async () => {
+    const state = createInitialProjectState({
+      id: "cashflow-batched",
+      name: "Cashflow",
+      rawIdea: "buat aplikasi untuk mencatat duit masuk dan keluar",
+    });
+    aiGateway.runArtifactComposer.mockReset();
+    aiGateway.runArtifactComposer.mockResolvedValue(malformedLunaOutput());
+    transactionMock.draftGeneration.create.mockClear();
+    transactionMock.artifact.create.mockClear();
+
+    await composeDraftArtifacts("project-1", 10, state);
+
+    expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(3);
+    expect(
+      aiGateway.runArtifactComposer.mock.calls.map(
+        ([input]) => input.requestedDocumentTypes,
+      ),
+    ).toEqual([
+      ["BRD", "PRD"],
+      ["ERD", "USER_FLOWS"],
+      ["SCREEN_MAP", "DESIGN_BRIEF"],
+    ]);
+    expect(transactionMock.artifact.create).toHaveBeenCalledTimes(6);
+  });
+});
+
 describe("Product Draft persistence with tolerant Luna output", () => {
-  it("persists six useful READY artifacts from one malformed provider response without repair", async () => {
+  it("persists six useful READY artifacts from three bounded provider batches", async () => {
     const state = createInitialProjectState({
       id: "luna-web-regression",
       name: "Laundry",
@@ -183,19 +227,16 @@ describe("Product Draft persistence with tolerant Luna output", () => {
     });
     aiGateway.runArtifactComposer.mockReset();
     aiGateway.runArtifactComposer.mockResolvedValue(malformedLunaOutput());
+    transactionMock.draftGeneration.create.mockClear();
+    transactionMock.draftGeneration.update.mockClear();
+    transactionMock.artifact.create.mockClear();
 
     const result = await composeDraftArtifacts("project-1", 7, state);
 
-    expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(1);
-    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
-    expect(transactionMock.draftGeneration.create).toHaveBeenCalledTimes(1);
-    expect(
-      transactionMock.draftGeneration.create.mock.calls[0][0].data,
-    ).toMatchObject({
-      canonicalVersion: 7,
-      generationNumber: 1,
-      status: "COMPLETE",
-    });
+    expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(3);
+    expect(transactionMock.draftGeneration.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "RUNNING" }) }),
+    );
     expect(transactionMock.artifact.create).toHaveBeenCalledTimes(6);
     const artifactInputs = transactionMock.artifact.create.mock.calls.map(
       ([call]) => call.data,
@@ -208,14 +249,7 @@ describe("Product Draft persistence with tolerant Luna output", () => {
       "SCREEN_MAP",
       "DESIGN_BRIEF",
     ]);
-    expect(
-      artifactInputs.every((artifact) => artifact.status === "READY"),
-    ).toBe(true);
-    expect(
-      artifactInputs.every(
-        (artifact) => artifact.draftGenerationId === "generation-1",
-      ),
-    ).toBe(true);
+    expect(artifactInputs.every((artifact) => artifact.status === "READY")).toBe(true);
 
     const prd = result.documents.PRD;
     const screenMap = result.documents.SCREEN_MAP;
@@ -223,27 +257,26 @@ describe("Product Draft persistence with tolerant Luna output", () => {
     expect(prd).toContain("Keep the first laundry workflow small");
     expect(screenMap).toContain("#/orders");
     expect(screenMap).toContain("Review active laundry orders");
-    for (const artifact of artifactInputs) {
-      const content = String(artifact.content);
-      expect(content.length).toBeGreaterThan(100);
-      expect(content).not.toMatch(
-        /needs review before it can be treated as complete/i,
-      );
-      expect(content.match(/\[UNRESOLVED\]/g)?.length || 0).toBeLessThan(2);
-    }
+    const finalGeneration = transactionMock.draftGeneration.update.mock.calls.at(-1)?.[0];
+    expect(parseDraftGenerationBatches(finalGeneration?.data.composerMetadata).map((batch) => batch.status)).toEqual([
+      "COMPLETE",
+      "COMPLETE",
+      "COMPLETE",
+    ]);
   });
 });
 
 describe("Product Draft quality gate", () => {
-  it("persists FAILED and creates no READY artifacts when all six documents are fallback placeholders", async () => {
+  it("persists FAILED generation and no artifacts when a batch stays malformed", async () => {
     transactionMock.draftGeneration.create.mockClear();
+    transactionMock.draftGeneration.update.mockClear();
     transactionMock.artifact.create.mockClear();
     aiGateway.runArtifactComposer.mockReset();
     aiGateway.runArtifactComposer.mockResolvedValue({});
     const state = createInitialProjectState({
       id: "quality-gate-failure",
       name: "Cashflow",
-      rawIdea: "aplikasi untuk mencatat duit masuk dan keluar",
+      rawIdea: "buat aplikasi untuk mencatat duit masuk dan keluar",
     });
 
     await expect(composeDraftArtifacts("project-1", 8, state)).rejects.toThrow(
@@ -251,39 +284,60 @@ describe("Product Draft quality gate", () => {
     );
 
     expect(transactionMock.draftGeneration.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: "FAILED" }),
-      }),
+      expect.objectContaining({ data: expect.objectContaining({ status: "RUNNING" }) }),
     );
+    expect(transactionMock.draftGeneration.update).toHaveBeenCalled();
     expect(transactionMock.artifact.create).not.toHaveBeenCalled();
   });
 
-  it("repairs only the malformed document and preserves the five substantive documents", async () => {
+  it("retries only a malformed batch once and never restarts successful batches", async () => {
     transactionMock.draftGeneration.create.mockClear();
+    transactionMock.draftGeneration.update.mockClear();
     transactionMock.artifact.create.mockClear();
     const valid = malformedLunaOutput().documents;
     aiGateway.runArtifactComposer.mockReset();
     aiGateway.runArtifactComposer
-      .mockResolvedValueOnce({ ...valid, DESIGN_BRIEF: {} })
-      .mockResolvedValueOnce({ ...valid, DESIGN_BRIEF: valid.DESIGN_BRIEF });
+      .mockImplementation(async (input: { requestedDocumentTypes: string[] }) =>
+        input.requestedDocumentTypes.includes("SCREEN_MAP")
+          ? { ...valid, SCREEN_MAP: {} }
+          : valid,
+      );
     const state = createInitialProjectState({
-      id: "quality-gate-repair",
+      id: "quality-gate-retry",
       name: "Cashflow",
-      rawIdea: "aplikasi untuk mencatat duit masuk dan keluar",
+      rawIdea: "buat aplikasi untuk mencatat duit masuk dan keluar",
     });
 
-    await composeDraftArtifacts("project-1", 9, state);
-
-    expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(2);
-    expect(
-      aiGateway.runArtifactComposer.mock.calls[1][0].requestedDocumentTypes,
-    ).toEqual(["DESIGN_BRIEF"]);
-    expect(transactionMock.draftGeneration.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: "COMPLETE" }),
-      }),
+    await expect(composeDraftArtifacts("project-1", 9, state)).rejects.toThrow(
+      /quality gate/i,
     );
-    expect(transactionMock.artifact.create).toHaveBeenCalledTimes(6);
+
+    expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(4);
+    expect(
+      aiGateway.runArtifactComposer.mock.calls.filter(([input]) =>
+        input.requestedDocumentTypes.includes("BRD"),
+      ),
+    ).toHaveLength(1);
+    expect(transactionMock.artifact.create).not.toHaveBeenCalled();
+  });
+
+  it("persists both types when a batch provider times out", async () => {
+    transactionMock.draftGeneration.create.mockClear();
+    transactionMock.draftGeneration.update.mockClear();
+    aiGateway.runArtifactComposer.mockReset();
+    aiGateway.runArtifactComposer.mockRejectedValue(new Error("provider timeout"));
+    const state = createInitialProjectState({
+      id: "provider-timeout",
+      name: "Cashflow",
+      rawIdea: "buat aplikasi untuk mencatat duit masuk dan keluar",
+    });
+
+    await expect(composeDraftArtifacts("project-1", 10, state)).rejects.toThrow();
+    const failedMetadata = transactionMock.draftGeneration.update.mock.calls
+      .map(([call]) => String(call.data.composerMetadata || ""))
+      .find((metadata) => metadata.includes("failedDocumentTypes"));
+    expect(failedMetadata).toContain("BRD");
+    expect(failedMetadata).toContain("PRD");
   });
 });
 

@@ -4,7 +4,9 @@ import { NextRequest } from "next/server";
 import {
   artifactComposerErrorPayload,
   composeDraftArtifacts,
+  currentDraftGeneration,
   latestDraftArtifacts,
+  parseDraftGenerationBatches,
   publicDraftArtifact,
   DRAFT_ARTIFACT_FILES,
   DRAFT_ARTIFACT_TYPES,
@@ -23,17 +25,27 @@ export async function GET(
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
   const latest = await latestDraftArtifacts(id, project.version);
+  const current = await currentDraftGeneration(id);
   const artifacts = latest?.artifacts || [];
   return Response.json({
     currentVersion: project.version,
-    generation: latest?.generation
+    generation: current
       ? {
-          id: latest.generation.id,
-          generationNumber: latest.generation.generationNumber,
-          canonicalVersion: latest.generation.canonicalVersion,
-          status: latest.generation.status,
+          id: current.id,
+          generationNumber: current.generationNumber,
+          canonicalVersion: current.canonicalVersion,
+          status: current.status,
+          batches: parseDraftGenerationBatches(current.composerMetadata),
         }
-      : null,
+      : latest?.generation
+        ? {
+            id: latest.generation.id,
+            generationNumber: latest.generation.generationNumber,
+            canonicalVersion: latest.generation.canonicalVersion,
+            status: latest.generation.status,
+            batches: parseDraftGenerationBatches(latest.generation.composerMetadata),
+          }
+        : null,
     documents: artifacts.map((artifact) => publicDraftArtifact(artifact, project.version)),
     hasCurrentDraft: artifacts.length === DRAFT_ARTIFACT_TYPES.length,
   });
@@ -62,15 +74,27 @@ export async function POST(
         generationNumber: generated.generation.generationNumber,
         canonicalVersion: generated.generation.canonicalVersion,
         status: generated.generation.status,
+        batches: parseDraftGenerationBatches(generated.generation.composerMetadata),
       },
       documents: generated.artifacts.map((artifact) => publicDraftArtifact(artifact, project.version)),
       generated: DRAFT_ARTIFACT_TYPES.map((type) => DRAFT_ARTIFACT_FILES[type]),
     });
   } catch (error) {
     const payload = artifactComposerErrorPayload(error);
+    const { id } = await params;
+    const failed = await currentDraftGeneration(id);
     return jsonError(payload.error, 422, {
       code: payload.code,
       retryable: payload.retryable,
+      generation: failed
+        ? {
+            id: failed.id,
+            generationNumber: failed.generationNumber,
+            canonicalVersion: failed.canonicalVersion,
+            status: failed.status,
+            batches: parseDraftGenerationBatches(failed.composerMetadata),
+          }
+        : null,
     });
   }
 }

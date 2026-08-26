@@ -10,8 +10,10 @@ import {
   type ArtifactComposerDocument,
   type ArtifactComposerInput,
   type ArtifactComposerItem,
+  type ArtifactComposerOutput,
   type ProjectState,
 } from "@rockfoundry/core";
+import { getAiGateway } from "./ai-provider";
 import { prisma } from "@rockfoundry/db";
 import {
   classifyDesignFailure,
@@ -186,104 +188,235 @@ async function composerInput(
   };
 }
 
+export const DRAFT_GENERATION_BATCHES = [
+  {
+    id: "BRD_PRD",
+    label: "Menyusun BRD & PRD",
+    documentTypes: ["BRD", "PRD"],
+  },
+  {
+    id: "ERD_USER_FLOWS",
+    label: "Menyusun ERD & User Flows",
+    documentTypes: ["ERD", "USER_FLOWS"],
+  },
+  {
+    id: "SCREEN_MAP_DESIGN_BRIEF",
+    label: "Menyusun Screen Map & Design Brief",
+    documentTypes: ["SCREEN_MAP", "DESIGN_BRIEF"],
+  },
+] as const;
+
+type DraftBatch = (typeof DRAFT_GENERATION_BATCHES)[number];
+type DraftBatchStatus = "PENDING" | "RUNNING" | "COMPLETE" | "FAILED";
+type DraftBatchState = {
+  id: DraftBatch["id"];
+  label: DraftBatch["label"];
+  documentTypes: readonly DraftArtifactType[];
+  status: DraftBatchStatus;
+};
+
+function initialBatchStates(status: DraftBatchStatus = "PENDING") {
+  return DRAFT_GENERATION_BATCHES.map(
+    (batch): DraftBatchState => ({
+      id: batch.id,
+      label: batch.label,
+      documentTypes: batch.documentTypes,
+      status,
+    }),
+  );
+}
+
+function metadataWithBatches(
+  batches: DraftBatchState[],
+  extra: Record<string, unknown> = {},
+) {
+  return JSON.stringify({
+    source: "AI_ARTIFACT_COMPOSER",
+    ...extra,
+    batches,
+  });
+}
+
+async function updateBatchState(
+  generationId: string,
+  batchId: DraftBatch["id"],
+  status: DraftBatchStatus,
+  extra: Record<string, unknown> = {},
+) {
+  await prisma.$transaction(async (transaction) => {
+    const current = await transaction.draftGeneration.findUnique({
+      where: { id: generationId },
+      select: { composerMetadata: true },
+    });
+    const metadata = current?.composerMetadata
+      ? JSON.parse(current.composerMetadata)
+      : {};
+    const batches = initialBatchStates("PENDING").map((batch) => {
+      const existing = Array.isArray(metadata.batches)
+        ? metadata.batches.find(
+            (candidate: { id?: string }) => candidate.id === batch.id,
+          )
+        : undefined;
+      return {
+        ...batch,
+        ...(existing || {}),
+        ...(batch.id === batchId ? { status } : {}),
+      };
+    });
+    await transaction.draftGeneration.update({
+      where: { id: generationId },
+      data: {
+        composerMetadata: metadataWithBatches(batches, { ...metadata, ...extra }),
+      },
+    });
+  });
+}
+
 export async function composeDraftArtifacts(
   projectId: string,
   canonicalVersion: number,
   state: ProjectState,
 ) {
-  const { getAiGateway } = await import("./ai-provider");
+  // Build the expensive, grounded context exactly once and share it with every batch.
   const { input, previous } = await composerInput(projectId, state);
-  const gateway = getAiGateway();
-  let normalized = normalizeArtifactComposerOutput(
-    await gateway.runArtifactComposer(input),
-    input,
-  );
-  let quality = assessArtifactComposerQuality(normalized);
-
-  // Preserve the substantive first pass and spend one bounded repair only on bad documents.
-  if (quality.repairable) {
-    const repairInput = {
-      ...input,
-      requestedDocumentTypes: quality.malformedTypes,
-      previousDraft: {
-        ...input.previousDraft,
-        artifacts: DRAFT_ARTIFACT_TYPES.map((type) => ({
-          type,
-          version: input.previousDraft.version || 0,
-          content: formatComposedDocument(normalized[type]),
-        })),
-      },
-    };
-    const repaired = normalizeArtifactComposerOutput(
-      await gateway.runArtifactComposer(repairInput),
-      repairInput,
-    );
-    normalized = Object.fromEntries(
-      DRAFT_ARTIFACT_TYPES.map((type) => [
-        type,
-        quality.malformedTypes.includes(type)
-          ? repaired[type]
-          : normalized[type],
-      ]),
-    ) as typeof normalized;
-    quality = assessArtifactComposerQuality(normalized);
-  }
-
-  if (!quality.meaningful) {
-    await prisma.$transaction(async (transaction) => {
-      const latest = await transaction.draftGeneration.findFirst({
-        where: { projectId },
-        orderBy: { generationNumber: "desc" },
-        select: { generationNumber: true },
-      });
-      await transaction.draftGeneration.create({
-        data: {
-          projectId,
-          canonicalVersion,
-          generationNumber: (latest?.generationNumber || 0) + 1,
-          status: "FAILED",
-          sourceGenerationId: previous?.id || null,
-          composerInput: JSON.stringify(input),
-          composerMetadata: JSON.stringify({
-            source: "AI_ARTIFACT_COMPOSER",
-            malformedTypes: quality.malformedTypes,
-          }),
-          errorSummary:
-            "Artifact quality gate rejected incomplete Product Draft documents.",
-          completedAt: new Date(),
-        },
-      });
-    });
-    throw new Error(
-      "Artifact quality gate rejected incomplete Product Draft documents.",
-    );
-  }
-
-  const documents = formatComposedDocuments(normalized);
-  const consistency = validateConsistency(state);
-
   const generation = await prisma.$transaction(async (transaction) => {
     const latest = await transaction.draftGeneration.findFirst({
       where: { projectId },
       orderBy: { generationNumber: "desc" },
       select: { generationNumber: true },
     });
-    const generationNumber = (latest?.generationNumber || 0) + 1;
+    return transaction.draftGeneration.create({
+      data: {
+        projectId,
+        canonicalVersion,
+        generationNumber: (latest?.generationNumber || 0) + 1,
+        status: "RUNNING",
+        sourceGenerationId: previous?.id || null,
+        composerInput: JSON.stringify(input),
+        composerMetadata: metadataWithBatches(initialBatchStates()),
+      },
+    });
+  });
+  const gateway = getAiGateway();
+
+  const outcomes = await Promise.all(
+    DRAFT_GENERATION_BATCHES.map(async (batch) => {
+      await updateBatchState(generation.id, batch.id, "RUNNING");
+      const batchInput = {
+        ...input,
+        requestedDocumentTypes: [...batch.documentTypes],
+      } satisfies ArtifactComposerInput;
+      let lastError: unknown;
+      let malformedTypes: DraftArtifactType[] = [];
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const raw = await gateway.runArtifactComposer(batchInput);
+          const normalized = normalizeArtifactComposerOutput(raw, batchInput);
+          const quality = assessArtifactComposerQuality(normalized);
+          malformedTypes = batch.documentTypes.filter((type) =>
+            quality.malformedTypes.includes(type),
+          );
+          if (malformedTypes.length === 0) {
+            await updateBatchState(generation.id, batch.id, "COMPLETE");
+            return { batch, output: normalized } as const;
+          }
+          lastError = new Error(
+            `Artifact quality gate rejected ${malformedTypes.join(", ")}.`,
+          );
+        } catch (error) {
+          lastError = error;
+          malformedTypes = [];
+        }
+      }
+      const failedTypes = malformedTypes.length
+        ? malformedTypes
+        : [...batch.documentTypes];
+      await updateBatchState(generation.id, batch.id, "FAILED", {
+        failedDocumentTypes: failedTypes,
+      });
+      return { batch, error: lastError, failedTypes } as const;
+    }),
+  );
+
+  const finalBatches = initialBatchStates("PENDING").map((batch) => {
+    const outcome = outcomes.find((candidate) => candidate.batch.id === batch.id);
+    return {
+      ...batch,
+      status: outcome && "output" in outcome ? "COMPLETE" : "FAILED",
+    } as DraftBatchState;
+  });
+  const failed = outcomes.filter((outcome) => "error" in outcome);
+  if (failed.length) {
+    const failedTypes = failed.flatMap((outcome) => outcome.failedTypes);
+    const error = new Error(
+      `Artifact quality gate rejected incomplete Product Draft documents (${failedTypes.join(", ") || "provider failure"}).`,
+    );
+    await prisma.$transaction(async (transaction) => {
+      await transaction.draftGeneration.update({
+        where: { id: generation.id },
+        data: {
+          status: "FAILED",
+          errorSummary: error.message,
+          composerMetadata: metadataWithBatches(finalBatches, {
+            failedDocumentTypes: failedTypes,
+          }),
+          completedAt: new Date(),
+        },
+      });
+    });
+    throw error;
+  }
+  const normalized = Object.fromEntries(
+    outcomes.flatMap((outcome) =>
+      "output" in outcome && outcome.output
+        ? outcome.batch.documentTypes.map((type) => [type, outcome.output[type]])
+        : [],
+    ),
+  ) as ArtifactComposerOutput;
+  const finalQuality = assessArtifactComposerQuality(normalized);
+  if (!finalQuality.meaningful) {
+    const error = new Error(
+      `Artifact quality gate rejected incomplete Product Draft documents (${finalQuality.malformedTypes.join(", ")}).`,
+    );
+    await prisma.$transaction(async (transaction) => {
+      const current = await transaction.draftGeneration.findUnique({
+        where: { id: generation.id },
+        select: { composerMetadata: true },
+      });
+      const metadata = current?.composerMetadata
+        ? JSON.parse(current.composerMetadata)
+        : {};
+      await transaction.draftGeneration.update({
+        where: { id: generation.id },
+        data: {
+          status: "FAILED",
+          errorSummary: error.message,
+          composerMetadata: metadataWithBatches(
+            Array.isArray(metadata.batches)
+              ? metadata.batches
+              : initialBatchStates("FAILED"),
+            { ...metadata, malformedTypes: finalQuality.malformedTypes },
+          ),
+          completedAt: new Date(),
+        },
+      });
+    });
+    throw error;
+  }
+  const documents = formatComposedDocuments(normalized);
+  const consistency = validateConsistency(state);
+  const completed = await prisma.$transaction(async (transaction) => {
     const latestArtifact = await transaction.artifact.findFirst({
       where: { projectId },
       orderBy: { version: "desc" },
       select: { version: true },
     });
     const artifactVersion = (latestArtifact?.version || 0) + 1;
-    const created = await transaction.draftGeneration.create({
+    const created = await transaction.draftGeneration.update({
+      where: { id: generation.id },
       data: {
-        projectId,
-        canonicalVersion,
-        generationNumber,
         status: "COMPLETE",
-        sourceGenerationId: previous?.id || null,
-        composerInput: JSON.stringify(input),
-        composerMetadata: JSON.stringify({ source: "AI_ARTIFACT_COMPOSER" }),
+        composerMetadata: metadataWithBatches(finalBatches),
         completedAt: new Date(),
       },
     });
@@ -304,10 +437,47 @@ export async function composeDraftArtifacts(
     );
     return { generation: created, artifacts };
   });
-
-  return { ...generation, documents, consistency, input };
+  return { ...completed, documents, consistency, input };
 }
 
+export type DraftGenerationBatch = DraftBatchState;
+
+export function parseDraftGenerationBatches(
+  composerMetadata: string | null | undefined,
+) {
+  if (!composerMetadata) return [] as DraftGenerationBatch[];
+  try {
+    const parsed = JSON.parse(composerMetadata) as { batches?: unknown };
+    if (!Array.isArray(parsed.batches)) return [] as DraftGenerationBatch[];
+    return parsed.batches.filter(
+      (batch): batch is DraftGenerationBatch =>
+        batch !== null &&
+        typeof batch === "object" &&
+        typeof (batch as DraftGenerationBatch).id === "string" &&
+        typeof (batch as DraftGenerationBatch).label === "string" &&
+        Array.isArray((batch as DraftGenerationBatch).documentTypes) &&
+        ["PENDING", "RUNNING", "COMPLETE", "FAILED"].includes(
+          (batch as DraftGenerationBatch).status,
+        ),
+    );
+  } catch {
+    return [] as DraftGenerationBatch[];
+  }
+}
+
+export async function currentDraftGeneration(projectId: string) {
+  return prisma.draftGeneration.findFirst({
+    where: { projectId, status: { in: ["RUNNING", "FAILED"] } },
+    orderBy: { generationNumber: "desc" },
+    select: {
+      id: true,
+      generationNumber: true,
+      canonicalVersion: true,
+      status: true,
+      composerMetadata: true,
+    },
+  });
+}
 type DraftGenerationWithArtifacts = {
   id: string;
   canonicalVersion: number;
