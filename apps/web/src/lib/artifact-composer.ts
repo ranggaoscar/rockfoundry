@@ -1,4 +1,6 @@
 import {
+  formatCanonicalScreenMap,
+  screenMapFromComposedDocument,
   selectCoherentDraftArtifacts,
   DRAFT_BRIDGE_TYPES,
 } from "./design-draft-bridge";
@@ -105,7 +107,10 @@ function formatLedger(document: ArtifactComposerDocument) {
   ].join("\n\n");
 }
 
-export function formatComposedDocument(document: ArtifactComposerDocument) {
+export function formatComposedDocument(
+  document: ArtifactComposerDocument,
+  type?: DraftArtifactType,
+) {
   const sections = document.sections
     .map((section) => {
       const paragraphs = section.paragraphs.join("\n\n");
@@ -113,7 +118,11 @@ export function formatComposedDocument(document: ArtifactComposerDocument) {
       return `## ${section.title}\n\n${[paragraphs, items].filter(Boolean).join("\n\n") || "- No detail recorded."}`;
     })
     .join("\n\n");
-  return `# ${document.title}\n\n${document.summary}\n\n## TRUTH LEDGER\n\n${formatLedger(document)}\n\n${sections}\n`;
+  const canonicalScreenMap =
+    type === "SCREEN_MAP"
+      ? `\n\n## DESIGN SCREEN MAP\n\n${formatCanonicalScreenMap(document)}`
+      : "";
+  return `# ${document.title}\n\n${document.summary}\n\n## TRUTH LEDGER\n\n${formatLedger(document)}\n\n${sections}${canonicalScreenMap}\n`;
 }
 
 export function formatComposedDocuments(
@@ -122,7 +131,7 @@ export function formatComposedDocuments(
   return Object.fromEntries(
     DRAFT_ARTIFACT_TYPES.map((type) => [
       type,
-      formatComposedDocument(output[type]),
+      formatComposedDocument(output[type], type),
     ]),
   ) as Record<DraftArtifactType, string>;
 }
@@ -216,14 +225,12 @@ type DraftBatchState = {
 };
 
 function initialBatchStates(status: DraftBatchStatus = "PENDING") {
-  return DRAFT_GENERATION_BATCHES.map(
-    (batch): DraftBatchState => ({
-      id: batch.id,
-      label: batch.label,
-      documentTypes: batch.documentTypes,
-      status,
-    }),
-  );
+  return DRAFT_GENERATION_BATCHES.map((batch): DraftBatchState => ({
+    id: batch.id,
+    label: batch.label,
+    documentTypes: batch.documentTypes,
+    status,
+  }));
 }
 
 function metadataWithBatches(
@@ -266,7 +273,10 @@ async function updateBatchState(
     await transaction.draftGeneration.update({
       where: { id: generationId },
       data: {
-        composerMetadata: metadataWithBatches(batches, { ...metadata, ...extra }),
+        composerMetadata: metadataWithBatches(batches, {
+          ...metadata,
+          ...extra,
+        }),
       },
     });
   });
@@ -339,7 +349,9 @@ export async function composeDraftArtifacts(
   );
 
   const finalBatches = initialBatchStates("PENDING").map((batch) => {
-    const outcome = outcomes.find((candidate) => candidate.batch.id === batch.id);
+    const outcome = outcomes.find(
+      (candidate) => candidate.batch.id === batch.id,
+    );
     return {
       ...batch,
       status: outcome && "output" in outcome ? "COMPLETE" : "FAILED",
@@ -369,14 +381,22 @@ export async function composeDraftArtifacts(
   const normalized = Object.fromEntries(
     outcomes.flatMap((outcome) =>
       "output" in outcome && outcome.output
-        ? outcome.batch.documentTypes.map((type) => [type, outcome.output[type]])
+        ? outcome.batch.documentTypes.map((type) => [
+            type,
+            outcome.output[type],
+          ])
         : [],
     ),
   ) as ArtifactComposerOutput;
   const finalQuality = assessArtifactComposerQuality(normalized);
-  if (!finalQuality.meaningful) {
+  const screenMap = screenMapFromComposedDocument(normalized.SCREEN_MAP);
+  if (!finalQuality.meaningful || screenMap.length === 0) {
+    const malformedTypes = [
+      ...finalQuality.malformedTypes,
+      ...(screenMap.length === 0 ? ["SCREEN_MAP"] : []),
+    ].filter((type, index, values) => values.indexOf(type) === index);
     const error = new Error(
-      `Artifact quality gate rejected incomplete Product Draft documents (${finalQuality.malformedTypes.join(", ")}).`,
+      `Artifact quality gate rejected incomplete Product Draft documents (${malformedTypes.join(", ")}).`,
     );
     await prisma.$transaction(async (transaction) => {
       const current = await transaction.draftGeneration.findUnique({
@@ -395,7 +415,7 @@ export async function composeDraftArtifacts(
             Array.isArray(metadata.batches)
               ? metadata.batches
               : initialBatchStates("FAILED"),
-            { ...metadata, malformedTypes: finalQuality.malformedTypes },
+            { ...metadata, malformedTypes },
           ),
           completedAt: new Date(),
         },

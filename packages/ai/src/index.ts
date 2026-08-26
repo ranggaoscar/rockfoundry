@@ -599,9 +599,15 @@ function mockArtifactComposer(
     };
   }
   const laundry = /laundry|cucian|kiloan/i.test(input.rawIdea);
+  const cashflow =
+    /cashflow|duit masuk|duit keluar|income|expense|keuangan/.test(
+      input.rawIdea.toLocaleLowerCase(),
+    );
   const subject = laundry
     ? "laundry shop"
-    : input.rawIdea.trim() || "the product";
+    : cashflow
+      ? "cashflow tracker"
+      : input.rawIdea.trim() || "the product";
   const facts = input.groundedUserFacts;
   const factItems = facts.slice(0, 4).map((fact, index) => ({
     id: `confirmed-${index + 1}`,
@@ -714,7 +720,19 @@ function mockArtifactComposer(
       summary: `Propose a small screen set for ${subject}; routes remain proposals until confirmed.`,
       sections: [
         section("Starting screens", [
-          { text: proposed[4]?.[0] || "Main task screen", label: "PROPOSAL" },
+          ...(cashflow
+            ? [
+                {
+                  text: "Dashboard, Add Transaction, and History screens.",
+                  label: "PROPOSAL" as const,
+                },
+              ]
+            : [
+                {
+                  text: proposed[4]?.[0] || "Main task screen",
+                  label: "PROPOSAL" as const,
+                },
+              ]),
           {
             text: "Which screen should be the first priority?",
             label: "OPEN_QUESTION",

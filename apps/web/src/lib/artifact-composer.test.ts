@@ -5,21 +5,48 @@ const { aiGateway, prismaMock, transactionMock } = vi.hoisted(() => {
   const transactionMock = {
     draftGeneration: {
       findFirst: vi.fn().mockResolvedValue(null),
-      findUnique: vi.fn().mockImplementation(async ({ where }: { where: { id: string } }) => ({
-        id: where.id,
-        composerMetadata: JSON.stringify({
-          source: "AI_ARTIFACT_COMPOSER",
-          batches: [
-            { id: "BRD_PRD", label: "Menyusun BRD & PRD", documentTypes: ["BRD", "PRD"], status: "RUNNING" },
-            { id: "ERD_USER_FLOWS", label: "Menyusun ERD & User Flows", documentTypes: ["ERD", "USER_FLOWS"], status: "RUNNING" },
-            { id: "SCREEN_MAP_DESIGN_BRIEF", label: "Menyusun Screen Map & Design Brief", documentTypes: ["SCREEN_MAP", "DESIGN_BRIEF"], status: "RUNNING" },
-          ],
-        }),
-      })),
-      update: vi.fn().mockImplementation(async ({ data, where }: { data: Record<string, unknown>; where: { id: string } }) => ({
-        id: where.id,
-        ...data,
-      })),
+      findUnique: vi
+        .fn()
+        .mockImplementation(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          composerMetadata: JSON.stringify({
+            source: "AI_ARTIFACT_COMPOSER",
+            batches: [
+              {
+                id: "BRD_PRD",
+                label: "Menyusun BRD & PRD",
+                documentTypes: ["BRD", "PRD"],
+                status: "RUNNING",
+              },
+              {
+                id: "ERD_USER_FLOWS",
+                label: "Menyusun ERD & User Flows",
+                documentTypes: ["ERD", "USER_FLOWS"],
+                status: "RUNNING",
+              },
+              {
+                id: "SCREEN_MAP_DESIGN_BRIEF",
+                label: "Menyusun Screen Map & Design Brief",
+                documentTypes: ["SCREEN_MAP", "DESIGN_BRIEF"],
+                status: "RUNNING",
+              },
+            ],
+          }),
+        })),
+      update: vi
+        .fn()
+        .mockImplementation(
+          async ({
+            data,
+            where,
+          }: {
+            data: Record<string, unknown>;
+            where: { id: string };
+          }) => ({
+            id: where.id,
+            ...data,
+          }),
+        ),
       create: vi
         .fn()
         .mockImplementation(
@@ -67,6 +94,7 @@ vi.mock("./ai-provider", () => ({
 vi.mock("@rockfoundry/db", () => ({ prisma: prismaMock }));
 
 import { createInitialProjectState } from "@rockfoundry/core";
+import { parsePersistedScreenMap } from "./design-draft-bridge";
 import {
   artifactComposerErrorPayload,
   composeDraftArtifacts,
@@ -76,7 +104,6 @@ import {
   selectLatestCompleteDraftGeneration,
   selectLatestLegacyDraftArtifacts,
 } from "./artifact-composer";
-
 function malformedMarkdownDocument(
   title: string,
   detail: string,
@@ -189,6 +216,36 @@ describe("Product Draft formatter compatibility", () => {
     expect(content).toContain("**PROPOSAL** Orders screen");
     expect(content).toContain("**OPEN_QUESTION** Delivery?");
   });
+
+  it("writes a canonical cashflow Screen Map that design can consume", () => {
+    const content = formatComposedDocument(
+      {
+        title: "Cashflow Screen Map",
+        summary:
+          "Three focused screens for recording and reviewing money movement.",
+        sections: [
+          {
+            id: "screens",
+            title: "Starting screens",
+            paragraphs: [],
+            items: [
+              {
+                id: "dashboard",
+                text: "Dashboard, Add Transaction, and History screens.",
+                label: "PROPOSAL",
+                evidenceIds: [],
+              },
+            ],
+          },
+        ],
+      },
+      "SCREEN_MAP",
+    );
+
+    expect(
+      parsePersistedScreenMap(content).map((screen) => screen.name),
+    ).toEqual(["Dashboard", "Add Transaction", "History"]);
+  });
 });
 describe("Product Draft bounded batches", () => {
   it("launches exactly three two-document composer batches", async () => {
@@ -235,7 +292,9 @@ describe("Product Draft persistence with tolerant Luna output", () => {
 
     expect(aiGateway.runArtifactComposer).toHaveBeenCalledTimes(3);
     expect(transactionMock.draftGeneration.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "RUNNING" }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "RUNNING" }),
+      }),
     );
     expect(transactionMock.artifact.create).toHaveBeenCalledTimes(6);
     const artifactInputs = transactionMock.artifact.create.mock.calls.map(
@@ -249,7 +308,9 @@ describe("Product Draft persistence with tolerant Luna output", () => {
       "SCREEN_MAP",
       "DESIGN_BRIEF",
     ]);
-    expect(artifactInputs.every((artifact) => artifact.status === "READY")).toBe(true);
+    expect(
+      artifactInputs.every((artifact) => artifact.status === "READY"),
+    ).toBe(true);
 
     const prd = result.documents.PRD;
     const screenMap = result.documents.SCREEN_MAP;
@@ -257,12 +318,13 @@ describe("Product Draft persistence with tolerant Luna output", () => {
     expect(prd).toContain("Keep the first laundry workflow small");
     expect(screenMap).toContain("#/orders");
     expect(screenMap).toContain("Review active laundry orders");
-    const finalGeneration = transactionMock.draftGeneration.update.mock.calls.at(-1)?.[0];
-    expect(parseDraftGenerationBatches(finalGeneration?.data.composerMetadata).map((batch) => batch.status)).toEqual([
-      "COMPLETE",
-      "COMPLETE",
-      "COMPLETE",
-    ]);
+    const finalGeneration =
+      transactionMock.draftGeneration.update.mock.calls.at(-1)?.[0];
+    expect(
+      parseDraftGenerationBatches(finalGeneration?.data.composerMetadata).map(
+        (batch) => batch.status,
+      ),
+    ).toEqual(["COMPLETE", "COMPLETE", "COMPLETE"]);
   });
 });
 
@@ -284,7 +346,9 @@ describe("Product Draft quality gate", () => {
     );
 
     expect(transactionMock.draftGeneration.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "RUNNING" }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "RUNNING" }),
+      }),
     );
     expect(transactionMock.draftGeneration.update).toHaveBeenCalled();
     expect(transactionMock.artifact.create).not.toHaveBeenCalled();
@@ -296,12 +360,12 @@ describe("Product Draft quality gate", () => {
     transactionMock.artifact.create.mockClear();
     const valid = malformedLunaOutput().documents;
     aiGateway.runArtifactComposer.mockReset();
-    aiGateway.runArtifactComposer
-      .mockImplementation(async (input: { requestedDocumentTypes: string[] }) =>
+    aiGateway.runArtifactComposer.mockImplementation(
+      async (input: { requestedDocumentTypes: string[] }) =>
         input.requestedDocumentTypes.includes("SCREEN_MAP")
           ? { ...valid, SCREEN_MAP: {} }
           : valid,
-      );
+    );
     const state = createInitialProjectState({
       id: "quality-gate-retry",
       name: "Cashflow",
@@ -325,14 +389,18 @@ describe("Product Draft quality gate", () => {
     transactionMock.draftGeneration.create.mockClear();
     transactionMock.draftGeneration.update.mockClear();
     aiGateway.runArtifactComposer.mockReset();
-    aiGateway.runArtifactComposer.mockRejectedValue(new Error("provider timeout"));
+    aiGateway.runArtifactComposer.mockRejectedValue(
+      new Error("provider timeout"),
+    );
     const state = createInitialProjectState({
       id: "provider-timeout",
       name: "Cashflow",
       rawIdea: "buat aplikasi untuk mencatat duit masuk dan keluar",
     });
 
-    await expect(composeDraftArtifacts("project-1", 10, state)).rejects.toThrow();
+    await expect(
+      composeDraftArtifacts("project-1", 10, state),
+    ).rejects.toThrow();
     const failedMetadata = transactionMock.draftGeneration.update.mock.calls
       .map(([call]) => String(call.data.composerMetadata || ""))
       .find((metadata) => metadata.includes("failedDocumentTypes"));

@@ -105,6 +105,7 @@ export function DesignStudio({
   const [impactNote, setImpactNote] = useState("");
   const [remotePackageDesign, setRemotePackageDesign] =
     useState<PackageDesign | null>(null);
+  const [draftScreenMap, setDraftScreenMap] = useState<Screen[]>([]);
   const [designJob, setDesignJob] = useState<DesignJob | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const onStateRef = useRef(onState);
@@ -127,6 +128,8 @@ export function DesignStudio({
     if (!response.ok) return null;
     const next = await response.json();
     if (next.packageDesign) setRemotePackageDesign(next.packageDesign);
+    if (Array.isArray(next.draftScreenMap))
+      setDraftScreenMap(next.draftScreenMap);
     if (next.designJob) setDesignJob(next.designJob);
     if (next.state && typeof next.version === "number") {
       onStateRef.current(next.state, next.version);
@@ -285,7 +288,9 @@ export function DesignStudio({
     void send(composer);
   }
 
-  const effectiveScreens = baseline?.screenMap || studio?.screenMap || [];
+  const effectiveScreens =
+    baseline?.screenMap ||
+    (draftScreenMap.length > 0 ? draftScreenMap : studio?.screenMap || []);
   const prototypeFailed = designJob?.status === "FAILED";
   const prototypeActionLabel = prototypeFailed
     ? language === "id"

@@ -57,6 +57,25 @@ describe("Artifact Composer gateway", () => {
     expect(text).toMatch(/Purpose: Review active laundry orders/);
   });
 
+  it("proposes Dashboard, Add Transaction, and History for a one-line cashflow draft", async () => {
+    const result = await new AiGateway(
+      new MockGatewayProvider(),
+    ).runArtifactComposer(
+      buildArtifactComposerInput(
+        createInitialProjectState({
+          id: "cashflow-ai",
+          name: "Cashflow",
+          rawIdea: "buat aplikasi untuk mencatat duit masuk dan keluar",
+        }),
+      ),
+    );
+    const text = result.SCREEN_MAP.sections
+      .flatMap((section) => section.items)
+      .map((item) => item.text)
+      .join("\n");
+    expect(text).toContain("Dashboard, Add Transaction, and History screens");
+  });
+
   it("uses high task reasoning over a max provider default while normalizing malformed Luna output in one call", async () => {
     const valid = {
       BRD: {

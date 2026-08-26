@@ -3,9 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { createInitialProjectState, deriveScreenMap, generateMockPrototype } from "@rockfoundry/core";
+import {
+  createInitialProjectState,
+  deriveScreenMap,
+  generateMockPrototype,
+} from "@rockfoundry/core";
 import type { AiGateway } from "@rockfoundry/ai";
-import { generateProjectDesign, reviseMockDesign } from "./design";
+import {
+  DesignGenerationError,
+  designGenerationUserMessage,
+  generateProjectDesign,
+  reviseMockDesign,
+} from "./design";
 
 function readyState() {
   const state = createInitialProjectState({
@@ -431,6 +440,88 @@ describe("generateProjectDesign executable review cases", () => {
     expect(injected.persist).toHaveBeenCalled();
   });
 
+  it("uses current Product Draft screens and context instead of legacy state", async () => {
+    const state = readyState();
+    state.studio.screenMap = [
+      {
+        id: "legacy",
+        name: "Legacy",
+        actorIds: [],
+        purpose: "Must not be used.",
+        route: "#/legacy",
+        status: "DRAFT",
+        source: "DERIVED",
+      },
+    ];
+    const persistedDraft = {
+      PRD: "# Current PRD\n\nCurrent product requirements.",
+      USER_FLOWS: "# Current flows\n\nCurrent transaction flow.",
+      SCREEN_MAP:
+        '# Screen Map\n\n```rockfoundry-screen-map\n[{"id":"history","name":"History","actorIds":[],"purpose":"Review recorded transactions.","route":"#/history","status":"DRAFT","source":"INFERRED"}]\n```\n',
+      DESIGN_BRIEF: "# Current Design Brief\n\nKeep balances prominent.",
+    };
+    const gateway = realGateway("PASS");
+    gateway.runPrototypeGeneration.mockResolvedValueOnce({
+      prototype: {
+        summary: "Cashflow history prototype",
+        assumptions: [],
+        files: [
+          {
+            path: "index.html",
+            content:
+              '<nav>Cashflow</nav><main data-route="#/history"><h1>History</h1><button id="save">Save</button></main>',
+          },
+          generatedFiles[1],
+          generatedFiles[2],
+        ],
+      },
+    });
+    const injected = { ...realDeps(state, gateway), persistedDraft };
+
+    await generateProjectDesign("design-test", state, 1, undefined, injected);
+
+    expect(gateway.runDesignArchitecture.mock.calls[0]?.[0]).toMatchObject({
+      screenMap: [
+        expect.objectContaining({ id: "history", route: "#/history" }),
+      ],
+      product: { draftArtifacts: persistedDraft },
+    });
+  });
+
+  it("rejects an unusable current Product Draft Screen Map instead of falling back", async () => {
+    const state = readyState();
+    state.studio.screenMap = [
+      {
+        id: "legacy",
+        name: "Legacy",
+        actorIds: [],
+        purpose: "Must not be used.",
+        route: "#/legacy",
+        status: "DRAFT",
+        source: "DERIVED",
+      },
+    ];
+    const injected = {
+      ...deps(state),
+      persistedDraft: {
+        PRD: "# Current PRD",
+        USER_FLOWS: "# Current flows",
+        SCREEN_MAP: "# Screen Map\n\nNo screen information is available.",
+        DESIGN_BRIEF: "# Current Design Brief",
+      },
+    };
+
+    await expect(
+      generateProjectDesign("design-test", state, 1, undefined, injected),
+    ).rejects.toMatchObject({ task: "draft_screen_map" });
+    expect(
+      designGenerationUserMessage(
+        new DesignGenerationError("draft_screen_map", new Error()),
+      ),
+    ).toContain("Screen Map");
+    expectNoPersistence(injected);
+  });
+
   it("blocks design only when no product idea exists", async () => {
     const state = createInitialProjectState({
       id: "design-ready-incomplete-draft",
@@ -674,12 +765,18 @@ describe("generateProjectDesign executable review cases", () => {
         },
       ],
     };
-    const generated = reviseMockDesign(state, current, "Add a delivery note", current.screenMap);
-    expect(generated.screenMap.map((screen) => screen.route)).toEqual(["#/orders"]);
+    const generated = reviseMockDesign(
+      state,
+      current,
+      "Add a delivery note",
+      current.screenMap,
+    );
+    expect(generated.screenMap.map((screen) => screen.route)).toEqual([
+      "#/orders",
+    ]);
     expect(generated.files[0]?.content).toContain("#/orders");
   });
 });
-
 
 it("rejects a blocked project before invoking generation", async () => {
   const state = createInitialProjectState({

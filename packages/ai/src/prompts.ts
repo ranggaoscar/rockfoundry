@@ -197,6 +197,7 @@ QUALITY BAR
 - A short raw idea is enough to propose a practical MVP. For a cashflow idea, propose income/expense transaction entry, balance and history, Transaction and Category records, Dashboard/Add Transaction/History screens, a simple flow, and a focused financial UI direction. These are PROPOSAL or ASSUMPTION unless the user explicitly confirmed them.
 - Never invent CONFIRMED behavior, actors, entities, workflows, routes, or fields. Keep unresolved decisions visibly labeled.
 - Preserve valid prior artifacts only for requested types when revising; do not return non-requested types.
+- SCREEN_MAP must include a labeled screen-list item in the form "Screen One, Screen Two, and Screen Three screens." or one labeled item per screen in the form "Screen Name — Route: \`#/route\` — Purpose: concise purpose". Routes must use \`#/\` followed only by lowercase letters, digits, slashes, or hyphens.
 `,
 };
 

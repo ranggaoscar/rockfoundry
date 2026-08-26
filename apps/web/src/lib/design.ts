@@ -28,13 +28,17 @@ import {
   formatDesignFailureDiagnostics,
   safeDesignFailureMessage,
 } from "@rockfoundry/ai";
-import { latestDraftArtifacts, DRAFT_ARTIFACT_TYPES } from "./artifact-composer";
+import {
+  latestDraftArtifacts,
+  DRAFT_ARTIFACT_TYPES,
+} from "./artifact-composer";
 import { parsePersistedScreenMap } from "./design-draft-bridge";
 
 export class DesignGenerationError extends Error {
   constructor(
     public readonly task:
       | "design_architecture"
+      | "draft_screen_map"
       | "prototype_generation"
       | "prototype_validation"
       | "quality_review"
@@ -69,6 +73,11 @@ export function logDesignGenerationFailure(error: unknown) {
 }
 
 export function designGenerationUserMessage(error: unknown) {
+  if (
+    error instanceof DesignGenerationError &&
+    error.task === "draft_screen_map"
+  )
+    return "Screen Map dari Product Draft saat ini tidak dapat digunakan. Generate ulang Product Draft sebelum membuat prototype.";
   return safeDesignFailureMessage(classifyDesignGenerationFailure(error));
 }
 
@@ -419,9 +428,18 @@ export async function generateProjectDesign(
   const totalStarted = Date.now();
   if (!state.rawIdea.trim() && !state.normalizedSummary?.trim())
     throw new Error("DESIGN_BLOCKED");
-  const persistedScreenMap = deps.persistedDraft?.SCREEN_MAP
-    ? parsePersistedScreenMap(deps.persistedDraft.SCREEN_MAP)
+  const hasCurrentPersistedScreenMap = Object.prototype.hasOwnProperty.call(
+    deps.persistedDraft || {},
+    "SCREEN_MAP",
+  );
+  const persistedScreenMap = hasCurrentPersistedScreenMap
+    ? parsePersistedScreenMap(deps.persistedDraft?.SCREEN_MAP || "")
     : [];
+  if (hasCurrentPersistedScreenMap && persistedScreenMap.length === 0)
+    throw new DesignGenerationError(
+      "draft_screen_map",
+      new Error("CURRENT_DRAFT_SCREEN_MAP_UNUSABLE"),
+    );
   const effectiveScreenMap = persistedScreenMap.length
     ? persistedScreenMap
     : state.studio.screenMap.length
@@ -440,7 +458,10 @@ export async function generateProjectDesign(
           effectiveScreenMap,
         )
       : (await deps.onStage?.("PROTOTYPE_GENERATION"),
-        generateMockPrototype(state, { request, screenMap: effectiveScreenMap }));
+        generateMockPrototype(state, {
+          request,
+          screenMap: effectiveScreenMap,
+        }));
   const architectureResolution: ArchitectureResolution =
     "architectureResolution" in generated
       ? (generated.architectureResolution as ArchitectureResolution)
@@ -667,11 +688,16 @@ export async function reviseProjectDesign(
   const persistedDraft = await latestDraftArtifacts(projectId, version);
   const persistedScreenMap = persistedDraft
     ? parsePersistedScreenMap(
-        persistedDraft.artifacts.find((artifact) => artifact.type === "SCREEN_MAP")?.content || "",
+        persistedDraft.artifacts.find(
+          (artifact) => artifact.type === "SCREEN_MAP",
+        )?.content || "",
       )
     : [];
   const current: DesignGenerationResult = {
-    designSpec: pack.spec || generateMockPrototype(state, { screenMap: persistedScreenMap }).designSpec,
+    designSpec:
+      pack.spec ||
+      generateMockPrototype(state, { screenMap: persistedScreenMap })
+        .designSpec,
     screenMap: persistedScreenMap.length
       ? persistedScreenMap
       : state.studio.screenMap.length
@@ -684,7 +710,14 @@ export async function reviseProjectDesign(
   const settings = resolveProviderSettings();
   const generated =
     settings.mode === "openai-compatible"
-      ? await generateWithRealProvider(state, { request: text, existing: current }, undefined, undefined, undefined, current.screenMap)
+      ? await generateWithRealProvider(
+          state,
+          { request: text, existing: current },
+          undefined,
+          undefined,
+          undefined,
+          current.screenMap,
+        )
       : reviseMockDesign(state, current, text, current.screenMap);
   const validation = validatePrototypeFiles(
     generated.files,
