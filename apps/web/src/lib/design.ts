@@ -490,10 +490,11 @@ export async function generateProjectDesign(
   );
   let designStatus: "IN_REVIEW" | "NEEDS_REVIEW" = "IN_REVIEW";
   let qualityReview: {
-    verdict: "PASS" | "REPAIR";
+    verdict?: "PASS" | "REPAIR";
     score?: number;
     summary?: string;
     blockingProblems?: string[];
+    failure?: ReturnType<typeof classifyDesignGenerationFailure>;
   } | null = null;
   let repairAttempted = false;
   let qualityReviewMs = 0;
@@ -529,17 +530,34 @@ export async function generateProjectDesign(
         quality,
       });
     } catch (error) {
-      throw new DesignGenerationError("quality_review", error);
+      qualityReview = {
+        summary:
+          "AI quality review was unavailable. The safety-valid prototype needs manual review.",
+        blockingProblems: [],
+        failure: classifyDesignGenerationFailure(
+          new DesignGenerationError("quality_review", error),
+        ),
+      };
+      designStatus = "NEEDS_REVIEW";
     } finally {
       qualityReviewMs = Date.now() - qualityStarted;
     }
-    qualityReview = {
-      verdict: review.verdict,
-      score: review.score,
-      summary: review.improvements[0] || review.assessments[0]?.assessment,
-      blockingProblems: review.blockingProblems,
-    };
-    if (review.verdict === "REPAIR") {
+    if (review) {
+      qualityReview = {
+        verdict: review.verdict,
+        score: review.score,
+        summary: review.improvements[0] || review.assessments[0]?.assessment,
+        blockingProblems: review.blockingProblems,
+      };
+    } else if (!qualityReview) {
+      qualityReview = {
+        summary:
+          "AI quality review did not return a result. The safety-valid prototype needs manual review.",
+        blockingProblems: [],
+      };
+      designStatus = "NEEDS_REVIEW";
+    }
+    if (review?.verdict === "REPAIR") {
       repairAttempted = true;
       const repairStarted = Date.now();
       try {

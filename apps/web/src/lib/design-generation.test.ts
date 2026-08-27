@@ -694,19 +694,34 @@ describe("generateProjectDesign executable review cases", () => {
     for (const screen of state.studio.screenMap) expect(html).toContain(screen.route);
   });
 
-  it("does not persist when the provider quality reviewer fails", async () => {
+  it("preserves a safety-valid prototype when the provider quality reviewer times out", async () => {
     const state = readyState();
     const gateway = realGateway("PASS");
     gateway.runDesignQualityReview.mockRejectedValueOnce(
-      new Error("review unavailable"),
+      new Error("AI request timed out after 45000ms"),
     );
     const injected = realDeps(state, gateway);
-    await expect(
-      generateProjectDesign("design-test", state, 1, undefined, injected),
-    ).rejects.toMatchObject({ task: "quality_review" });
-    expectNoPersistence(injected);
+    const result = await generateProjectDesign(
+      "design-test",
+      state,
+      1,
+      undefined,
+      injected,
+    );
+    expect(result.generated.files).toEqual(generatedFiles);
+    expect(result.state.studio.status).toBe("NEEDS_REVIEW");
     expect(gateway.runDesignQualityReview).toHaveBeenCalledTimes(1);
     expect(gateway.runPrototypeRepair).not.toHaveBeenCalled();
+    expect(injected.persist).toHaveBeenCalledTimes(1);
+    const metadataSave = injected.save.mock.calls[2][1];
+    expect(metadataSave.generationMetadata).toMatchObject({
+      designQualityReview: {
+        summary:
+          "AI quality review was unavailable. The safety-valid prototype needs manual review.",
+        failure: { category: "TIMEOUT", timeoutMs: 45000 },
+      },
+      finalDesignStatus: "NEEDS_REVIEW",
+    });
   });
 
   it("persists final review metadata after a successful repair", async () => {
