@@ -222,6 +222,10 @@ type DraftBatchState = {
   label: DraftBatch["label"];
   documentTypes: readonly DraftArtifactType[];
   status: DraftBatchStatus;
+  attemptCount: number;
+  durationMs: number;
+  repairedDocumentTypes?: DraftArtifactType[];
+  failedDocumentTypes?: DraftArtifactType[];
 };
 
 function initialBatchStates(status: DraftBatchStatus = "PENDING") {
@@ -230,6 +234,8 @@ function initialBatchStates(status: DraftBatchStatus = "PENDING") {
     label: batch.label,
     documentTypes: batch.documentTypes,
     status,
+    attemptCount: 0,
+    durationMs: 0,
   }));
 }
 
@@ -267,16 +273,13 @@ async function updateBatchState(
       return {
         ...batch,
         ...(existing || {}),
-        ...(batch.id === batchId ? { status } : {}),
+        ...(batch.id === batchId ? { status, ...extra } : {}),
       };
     });
     await transaction.draftGeneration.update({
       where: { id: generationId },
       data: {
-        composerMetadata: metadataWithBatches(batches, {
-          ...metadata,
-          ...extra,
-        }),
+        composerMetadata: metadataWithBatches(batches, metadata),
       },
     });
   });
@@ -311,40 +314,112 @@ export async function composeDraftArtifacts(
 
   const outcomes = await Promise.all(
     DRAFT_GENERATION_BATCHES.map(async (batch) => {
+      const startedAt = Date.now();
+      let attemptCount = 0;
       await updateBatchState(generation.id, batch.id, "RUNNING");
       const batchInput = {
         ...input,
         requestedDocumentTypes: [...batch.documentTypes],
       } satisfies ArtifactComposerInput;
-      let lastError: unknown;
-      let malformedTypes: DraftArtifactType[] = [];
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          const raw = await gateway.runArtifactComposer(batchInput);
-          const normalized = normalizeArtifactComposerOutput(raw, batchInput);
-          const quality = assessArtifactComposerQuality(normalized);
-          malformedTypes = batch.documentTypes.filter((type) =>
-            quality.malformedTypes.includes(type),
-          );
-          if (malformedTypes.length === 0) {
-            await updateBatchState(generation.id, batch.id, "COMPLETE");
-            return { batch, output: normalized } as const;
-          }
-          lastError = new Error(
-            `Artifact quality gate rejected ${malformedTypes.join(", ")}.`,
-          );
-        } catch (error) {
-          lastError = error;
-          malformedTypes = [];
-        }
-      }
-      const failedTypes = malformedTypes.length
-        ? malformedTypes
-        : [...batch.documentTypes];
-      await updateBatchState(generation.id, batch.id, "FAILED", {
-        failedDocumentTypes: failedTypes,
+      const diagnostics = (extra: Record<string, unknown> = {}) => ({
+        attemptCount,
+        durationMs: Date.now() - startedAt,
+        ...extra,
       });
-      return { batch, error: lastError, failedTypes } as const;
+
+      let initial: ArtifactComposerOutput;
+      try {
+        attemptCount += 1;
+        const raw = await gateway.runArtifactComposer(batchInput);
+        initial = normalizeArtifactComposerOutput(raw, batchInput);
+      } catch (error) {
+        const failedTypes = [...batch.documentTypes];
+        const batchDiagnostics = diagnostics({
+          failedDocumentTypes: failedTypes,
+        });
+        await updateBatchState(
+          generation.id,
+          batch.id,
+          "FAILED",
+          batchDiagnostics,
+        );
+        return { batch, error, failedTypes, batchDiagnostics } as const;
+      }
+
+      const malformedTypes = batch.documentTypes.filter((type) =>
+        assessArtifactComposerQuality(initial).malformedTypes.includes(type),
+      );
+      if (malformedTypes.length === 0) {
+        const batchDiagnostics = diagnostics();
+        await updateBatchState(
+          generation.id,
+          batch.id,
+          "COMPLETE",
+          batchDiagnostics,
+        );
+        return { batch, output: initial, batchDiagnostics } as const;
+      }
+
+      const repairInput = {
+        ...input,
+        requestedDocumentTypes: malformedTypes,
+      } satisfies ArtifactComposerInput;
+      let repaired: ArtifactComposerOutput;
+      try {
+        attemptCount += 1;
+        const raw = await gateway.runArtifactComposer(repairInput);
+        repaired = normalizeArtifactComposerOutput(raw, repairInput);
+      } catch (error) {
+        const batchDiagnostics = diagnostics({
+          repairedDocumentTypes: malformedTypes,
+          failedDocumentTypes: malformedTypes,
+        });
+        await updateBatchState(
+          generation.id,
+          batch.id,
+          "FAILED",
+          batchDiagnostics,
+        );
+        return {
+          batch,
+          error,
+          failedTypes: malformedTypes,
+          batchDiagnostics,
+        } as const;
+      }
+
+      const output = Object.fromEntries(
+        DRAFT_ARTIFACT_TYPES.map((type) => [
+          type,
+          malformedTypes.includes(type) ? repaired[type] : initial[type],
+        ]),
+      ) as ArtifactComposerOutput;
+      const failedTypes = batch.documentTypes.filter((type) =>
+        assessArtifactComposerQuality(output).malformedTypes.includes(type),
+      );
+      const batchDiagnostics = diagnostics({
+        repairedDocumentTypes: malformedTypes,
+        ...(failedTypes.length ? { failedDocumentTypes: failedTypes } : {}),
+      });
+      if (failedTypes.length) {
+        const error = new Error(
+          `Artifact quality gate rejected ${failedTypes.join(", ")}.`,
+        );
+        await updateBatchState(
+          generation.id,
+          batch.id,
+          "FAILED",
+          batchDiagnostics,
+        );
+        return { batch, error, failedTypes, batchDiagnostics } as const;
+      }
+      await updateBatchState(
+        generation.id,
+        batch.id,
+        "COMPLETE",
+        batchDiagnostics,
+      );
+      return { batch, output, batchDiagnostics } as const;
     }),
   );
 
@@ -354,6 +429,7 @@ export async function composeDraftArtifacts(
     );
     return {
       ...batch,
+      ...(outcome?.batchDiagnostics || {}),
       status: outcome && "output" in outcome ? "COMPLETE" : "FAILED",
     } as DraftBatchState;
   });
@@ -469,17 +545,30 @@ export function parseDraftGenerationBatches(
   try {
     const parsed = JSON.parse(composerMetadata) as { batches?: unknown };
     if (!Array.isArray(parsed.batches)) return [] as DraftGenerationBatch[];
-    return parsed.batches.filter(
-      (batch): batch is DraftGenerationBatch =>
-        batch !== null &&
-        typeof batch === "object" &&
-        typeof (batch as DraftGenerationBatch).id === "string" &&
-        typeof (batch as DraftGenerationBatch).label === "string" &&
-        Array.isArray((batch as DraftGenerationBatch).documentTypes) &&
-        ["PENDING", "RUNNING", "COMPLETE", "FAILED"].includes(
-          (batch as DraftGenerationBatch).status,
-        ),
-    );
+    return parsed.batches
+      .filter(
+        (batch): batch is DraftGenerationBatch =>
+          batch !== null &&
+          typeof batch === "object" &&
+          typeof (batch as DraftGenerationBatch).id === "string" &&
+          typeof (batch as DraftGenerationBatch).label === "string" &&
+          Array.isArray((batch as DraftGenerationBatch).documentTypes) &&
+          ["PENDING", "RUNNING", "COMPLETE", "FAILED"].includes(
+            (batch as DraftGenerationBatch).status,
+          ),
+      )
+      .map((batch) => ({
+        ...batch,
+        attemptCount:
+          typeof batch.attemptCount === "number" ? batch.attemptCount : 0,
+        durationMs: typeof batch.durationMs === "number" ? batch.durationMs : 0,
+        ...(Array.isArray(batch.repairedDocumentTypes)
+          ? { repairedDocumentTypes: batch.repairedDocumentTypes }
+          : {}),
+        ...(Array.isArray(batch.failedDocumentTypes)
+          ? { failedDocumentTypes: batch.failedDocumentTypes }
+          : {}),
+      }));
   } catch {
     return [] as DraftGenerationBatch[];
   }

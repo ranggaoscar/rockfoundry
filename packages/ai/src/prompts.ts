@@ -213,7 +213,7 @@ export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> =
     design_quality_review: "high",
     prototype_repair: "medium",
     final_consistency_review: "max",
-    artifact_composer: "high",
+    artifact_composer: "medium",
   };
 
 export function reasoningEffortForTask(taskType: string, override?: string) {
@@ -273,5 +273,5 @@ export const TASK_MAX_RETRIES: Record<string, number> = {
   github_reference_analysis: 1,
   documentation_enrichment: 2,
   final_consistency_review: 1,
-  artifact_composer: 1,
+  artifact_composer: 0,
 };

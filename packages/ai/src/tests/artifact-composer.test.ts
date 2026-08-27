@@ -76,7 +76,7 @@ describe("Artifact Composer gateway", () => {
     expect(text).toContain("Dashboard, Add Transaction, and History screens");
   });
 
-  it("uses high task reasoning over a max provider default while normalizing malformed Luna output in one call", async () => {
+  it("uses medium task reasoning over a max provider default while normalizing malformed Luna output in one call", async () => {
     const valid = {
       BRD: {
         title: "BRD",
@@ -137,7 +137,7 @@ describe("Artifact Composer gateway", () => {
     expect(ArtifactComposerOutputSchema.parse(result)).toEqual(result);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(request.reasoning_effort).toBe("high");
+    expect(request.reasoning_effort).toBe("medium");
     expect(request.response_format).toEqual({ type: "json_object" });
     expect(request.response_format.type).not.toBe("json_schema");
     const prompt = request.messages[0].content;
