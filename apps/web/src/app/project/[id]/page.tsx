@@ -25,6 +25,7 @@ import { DesignStudio } from "@/components/design-studio";
 import { ProductDocuments } from "@/components/product-documents";
 import { humanTopicLabel } from "@/lib/topic-label";
 import { safeConversationFailureMessage } from "@/lib/ai-error-messages";
+import { buildProjectWebMcpContext } from "@/lib/webmcp-project-context";
 import type { ProjectStage } from "@/components/workspace-sidebar";
 type ProjectData = {
   id: string;
@@ -85,6 +86,26 @@ type Activity = {
 };
 type Drawer = "context" | "documents" | "settings" | null;
 type Workbench = "documents" | "design" | null;
+
+type WebMcpTool = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations?: { readOnlyHint?: boolean };
+  execute: (
+    input: Record<string, never>,
+    options: { signal: AbortSignal },
+  ) => Promise<string> | string;
+};
+
+type WebMcpDocument = Document & {
+  modelContext?: {
+    registerTool: (
+      tool: WebMcpTool,
+      options: { signal: AbortSignal },
+    ) => Promise<void>;
+  };
+};
 
 const PACKAGE_PROGRESS_STAGES = [
   ["GENERATING_DOCUMENTS", "Menyusun dokumen"],
@@ -364,6 +385,11 @@ export default function ProjectWorkspace({
     generation: number;
   } | null>(null);
   const conversationGenerationRef = useRef(0);
+  const projectRef = useRef<ProjectData | null>(null);
+  const draftStartRef = useRef<() =>
+    | { status: "running" | "already_running" | "failed"; message: string }
+    | undefined
+  >(() => undefined);
   const provider = useProviderStatus();
 
   const fetchProject = useCallback(async (id: string) => {
@@ -843,13 +869,139 @@ export default function ProjectWorkspace({
     await sendMessage();
   }
 
-  async function buildProductDraft() {
-    if (!projectId || !project || working || draftGenerationInFlight) return;
+  function buildProductDraft() {
+    if (!projectId || !project || project.id !== projectId)
+      return { status: "failed" as const, message: "Project context is not available yet." };
+    if (
+      !project.canonicalState?.rawIdea?.trim() &&
+      !project.canonicalState?.normalizedSummary?.trim()
+    )
+      return {
+        status: "failed" as const,
+        message: "Add a product idea before generating a Product Draft.",
+      };
+    if (working)
+      return { status: "failed" as const, message: "RockFoundry is processing a conversation update. Try again when it finishes." };
+    if (draftGenerationInFlight)
+      return { status: "already_running" as const, message: "Product Draft generation is already running in the Documents workbench." };
     setPageError("");
     setDraftGenerationInFlight(true);
     setWorkbench("documents");
     setDraftGenerationRequestId((current) => current + 1);
+    return { status: "running" as const, message: "Product Draft generation started. The Documents workbench is showing its normal progress." };
   }
+
+  useEffect(() => {
+    projectRef.current = project;
+    draftStartRef.current = buildProductDraft;
+  });
+
+  useEffect(() => {
+    const modelContext = (document as WebMcpDocument).modelContext;
+    if (!modelContext || !projectId) return;
+
+    const controller = new AbortController();
+    const inputSchema = {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    };
+
+    const registerTools = async () => {
+      try {
+        await modelContext.registerTool(
+          {
+            name: "inspect_project",
+            description:
+              "Read the current RockFoundry project, Product Draft, Screen Map, design status, open questions, and unresolved assumptions.",
+            inputSchema,
+            annotations: { readOnlyHint: true },
+            execute: async (_input, { signal }) => {
+              const currentProject = projectRef.current;
+              if (!currentProject || currentProject.id !== projectId)
+                return JSON.stringify({
+                  status: "failed",
+                  message: "Project context is not available yet.",
+                });
+              try {
+                const [draftResponse, designResponse] = await Promise.all([
+                  fetch(`/api/projects/${currentProject.id}/documents`, {
+                    signal,
+                  }),
+                  fetch(`/api/projects/${currentProject.id}/design`, {
+                    signal,
+                  }),
+                ]);
+                if (!draftResponse.ok)
+                  throw new Error("Could not load the current Product Draft.");
+                if (!designResponse.ok)
+                  throw new Error("Could not load the current design status.");
+                const [draft, design] = await Promise.all([
+                  draftResponse.json(),
+                  designResponse.json(),
+                ]);
+                return JSON.stringify({
+                  status: "success",
+                  context: buildProjectWebMcpContext({
+                    project: {
+                      ...currentProject,
+                      canonicalState: design.state || currentProject.canonicalState,
+                      version:
+                        typeof design.version === "number"
+                          ? design.version
+                          : currentProject.version,
+                    },
+                    draft: {
+                      generation: draft.generation || null,
+                      documents: Array.isArray(draft.documents)
+                        ? draft.documents
+                        : [],
+                      hasCurrentDraft: Boolean(draft.hasCurrentDraft),
+                    },
+                    screenMap: Array.isArray(design.draftScreenMap)
+                      ? design.draftScreenMap
+                      : undefined,
+                  }),
+                });
+              } catch (cause) {
+                return JSON.stringify({
+                  status: "failed",
+                  message:
+                    cause instanceof Error
+                      ? cause.message
+                      : "Could not inspect the current project.",
+                });
+              }
+            },
+          },
+          { signal: controller.signal },
+        );
+        await modelContext.registerTool(
+          {
+            name: "generate_product_draft",
+            description:
+              "Start the current project's existing Product Draft flow. The normal Documents workbench continues to show progress.",
+            inputSchema,
+            annotations: { readOnlyHint: false },
+            execute: () =>
+              JSON.stringify(
+                draftStartRef.current() || {
+                  status: "failed",
+                  message: "Product Draft generation could not be started.",
+                },
+              ),
+          },
+          { signal: controller.signal },
+        );
+      } catch {
+        controller.abort();
+        // WebMCP is optional. Suppress registration failures outside supported contexts.
+      }
+    };
+
+    void registerTools();
+    return () => controller.abort();
+  }, [projectId]);
 
   async function buildProductPackage() {
     if (
