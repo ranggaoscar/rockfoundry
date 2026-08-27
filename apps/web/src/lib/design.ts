@@ -326,7 +326,11 @@ type ArchitectureResolution = {
 
 async function generateWithRealProvider(
   state: ProjectState,
-  input: { request?: string; existing?: DesignGenerationResult } = {},
+  input: {
+    request?: string;
+    existing?: DesignGenerationResult;
+    initialPreview?: boolean;
+  } = {},
   gateway = getAiGateway(),
   onStage?: (stage: DesignGenerationStage) => void | Promise<void>,
   persistedDraft?: PersistedDraftArtifacts,
@@ -346,32 +350,43 @@ async function generateWithRealProvider(
   const baseline = buildDesignSpec(state, screenMap);
   const architectureStarted = Date.now();
   let architecture: ArchitectureResolution;
-  try {
-    await onStage?.("DESIGN_ARCHITECTURE");
-    const response = await gateway.runDesignArchitecture({
-      product,
-      screenMap,
-    });
-    architecture = {
-      designSpec: response.architecture.designSpec,
-      summary: response.architecture.summary,
-      assumptions: response.architecture.assumptions,
-      source: "AI",
-      attemptMs: Date.now() - architectureStarted,
-    };
-  } catch (error) {
-    const failure = classifyDesignGenerationFailure(
-      new DesignGenerationError("design_architecture", error),
-    );
+  if (input.initialPreview) {
     architecture = {
       designSpec: baseline,
       summary:
         "Deterministic baseline design direction derived from Product Truth and Screen Map.",
       assumptions: [],
       source: "BASELINE_FALLBACK",
-      attemptMs: Date.now() - architectureStarted,
-      failure,
+      attemptMs: 0,
     };
+  } else {
+    try {
+      await onStage?.("DESIGN_ARCHITECTURE");
+      const response = await gateway.runDesignArchitecture({
+        product,
+        screenMap,
+      });
+      architecture = {
+        designSpec: response.architecture.designSpec,
+        summary: response.architecture.summary,
+        assumptions: response.architecture.assumptions,
+        source: "AI",
+        attemptMs: Date.now() - architectureStarted,
+      };
+    } catch (error) {
+      const failure = classifyDesignGenerationFailure(
+        new DesignGenerationError("design_architecture", error),
+      );
+      architecture = {
+        designSpec: baseline,
+        summary:
+          "Deterministic baseline design direction derived from Product Truth and Screen Map.",
+        assumptions: [],
+        source: "BASELINE_FALLBACK",
+        attemptMs: Date.now() - architectureStarted,
+        failure,
+      };
+    }
   }
   let prototype;
   const prototypeStarted = Date.now();
@@ -447,11 +462,12 @@ export async function generateProjectDesign(
       : deriveScreenMap(state);
   const product = designProductContext(state, deps.persistedDraft);
   const settings = deps.providerSettings || resolveProviderSettings();
+  const initialPreview = request === undefined;
   const generated =
     settings.mode === "openai-compatible"
       ? await generateWithRealProvider(
           state,
-          { request },
+          { request, initialPreview },
           deps.gateway,
           deps.onStage,
           deps.persistedDraft,
@@ -495,11 +511,12 @@ export async function generateProjectDesign(
     summary?: string;
     blockingProblems?: string[];
     failure?: ReturnType<typeof classifyDesignGenerationFailure>;
+    source?: "AI" | "DETERMINISTIC";
   } | null = null;
   let repairAttempted = false;
   let qualityReviewMs = 0;
   let repairMs = 0;
-  if (settings.mode === "openai-compatible") {
+  if (settings.mode === "openai-compatible" && !initialPreview) {
     const gateway = deps.gateway || getAiGateway();
     const files = Object.fromEntries(
       reviewed.files.map((file) => [file.path, file.content]),
@@ -548,6 +565,7 @@ export async function generateProjectDesign(
         score: review.score,
         summary: review.improvements[0] || review.assessments[0]?.assessment,
         blockingProblems: review.blockingProblems,
+        source: "AI",
       };
     } else if (!qualityReview) {
       qualityReview = {
@@ -597,11 +615,15 @@ export async function generateProjectDesign(
         repairMs = Date.now() - repairStarted;
       }
     }
-  } else if (!quality.accepted) {
-    throw new DesignGenerationError(
-      "prototype_validation",
-      new Error(quality.reasons.join(" ")),
-    );
+  } else {
+    qualityReview = {
+      summary: quality.accepted
+        ? "Deterministic prototype quality checks passed."
+        : quality.reasons.join(" "),
+      blockingProblems: quality.reasons,
+      source: "DETERMINISTIC",
+    };
+    designStatus = quality.accepted ? "IN_REVIEW" : "NEEDS_REVIEW";
   }
   const next = applyGeneratedDesign(state, reviewed, {
     summary: reviewed.summary,

@@ -180,12 +180,6 @@ type PrototypeInput = { product: DesignProductInput };
 type QualityReviewInput = { productSummary: string };
 type RepairInput = { product: DesignProductInput };
 
-type ProductSummary = {
-  targetUsers: string[];
-  entities: string[];
-  workflows: string[];
-};
-
 function realGateway(review: "PASS" | "REPAIR", repairFiles = generatedFiles) {
   return {
     runDesignArchitecture: vi.fn(async (_input: DesignArchitectureInput) => ({
@@ -288,36 +282,25 @@ describe("generateProjectDesign executable review cases", () => {
       injected,
     );
 
-    const architectureProduct =
-      gateway.runDesignArchitecture.mock.calls[0]?.[0].product;
     const prototypeProduct =
       gateway.runPrototypeGeneration.mock.calls[0]?.[0].product;
-    const repairProduct = gateway.runPrototypeRepair.mock.calls[0]?.[0].product;
-    const qualitySummary = JSON.parse(
-      gateway.runDesignQualityReview.mock.calls[0]?.[0].productSummary || "{}",
-    ) as ProductSummary;
-    for (const product of [
-      architectureProduct,
-      prototypeProduct,
-      repairProduct,
-    ]) {
-      expect(product.targetUsers).toEqual(["customer"]);
-      expect(product.roles).toEqual(["verified tailor partner"]);
-      expect(product.entities).toEqual(["appointment"]);
-      expect(product.features).toEqual([
-        "schedule selection",
-        "clothing photo upload",
-      ]);
-      expect(product.designInputSnapshot.confirmedTruth.actors).toEqual([
-        "customer",
-        "verified tailor partner",
-      ]);
-    }
-    expect(qualitySummary.targetUsers).toEqual(["customer"]);
-    expect(qualitySummary.entities).toEqual(["appointment"]);
-    expect(qualitySummary.workflows).toEqual([
+    expect(prototypeProduct.targetUsers).toEqual(["customer"]);
+    expect(prototypeProduct.roles).toEqual(["verified tailor partner"]);
+    expect(prototypeProduct.entities).toEqual(["appointment"]);
+    expect(prototypeProduct.features).toEqual([
+      "schedule selection",
+      "clothing photo upload",
+    ]);
+    expect(prototypeProduct.designInputSnapshot.confirmedTruth.actors).toEqual([
+      "customer",
+      "verified tailor partner",
+    ]);
+    expect(prototypeProduct.designInputSnapshot.confirmedTruth.workflows).toEqual([
       "customer chooses a schedule and uploads clothing photos",
     ]);
+    expect(gateway.runDesignArchitecture).not.toHaveBeenCalled();
+    expect(gateway.runDesignQualityReview).not.toHaveBeenCalled();
+    expect(gateway.runPrototypeRepair).not.toHaveBeenCalled();
   });
 
   it("runs the mock generation pipeline and persists the result", async () => {
@@ -339,6 +322,30 @@ describe("generateProjectDesign executable review cases", () => {
     expect(injected.persist).toHaveBeenCalled();
   });
 
+  it("creates the first provider preview from the deterministic baseline with one AI prototype call", async () => {
+    const state = readyState();
+    const gateway = realGateway("PASS");
+    const onStage = vi.fn();
+    const injected = { ...realDeps(state, gateway), onStage };
+
+    const result = await generateProjectDesign(
+      "design-test",
+      state,
+      1,
+      undefined,
+      injected,
+    );
+
+    expect(result.architectureResolution.source).toBe("BASELINE_FALLBACK");
+    expect(result.state.studio.status).toBe("NEEDS_REVIEW");
+    expect(gateway.runDesignArchitecture).not.toHaveBeenCalled();
+    expect(gateway.runPrototypeGeneration).toHaveBeenCalledTimes(1);
+    expect(gateway.runDesignQualityReview).not.toHaveBeenCalled();
+    expect(gateway.runPrototypeRepair).not.toHaveBeenCalled();
+    expect(onStage).toHaveBeenCalledWith("PROTOTYPE_GENERATION");
+    expect(onStage).not.toHaveBeenCalledWith("QUALITY_REVIEW");
+  });
+
   it("generates from a draft-ready state without BUILD_READY or a product package", async () => {
     const state = draftReadyState();
     const gateway = realGateway("PASS");
@@ -357,11 +364,10 @@ describe("generateProjectDesign executable review cases", () => {
       "styles.css",
       "app.js",
     ]);
-    expect(gateway.runDesignArchitecture).toHaveBeenCalledTimes(1);
-    const architectureInput = gateway.runDesignArchitecture.mock.calls[0]?.[0];
-    if (!architectureInput)
-      throw new Error("Architecture input was not captured.");
-    expect(architectureInput.product.designInputSnapshot).toMatchObject({
+    expect(gateway.runDesignArchitecture).not.toHaveBeenCalled();
+    const prototypeInput = gateway.runPrototypeGeneration.mock.calls[0]?.[0];
+    if (!prototypeInput) throw new Error("Prototype input was not captured.");
+    expect(prototypeInput.product.designInputSnapshot).toMatchObject({
       confirmedTruth: {
         actors: ["customer", "verified tailor partner"],
         workflows: ["customer chooses a schedule and uploads clothing photos"],
@@ -379,7 +385,7 @@ describe("generateProjectDesign executable review cases", () => {
         openQuestions: ["Pricing and payment timing remain open."],
       },
     });
-    expect(architectureInput.product.designInputSnapshot.designSignals).toEqual(
+    expect(prototypeInput.product.designInputSnapshot.designSignals).toEqual(
       [],
     );
     expect(injected.save).toHaveBeenCalled();
@@ -411,7 +417,7 @@ describe("generateProjectDesign executable review cases", () => {
       "styles.css",
       "app.js",
     ]);
-    expect(gateway.runDesignArchitecture).toHaveBeenCalledTimes(1);
+    expect(gateway.runDesignArchitecture).not.toHaveBeenCalled();
     expect(injected.save).toHaveBeenCalled();
   });
 
@@ -480,7 +486,8 @@ describe("generateProjectDesign executable review cases", () => {
 
     await generateProjectDesign("design-test", state, 1, undefined, injected);
 
-    expect(gateway.runDesignArchitecture.mock.calls[0]?.[0]).toMatchObject({
+    expect(gateway.runDesignArchitecture).not.toHaveBeenCalled();
+    expect(gateway.runPrototypeGeneration.mock.calls[0]?.[0]).toMatchObject({
       screenMap: [
         expect.objectContaining({ id: "history", route: "#/history" }),
       ],
@@ -567,7 +574,7 @@ describe("generateProjectDesign executable review cases", () => {
       "design-test",
       state,
       1,
-      undefined,
+      "polish the preview",
       injected,
     );
     expect(result.generated.files).toEqual(generatedFiles);
@@ -596,7 +603,7 @@ describe("generateProjectDesign executable review cases", () => {
       "design-test",
       state,
       1,
-      undefined,
+      "polish the preview",
       injected,
     );
     expect(result.generated.files).toEqual(repairedFiles);
@@ -623,7 +630,7 @@ describe("generateProjectDesign executable review cases", () => {
       "design-test",
       state,
       1,
-      undefined,
+      "polish the preview",
       injected,
     );
     expect(result.generated.files).toEqual(generatedFiles);
@@ -705,7 +712,7 @@ describe("generateProjectDesign executable review cases", () => {
       "design-test",
       state,
       1,
-      undefined,
+      "polish the preview",
       injected,
     );
     expect(result.generated.files).toEqual(generatedFiles);
@@ -742,7 +749,13 @@ describe("generateProjectDesign executable review cases", () => {
     ];
     const gateway = realGateway("REPAIR", repairedFiles);
     const injected = realDeps(state, gateway);
-    await generateProjectDesign("design-test", state, 7, undefined, injected);
+    await generateProjectDesign(
+      "design-test",
+      state,
+      7,
+      "polish the preview",
+      injected,
+    );
     const metadataSave = injected.save.mock.calls[2][1];
     expect(metadataSave.generationMetadata).toMatchObject({
       designQualityReview: { verdict: "REPAIR", score: 92 },
@@ -764,7 +777,7 @@ describe("generateProjectDesign executable review cases", () => {
       "design-test",
       state,
       1,
-      undefined,
+      "polish the preview",
       injected,
     );
     expect(result.architectureResolution).toMatchObject({
