@@ -132,6 +132,7 @@ export class NineRouterGateway implements AiGatewayProvider {
     req: InferenceRequest<T>,
     timeout: number,
   ): Promise<InferenceResponse<T>> {
+    const taskType = req.taskType || "initial_idea_extraction";
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -196,6 +197,8 @@ export class NineRouterGateway implements AiGatewayProvider {
         try {
           parsed = parseProviderJson(content) as T;
         } catch {
+          if (taskType === "prototype_generation" || taskType === "prototype_repair")
+            throw new MalformedJsonResponseError(content);
           throw new Error("Failed to parse JSON response from AI provider");
         }
       } else {
@@ -256,5 +259,12 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = "ApiError";
+  }
+}
+
+export class MalformedJsonResponseError extends Error {
+  constructor(public readonly rawContent: string) {
+    super("Failed to parse JSON response from AI provider");
+    this.name = "MalformedJsonResponseError";
   }
 }

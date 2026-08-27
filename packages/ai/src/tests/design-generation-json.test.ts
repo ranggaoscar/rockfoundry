@@ -105,13 +105,8 @@ describe("Design generation JSON transport", () => {
     expect(
       architecturePayload.response_format.json_schema.schema.properties,
     ).toHaveProperty("designSpec");
-    expect(prototypePayload.response_format).toMatchObject({
-      type: "json_schema",
-      json_schema: { strict: true },
-    });
-    expect(
-      prototypePayload.response_format.json_schema.schema.properties,
-    ).toHaveProperty("files");
+    expect(prototypePayload.response_format).toEqual({ type: "json_object" });
+    expect(prototypePayload.reasoning_effort).toBe("medium");
     expect(prototypePayload.model).toBe("design-model");
     vi.unstubAllGlobals();
   });
@@ -260,7 +255,7 @@ describe("Design generation JSON transport", () => {
     vi.unstubAllGlobals();
   });
 
-  it("repairs one malformed prototype response with the same strict schema and model", async () => {
+  it("repairs one malformed prototype response with bounded JSON-object requests", async () => {
     const malformed = { files: [{ path: "index.html", content: "<main />" }] };
     const fetchMock = vi
       .fn()
@@ -287,10 +282,102 @@ describe("Design generation JSON transport", () => {
     for (const call of fetchMock.mock.calls) {
       expect(JSON.parse(call[1].body)).toMatchObject({
         model: "design-model",
-        reasoning_effort: "high",
-        response_format: { type: "json_schema", json_schema: { strict: true } },
+        reasoning_effort: "medium",
+        response_format: { type: "json_object" },
       });
     }
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).messages[0].content).toContain(
+      "Repair the supplied prototype response shape only",
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("normalizes Luna wrapper and file-map shapes without a repair", async () => {
+    const wrapped = {
+      output: {
+        files: {
+          "index.html": prototype.files[0].content,
+          "styles.css": { content: prototype.files[1].content },
+          "app.js": { code: prototype.files[2].content },
+        },
+      },
+      summary: "Wrapped Luna prototype.",
+      assumptions: "Uses hash routes.",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(response(`\`\`\`json\n${JSON.stringify(wrapped)}\n\`\`\``));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+        "max",
+      ),
+    );
+
+    await expect(
+      gateway.runPrototypeGeneration({ product: {}, architecture: {}, screenMap: [] }),
+    ).resolves.toMatchObject({
+      prototype: {
+        files: prototype.files,
+        summary: "Wrapped Luna prototype.",
+        assumptions: ["Uses hash routes."],
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("preserves valid generated files when the bounded repair returns only missing files", async () => {
+    const malformed = {
+      files: [prototype.files[0]],
+      summary: prototype.summary,
+      assumptions: [],
+    };
+    const repair = {
+      files: [prototype.files[1], prototype.files[2]],
+      summary: prototype.summary,
+      assumptions: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(JSON.stringify(malformed)))
+      .mockResolvedValueOnce(response(JSON.stringify(repair)));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+      ),
+    );
+
+    await expect(
+      gateway.runPrototypeGeneration({ product: {}, architecture: {}, screenMap: [] }),
+    ).resolves.toMatchObject({ prototype: { files: prototype.files } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+
+  it("does not repair a provider timeout", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(
+      Object.assign(new Error("timed out"), { name: "TimeoutError" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new AiGateway(
+      new OpenAICompatibleGateway(
+        "https://provider.example/v1",
+        "test-key",
+        "design-model",
+      ),
+    );
+
+    await expect(
+      gateway.runPrototypeGeneration({ product: {}, architecture: {}, screenMap: [] }),
+    ).rejects.toThrow("timed out");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
 
