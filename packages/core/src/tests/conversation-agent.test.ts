@@ -102,6 +102,45 @@ describe("Conversation Agent contract", () => {
       ]),
     );
   });
+  it("records explicit user authorization and lifecycle rules without trusting a model paraphrase", () => {
+    const state = createInitialProjectState({
+      id: "conversation-explicit-rules",
+      name: "Marketplace",
+      rawIdea: "Marketplace pesanan lokal",
+    });
+    const instruction =
+      "Only the seller/owner can confirm an order. Customers cannot edit an order after payment.";
+
+    const next = applyConversationResponse(
+      state,
+      conversationDelta({
+        message:
+          "I understand the owner should control confirmation and customer edits should be locked.",
+      }),
+      instruction,
+    );
+
+    expect(next.businessRules).toEqual([
+      "Only the seller/owner can confirm an order.",
+      "Customers cannot edit an order after payment.",
+    ]);
+    expect(next.provenance).toMatchObject({
+      ["businessRules.Only the seller/owner can confirm an order."]: {
+        source: "USER",
+        confidence: "EXPLICIT",
+        evidence: instruction,
+      },
+      ["businessRules.Customers cannot edit an order after payment."]: {
+        source: "USER",
+        confidence: "EXPLICIT",
+        evidence: instruction,
+      },
+    });
+    expect(next.businessRules).not.toContain(
+      "Owner should control confirmation and customer edits should be locked.",
+    );
+  });
+
   it("records explicit confirmation and preserves correction history", () => {
     const state = createInitialProjectState({
       id: "conversation-correction",

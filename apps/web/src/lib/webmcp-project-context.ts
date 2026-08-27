@@ -58,6 +58,8 @@ export type ProjectWebMcpContextInput = {
   };
   draft: {
     generation: DraftGeneration;
+    currentDraft?: DraftGeneration;
+    latestAttempt?: DraftGeneration;
     documents: DraftDocument[];
     hasCurrentDraft: boolean;
   };
@@ -79,6 +81,7 @@ export function buildProjectWebMcpContext({
       impact: assumption.impact || "MEDIUM",
     }));
   const studio = project.canonicalState.studio;
+  const currentDraft = draft.currentDraft || draft.generation;
 
   return {
     project: {
@@ -93,15 +96,23 @@ export function buildProjectWebMcpContext({
     },
     productDraft: {
       status:
-        draft.generation?.status ||
+        currentDraft?.status ||
         (draft.documents.length > 0 ? "COMPLETE" : "NOT_STARTED"),
-      generation: draft.generation
+      generation: currentDraft
         ? {
-            id: draft.generation.id,
-            number: draft.generation.generationNumber,
-            canonicalVersion: draft.generation.canonicalVersion,
+            id: currentDraft.id,
+            number: currentDraft.generationNumber,
+            canonicalVersion: currentDraft.canonicalVersion,
           }
         : null,
+      latestAttempt:
+        draft.latestAttempt && draft.latestAttempt.id !== currentDraft?.id
+          ? {
+              status: draft.latestAttempt.status,
+              number: draft.latestAttempt.generationNumber,
+              canonicalVersion: draft.latestAttempt.canonicalVersion,
+            }
+          : null,
       hasCurrentDraft: draft.hasCurrentDraft,
       documents: draft.documents.map((document) => ({
         type: document.type,

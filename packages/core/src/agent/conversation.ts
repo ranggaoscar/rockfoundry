@@ -484,6 +484,53 @@ function applyCorrection(
   };
 }
 
+/**
+ * Capture narrowly-scoped user-authored authorization and lifecycle rules even
+ * when a provider acknowledges them without emitting a structured delta.
+ * Only the user's exact sentence is stored; provider paraphrases stay untrusted.
+ */
+export function explicitProductRulesFromUserMessage(message: string) {
+  return message
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => {
+      const normalized = normalizeConversationText(sentence);
+      const action =
+        "(?:confirm|edit|update|delete|cancel|approve|reject|view|create|change|manage|pay|konfirmasi|ubah|hapus|batalkan|setujui|tolak|lihat|buat|kelola|bayar)";
+      const subject = "(?:the\\s+)?[\\p{L}\\p{N}/ _-]{2,80}";
+      return (
+        new RegExp(
+          `^(?:only|hanya)\\s+${subject}\\s+(?:can|may|are allowed to|boleh|dapat|bisa)\\s+${action}\\b`,
+          "u",
+        ).test(normalized) ||
+        new RegExp(
+          `^${subject}\\s+(?:cannot|cant|must not|may not|are not allowed to|tidak boleh|tidak dapat|tidak bisa)\\s+${action}\\b`,
+          "u",
+        ).test(normalized)
+      );
+    });
+}
+
+function applyExplicitUserProductRules(state: ProjectState, message: string) {
+  for (const rule of explicitProductRulesFromUserMessage(message)) {
+    if (
+      !state.businessRules.some(
+        (existing) =>
+          normalizeConversationText(existing) === normalizeConversationText(rule),
+      )
+    ) {
+      state.businessRules.push(rule);
+    }
+    addProvenance(
+      state,
+      `businessRules.${rule}`,
+      message,
+      "USER",
+      "EXPLICIT",
+    );
+  }
+}
+
 function applyAssumption(
   state: ProjectState,
   assumption: ConversationAssumption,
@@ -603,6 +650,7 @@ export function applyConversationResponse(
   for (const assumption of response.assumptions) {
     applyAssumption(state, assumption);
   }
+  applyExplicitUserProductRules(state, latestUserMessage);
 
   for (const resolved of response.stateDelta.resolvedQuestions) {
     const index = state.openQuestions.findIndex(

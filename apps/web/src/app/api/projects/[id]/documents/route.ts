@@ -7,6 +7,7 @@ import {
   artifactComposerErrorPayload,
   composeDraftArtifacts,
   currentDraftGeneration,
+  documentGenerationStates,
   latestDraftArtifacts,
   parseDraftGenerationBatches,
   publicDraftArtifact,
@@ -51,36 +52,24 @@ export async function GET(
   const latest = await latestDraftArtifacts(id, project.version);
   const current = await currentDraftGeneration(id);
   const artifacts = latest?.artifacts || [];
-  const currentDraft = await draftIsCurrent(
+  const isCurrentDraft = await draftIsCurrent(
     id,
     project.version,
     latest?.generation?.canonicalVersion ?? artifacts[0]?.canonicalVersion,
     parseProjectState(project),
   );
+  const generationStates = documentGenerationStates(
+    latest?.generation || null,
+    current,
+  );
   return Response.json({
     currentVersion: project.version,
-    generation: current
-      ? {
-          id: current.id,
-          generationNumber: current.generationNumber,
-          canonicalVersion: current.canonicalVersion,
-          status: current.status,
-          batches: parseDraftGenerationBatches(current.composerMetadata),
-        }
-      : latest?.generation
-        ? {
-            id: latest.generation.id,
-            generationNumber: latest.generation.generationNumber,
-            canonicalVersion: latest.generation.canonicalVersion,
-            status: latest.generation.status,
-            batches: parseDraftGenerationBatches(latest.generation.composerMetadata),
-          }
-        : null,
+    ...generationStates,
     documents: artifacts.map((artifact) =>
-      publicDraftArtifact(artifact, project.version, currentDraft),
+      publicDraftArtifact(artifact, project.version, isCurrentDraft),
     ),
     hasCurrentDraft:
-      currentDraft && artifacts.length === DRAFT_ARTIFACT_TYPES.length,
+      isCurrentDraft && artifacts.length === DRAFT_ARTIFACT_TYPES.length,
   });
 }
 
@@ -100,15 +89,18 @@ export async function POST(
         { code: "DRAFT_INPUT_REQUIRED" },
       );
     const generated = await composeDraftArtifacts(id, project.version, state);
+    const generation = {
+      id: generated.generation.id,
+      generationNumber: generated.generation.generationNumber,
+      canonicalVersion: generated.generation.canonicalVersion,
+      status: generated.generation.status,
+      batches: parseDraftGenerationBatches(generated.generation.composerMetadata),
+    };
     return Response.json({
       currentVersion: project.version,
-      generation: {
-        id: generated.generation.id,
-        generationNumber: generated.generation.generationNumber,
-        canonicalVersion: generated.generation.canonicalVersion,
-        status: generated.generation.status,
-        batches: parseDraftGenerationBatches(generated.generation.composerMetadata),
-      },
+      generation,
+      currentDraft: generation,
+      latestAttempt: null,
       documents: generated.artifacts.map((artifact) => publicDraftArtifact(artifact, project.version)),
       generated: DRAFT_ARTIFACT_TYPES.map((type) => DRAFT_ARTIFACT_FILES[type]),
     });

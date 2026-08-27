@@ -36,6 +36,18 @@ describe("buildProjectWebMcpContext", () => {
           canonicalVersion: 4,
           status: "COMPLETE",
         },
+        currentDraft: {
+          id: "generation-1",
+          generationNumber: 3,
+          canonicalVersion: 4,
+          status: "COMPLETE",
+        },
+        latestAttempt: {
+          id: "generation-2",
+          generationNumber: 4,
+          canonicalVersion: 4,
+          status: "FAILED",
+        },
         hasCurrentDraft: true,
         documents: [
           {
@@ -61,7 +73,11 @@ describe("buildProjectWebMcpContext", () => {
 
     expect(context).toMatchObject({
       project: { name: "Laundry Flow", summary: "Manage laundry pickup and delivery." },
-      productDraft: { status: "COMPLETE", hasCurrentDraft: true },
+      productDraft: {
+        status: "COMPLETE",
+        hasCurrentDraft: true,
+        latestAttempt: { status: "FAILED", number: 4 },
+      },
       screenMap: [{ name: "Orders", route: "#/orders" }],
       design: { status: "NEEDS_REVIEW", prototypeAvailable: true },
       openQuestions: ["Who confirms delivery?"],

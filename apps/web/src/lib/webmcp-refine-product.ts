@@ -1,3 +1,6 @@
+import { isProductDraftCurrent } from "./project-truth";
+import type { ProjectState } from "@rockfoundry/core";
+
 export const WEBMCP_REFINE_PRODUCT_MAX_INSTRUCTION_LENGTH = 5000;
 
 type ConversationResponse = {
@@ -5,10 +8,11 @@ type ConversationResponse = {
   message?: unknown;
   retryable?: unknown;
   version?: unknown;
+  state?: unknown;
 };
 
 export type WebMcpRefineProductResult = {
-  status: "success" | "retryable" | "failed" | "cancelled";
+  status: "success" | "no_change" | "retryable" | "failed" | "cancelled";
   projectVersion?: number;
   assistantSummary: string;
   draftMayNeedRefresh: boolean;
@@ -17,6 +21,7 @@ export type WebMcpRefineProductResult = {
 type RefineProductThroughConversationInput = {
   projectId: string;
   instruction: unknown;
+  previousState: unknown;
   signal: AbortSignal;
   refreshProject: (projectId: string) => Promise<unknown>;
   fetchImpl?: typeof fetch;
@@ -26,6 +31,10 @@ function safeText(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim()
     ? value.trim().slice(0, 1000)
     : fallback;
+}
+
+function isProjectState(value: unknown): value is ProjectState {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function result(
@@ -46,6 +55,7 @@ function result(
 export async function refineProductThroughConversation({
   projectId,
   instruction,
+  previousState,
   signal,
   refreshProject,
   fetchImpl = fetch,
@@ -103,6 +113,18 @@ export async function refineProductThroughConversation({
     }
 
     await refreshProject(projectId);
+    if (
+      !isProjectState(previousState) ||
+      !isProjectState(payload.state) ||
+      isProductDraftCurrent(previousState, payload.state)
+    ) {
+      return result(
+        "no_change",
+        "The conversation was saved, but canonical product truth did not change.",
+        false,
+        payload.version,
+      );
+    }
     return result(
       "success",
       safeText(payload.message, "RockFoundry updated the product context."),

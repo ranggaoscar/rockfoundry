@@ -17,6 +17,29 @@ describe("Product Draft currentness", () => {
     expect(isProductDraftCurrent(draftState, currentState)).toBe(true);
   });
 
+  it("marks a draft stale for a user-confirmed product rule", () => {
+    const draftState = createInitialProjectState({
+      id: "project-1",
+      name: "Orders",
+      rawIdea: "Manage local orders.",
+    });
+    const currentState = structuredClone(draftState);
+    const instruction =
+      "Only the seller/owner can confirm an order. Customers cannot edit an order after payment.";
+    currentState.businessRules = [
+      "Only the seller/owner can confirm an order.",
+      "Customers cannot edit an order after payment.",
+    ];
+    currentState.provenance[
+      "businessRules.Only the seller/owner can confirm an order."
+    ] = { source: "USER", confidence: "EXPLICIT", evidence: instruction };
+    currentState.provenance[
+      "businessRules.Customers cannot edit an order after payment."
+    ] = { source: "USER", confidence: "EXPLICIT", evidence: instruction };
+
+    expect(isProductDraftCurrent(draftState, currentState)).toBe(false);
+  });
+
   it("marks a draft stale when product truth changes", () => {
     const draftState = createInitialProjectState({
       id: "project-1",

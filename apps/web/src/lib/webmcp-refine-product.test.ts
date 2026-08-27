@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createInitialProjectState } from "@rockfoundry/core";
 import {
   refineProductThroughConversation,
   WEBMCP_REFINE_PRODUCT_MAX_INSTRUCTION_LENGTH,
@@ -8,11 +9,18 @@ const projectId = "project-1";
 const instruction =
   "Only the owner can confirm orders. Customers cannot edit an order after payment.";
 
-function successResponse() {
+const previousState = createInitialProjectState({
+  id: projectId,
+  name: "Orders",
+  rawIdea: "Manage local orders.",
+});
+
+function successResponse(state: unknown) {
   return new Response(
     JSON.stringify({
       version: 5,
       message: "Owner-only order confirmation is now recorded.",
+      state,
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
@@ -21,12 +29,20 @@ function successResponse() {
 describe("WebMCP refine_product", () => {
   it("uses the existing conversation endpoint with the instruction and AbortSignal", async () => {
     const controller = new AbortController();
-    const refreshProject = vi.fn().mockResolvedValue({});
-    const fetchImpl = vi.fn().mockResolvedValue(successResponse());
+    const refinedState = structuredClone(previousState);
+    refinedState.businessRules = [
+      "Only the owner can confirm orders.",
+      "Customers cannot edit an order after payment.",
+    ];
+    const refreshProject = vi.fn().mockResolvedValue({
+      canonicalState: refinedState,
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(successResponse(refinedState));
 
     const result = await refineProductThroughConversation({
       projectId,
       instruction,
+      previousState,
       signal: controller.signal,
       refreshProject,
       fetchImpl,
@@ -49,6 +65,30 @@ describe("WebMCP refine_product", () => {
     });
   });
 
+  it("returns no_change when conversation only acknowledges the instruction", async () => {
+    const refreshProject = vi.fn().mockResolvedValue({
+      canonicalState: previousState,
+    });
+
+    await expect(
+      refineProductThroughConversation({
+        projectId,
+        instruction,
+        previousState,
+        signal: new AbortController().signal,
+        refreshProject,
+        fetchImpl: vi.fn().mockResolvedValue(successResponse(previousState)),
+      }),
+    ).resolves.toEqual({
+      status: "no_change",
+      projectVersion: 5,
+      assistantSummary:
+        "The conversation was saved, but canonical product truth did not change.",
+      draftMayNeedRefresh: false,
+    });
+    expect(refreshProject).toHaveBeenCalledWith(projectId);
+  });
+
   it("rejects empty and oversized instructions before calling conversation", async () => {
     const fetchImpl = vi.fn();
     const refreshProject = vi.fn();
@@ -58,6 +98,7 @@ describe("WebMCP refine_product", () => {
       refineProductThroughConversation({
         projectId,
         instruction: "   ",
+        previousState,
         signal,
         refreshProject,
         fetchImpl,
@@ -72,6 +113,7 @@ describe("WebMCP refine_product", () => {
         instruction: "x".repeat(
           WEBMCP_REFINE_PRODUCT_MAX_INSTRUCTION_LENGTH + 1,
         ),
+        previousState,
         signal,
         refreshProject,
         fetchImpl,
@@ -97,6 +139,7 @@ describe("WebMCP refine_product", () => {
       refineProductThroughConversation({
         projectId,
         instruction,
+        previousState,
         signal: new AbortController().signal,
         refreshProject,
         fetchImpl,
@@ -125,6 +168,7 @@ describe("WebMCP refine_product", () => {
       refineProductThroughConversation({
         projectId,
         instruction,
+        previousState,
         signal: new AbortController().signal,
         refreshProject,
         fetchImpl,
@@ -153,6 +197,7 @@ describe("WebMCP refine_product", () => {
       refineProductThroughConversation({
         projectId,
         instruction,
+        previousState,
         signal: new AbortController().signal,
         refreshProject,
         fetchImpl,
@@ -176,6 +221,7 @@ describe("WebMCP refine_product", () => {
       refineProductThroughConversation({
         projectId,
         instruction,
+        previousState,
         signal: controller.signal,
         refreshProject: vi.fn(),
         fetchImpl,

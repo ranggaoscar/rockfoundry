@@ -574,6 +574,37 @@ export function parseDraftGenerationBatches(
   }
 }
 
+type DraftGenerationStatusRecord = {
+  id: string;
+  generationNumber: number;
+  canonicalVersion: number;
+  status: string;
+  composerMetadata: string | null;
+};
+
+export function documentGenerationStates(
+  successfulGeneration: DraftGenerationStatusRecord | null,
+  latestAttempt: DraftGenerationStatusRecord | null,
+) {
+  const generation = (value: DraftGenerationStatusRecord) => ({
+    id: value.id,
+    generationNumber: value.generationNumber,
+    canonicalVersion: value.canonicalVersion,
+    status: value.status,
+    batches: parseDraftGenerationBatches(value.composerMetadata),
+  });
+  const currentDraft = successfulGeneration
+    ? generation(successfulGeneration)
+    : null;
+  const currentAttempt = latestAttempt ? generation(latestAttempt) : null;
+  return {
+    // Preserve the legacy display field without letting a failed refresh hide a valid draft.
+    generation: currentDraft || currentAttempt,
+    currentDraft,
+    latestAttempt: currentAttempt,
+  };
+}
+
 export async function currentDraftGeneration(projectId: string) {
   return prisma.draftGeneration.findFirst({
     where: { projectId, status: { in: ["RUNNING", "FAILED"] } },

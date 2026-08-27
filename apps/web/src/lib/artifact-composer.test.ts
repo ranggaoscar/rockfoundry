@@ -98,6 +98,7 @@ import { parsePersistedScreenMap } from "./design-draft-bridge";
 import {
   artifactComposerErrorPayload,
   composeDraftArtifacts,
+  documentGenerationStates,
   formatComposedDocument,
   parseDraftGenerationBatches,
   publicDraftArtifact,
@@ -172,6 +173,33 @@ describe("Artifact Composer error boundary", () => {
     expect(JSON.stringify(payload)).not.toContain("Prisma");
     expect(JSON.stringify(payload)).not.toContain("secret");
     expect(JSON.stringify(payload)).not.toContain("invalid JSON");
+  });
+});
+
+describe("Product Draft generation status", () => {
+  it("keeps the current successful draft separate from a failed latest attempt", () => {
+    const states = documentGenerationStates(
+      {
+        id: "generation-complete",
+        generationNumber: 3,
+        canonicalVersion: 4,
+        status: "COMPLETE",
+        composerMetadata: null,
+      },
+      {
+        id: "generation-failed",
+        generationNumber: 4,
+        canonicalVersion: 4,
+        status: "FAILED",
+        composerMetadata: null,
+      },
+    );
+
+    expect(states).toMatchObject({
+      generation: { id: "generation-complete", status: "COMPLETE" },
+      currentDraft: { id: "generation-complete", status: "COMPLETE" },
+      latestAttempt: { id: "generation-failed", status: "FAILED" },
+    });
   });
 });
 

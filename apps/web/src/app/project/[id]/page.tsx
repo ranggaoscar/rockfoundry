@@ -435,6 +435,7 @@ export default function ProjectWorkspace({
         await refineProductThroughConversation({
           projectId: currentProject.id,
           instruction: input.instruction,
+          previousState: currentProject.canonicalState,
           signal,
           refreshProject: fetchProject,
         }),
@@ -997,6 +998,8 @@ export default function ProjectWorkspace({
                     },
                     draft: {
                       generation: draft.generation || null,
+                      currentDraft: draft.currentDraft || null,
+                      latestAttempt: draft.latestAttempt || null,
                       documents: Array.isArray(draft.documents)
                         ? draft.documents
                         : [],
