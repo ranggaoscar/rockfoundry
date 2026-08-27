@@ -26,6 +26,7 @@ import { ProductDocuments } from "@/components/product-documents";
 import { humanTopicLabel } from "@/lib/topic-label";
 import { safeConversationFailureMessage } from "@/lib/ai-error-messages";
 import { buildProjectWebMcpContext } from "@/lib/webmcp-project-context";
+import { refineProductThroughConversation } from "@/lib/webmcp-refine-product";
 import type { ProjectStage } from "@/components/workspace-sidebar";
 type ProjectData = {
   id: string;
@@ -93,7 +94,7 @@ type WebMcpTool = {
   inputSchema: Record<string, unknown>;
   annotations?: { readOnlyHint?: boolean };
   execute: (
-    input: Record<string, never>,
+    input: Record<string, unknown>,
     options: { signal: AbortSignal },
   ) => Promise<string> | string;
 };
@@ -390,6 +391,15 @@ export default function ProjectWorkspace({
     | { status: "running" | "already_running" | "failed"; message: string }
     | undefined
   >(() => undefined);
+  const refineProductRef = useRef<
+    (input: Record<string, unknown>, signal: AbortSignal) => Promise<string>
+  >(async () =>
+    JSON.stringify({
+      status: "failed",
+      assistantSummary: "Project context is not available yet.",
+      draftMayNeedRefresh: false,
+    }),
+  );
   const provider = useProviderStatus();
 
   const fetchProject = useCallback(async (id: string) => {
@@ -411,6 +421,27 @@ export default function ProjectWorkspace({
     );
     return data.project as ProjectData;
   }, []);
+
+  const refineProduct = useCallback(
+    async (input: Record<string, unknown>, signal: AbortSignal) => {
+      const currentProject = projectRef.current;
+      if (!currentProject || currentProject.id !== projectId)
+        return JSON.stringify({
+          status: "failed",
+          assistantSummary: "Project context is not available yet.",
+          draftMayNeedRefresh: false,
+        });
+      return JSON.stringify(
+        await refineProductThroughConversation({
+          projectId: currentProject.id,
+          instruction: input.instruction,
+          signal,
+          refreshProject: fetchProject,
+        }),
+      );
+    },
+    [fetchProject, projectId],
+  );
 
   const runInitialTurn = useCallback(
     async (id: string, rawIdea: string, retry = false) => {
@@ -894,6 +925,7 @@ export default function ProjectWorkspace({
   useEffect(() => {
     projectRef.current = project;
     draftStartRef.current = buildProductDraft;
+    refineProductRef.current = refineProduct;
   });
 
   useEffect(() => {
@@ -904,6 +936,18 @@ export default function ProjectWorkspace({
     const inputSchema = {
       type: "object",
       properties: {},
+      additionalProperties: false,
+    };
+    const refineProductInputSchema = {
+      type: "object",
+      properties: {
+        instruction: {
+          type: "string",
+          minLength: 1,
+          maxLength: 5000,
+        },
+      },
+      required: ["instruction"],
       additionalProperties: false,
     };
 
@@ -990,6 +1034,18 @@ export default function ProjectWorkspace({
                   message: "Product Draft generation could not be started.",
                 },
               ),
+          },
+          { signal: controller.signal },
+        );
+        await modelContext.registerTool(
+          {
+            name: "refine_product",
+            description:
+              "Refine the currently open product through RockFoundry's normal conversation flow.",
+            inputSchema: refineProductInputSchema,
+            annotations: { readOnlyHint: false },
+            execute: (input, { signal }) =>
+              refineProductRef.current(input, signal),
           },
           { signal: controller.signal },
         );

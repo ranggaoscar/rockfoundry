@@ -69,6 +69,47 @@ describe("buildProjectWebMcpContext", () => {
     });
   });
 
+  it("exposes a product refinement and the stale existing draft", () => {
+    const context = buildProjectWebMcpContext({
+      project: {
+        id: "project-1",
+        name: "Laundry Flow",
+        description: "A laundry service",
+        version: 5,
+        canonicalState: {
+          normalizedSummary: "Manage laundry pickup and delivery.",
+          openQuestions: [],
+          assumptions: [],
+          studio: { status: "NEEDS_REVIEW", currentVersion: 2 },
+        },
+      },
+      draft: {
+        generation: {
+          id: "generation-1",
+          generationNumber: 3,
+          canonicalVersion: 4,
+          status: "COMPLETE",
+        },
+        hasCurrentDraft: false,
+        documents: [
+          {
+            type: "PRD",
+            fileName: "PRD.md",
+            status: "READY",
+            current: false,
+            version: 4,
+          },
+        ],
+      },
+    });
+
+    expect(context.project.version).toBe(5);
+    expect(context.productDraft).toMatchObject({
+      hasCurrentDraft: false,
+      documents: [{ type: "PRD", current: false, version: 4 }],
+    });
+  });
+
   it("falls back to unresolved discovery topics when no open-question list exists", () => {
     const context = buildProjectWebMcpContext({
       project: {
