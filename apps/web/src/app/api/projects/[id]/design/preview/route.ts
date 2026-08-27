@@ -7,16 +7,11 @@ import {
   jsonError,
   parseProjectState,
 } from "@/lib/local-project";
-import { DESIGN_PREVIEW_ARTIFACT_TYPES, selectCoherentPrototypeSet } from "@/lib/design-preview";
-
-function previewDocument(files: Array<{ path: string; content: string }>) {
-  const html = files.find((file) => file.path === "index.html")?.content || "";
-  const css = files.find((file) => file.path === "styles.css")?.content || "";
-  const js = files.find((file) => file.path === "app.js")?.content || "";
-  return html
-    .replace(`<link rel="stylesheet" href="styles.css">`, `<style>${css}</style>`)
-    .replace(`<script src="app.js"></script>`, `<script>${js}</script>`);
-}
+import {
+  DESIGN_PREVIEW_ARTIFACT_TYPES,
+  renderPrototypePreviewDocument,
+  selectCoherentPrototypeSet,
+} from "@/lib/design-preview";
 
 export async function GET(
   _req: NextRequest,
@@ -35,7 +30,7 @@ export async function GET(
   const selected = selectCoherentPrototypeSet(artifacts, project.version);
   if (selected) {
     return new Response(
-      previewDocument([
+      renderPrototypePreviewDocument([
         { path: "index.html", content: selected.html.content },
         { path: "styles.css", content: selected.css.content },
         { path: "app.js", content: selected.js.content },
@@ -54,7 +49,7 @@ export async function GET(
     | { files?: Array<{ path: string; content: string }> }
     | undefined;
   if (!pack?.files?.length) return jsonError("No prototype yet.", 404);
-  return new Response(previewDocument(pack.files), {
+  return new Response(renderPrototypePreviewDocument(pack.files), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy":
