@@ -489,14 +489,18 @@ function applyCorrection(
  * when a provider acknowledges them without emitting a structured delta.
  * Only the user's exact sentence is stored; provider paraphrases stay untrusted.
  */
-export function explicitProductRulesFromUserMessage(message: string) {
+function productRuleSentences(message: string) {
   return message
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?])\s+|\n+/)
     .map((sentence) => sentence.trim())
-    .filter((sentence) => {
+    .filter(Boolean);
+}
+
+export function explicitProductRulesFromUserMessage(message: string) {
+  return productRuleSentences(message).filter((sentence) => {
       const normalized = normalizeConversationText(sentence);
       const action =
-        "(?:confirm|edit|update|delete|cancel|approve|reject|view|create|change|manage|pay|konfirmasi|ubah|hapus|batalkan|setujui|tolak|lihat|buat|kelola|bayar)";
+        "(?:confirm|edit|update|delete|cancel|approve|reject|view|create|change|manage|pay|konfirmasi|mengonfirmasi|ubah|mengubah|edit|mengedit|hapus|menghapus|batalkan|membatalkan|setujui|menyetujui|tolak|menolak|lihat|melihat|buat|membuat|kelola|mengelola|bayar|membayar)";
       const subject = "(?:the\\s+)?[\\p{L}\\p{N}/ _-]{2,80}";
       return (
         new RegExp(
@@ -504,14 +508,27 @@ export function explicitProductRulesFromUserMessage(message: string) {
           "u",
         ).test(normalized) ||
         new RegExp(
-          `^${subject}\\s+(?:cannot|cant|must not|may not|are not allowed to|tidak boleh|tidak dapat|tidak bisa)\\s+${action}\\b`,
+          `^${subject}\\s+(?:cannot|cant|must not(?:\\s+be\\s+able\\s+to)?|may not|are not allowed to|are not permitted to|tidak boleh|tidak dapat|tidak bisa|tidak diizinkan(?:\\s+untuk)?|tidak diperbolehkan(?:\\s+untuk)?|dilarang(?:\\s+untuk)?)\\s+${action}\\b`,
           "u",
         ).test(normalized)
       );
     });
 }
 
-function applyExplicitUserProductRules(state: ProjectState, message: string) {
+export function isExplicitProductRuleRefinement(message: string) {
+  const sentences = productRuleSentences(message);
+  const rules = explicitProductRulesFromUserMessage(message);
+  return (
+    rules.length > 0 &&
+    rules.length === sentences.length &&
+    rules.every((rule, index) => rule === sentences[index])
+  );
+}
+
+export function applyExplicitUserProductRules(
+  state: ProjectState,
+  message: string,
+) {
   for (const rule of explicitProductRulesFromUserMessage(message)) {
     if (
       !state.businessRules.some(
@@ -524,7 +541,7 @@ function applyExplicitUserProductRules(state: ProjectState, message: string) {
     addProvenance(
       state,
       `businessRules.${rule}`,
-      message,
+      rule,
       "USER",
       "EXPLICIT",
     );

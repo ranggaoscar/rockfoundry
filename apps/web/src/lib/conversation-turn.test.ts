@@ -26,6 +26,7 @@ import {
   recoverStaleConversationTurns,
   runClaimedConversationTurn,
 } from "./conversation-turn";
+import { isProductDraftCurrent } from "./project-truth";
 
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -359,6 +360,53 @@ it("persists semantic model-output and provider summaries without raw errors", a
     assert.equal(failedProvider.errorSummary, AI_PROVIDER_ERROR_MESSAGE);
     assert.equal(publicConversationTurn(failedProvider).errorSummary, AI_PROVIDER_ERROR_MESSAGE);
     assert.equal(failedProvider.errorSummary.includes("private"), false);
+  } finally {
+    await closeDb(db);
+  }
+});
+
+it("fast-paths explicit product rules without calling the Conversation Agent", async () => {
+  const { db, projectId, state } = await makeDb();
+  try {
+    const text =
+      "Only the seller/owner can confirm an order. Customers must not be able to edit an order after payment.";
+    const claimed = await claimConversationTurn(db, {
+      projectId,
+      requestId: "explicit-rules",
+      text,
+    });
+    assert.equal(claimed.kind, "CLAIMED");
+    if (claimed.kind !== "CLAIMED") throw new Error("expected claim");
+    const runAgent = vi.fn();
+
+    const completed = await runClaimedConversationTurn({
+      db,
+      projectId,
+      turnId: claimed.turn.id,
+      text,
+      mode: "BRAINSTORM",
+      intent: "BRAINSTORM",
+      state,
+      expectedVersion: 1,
+      runAgent,
+    });
+
+    assert.equal(runAgent.mock.calls.length, 0);
+    assert.equal(completed.turn.providerCalls, 0);
+    assert.equal(completed.turn.status, CONVERSATION_TURN_STATUS.COMPLETED);
+    assert.equal(await db.conversationMessage.count({ where: { projectId } }), 2);
+    assert.equal(await db.projectStateRevision.count({ where: { projectId } }), 1);
+    assert.deepEqual(completed.state.businessRules, [
+      "Only the seller/owner can confirm an order.",
+      "Customers must not be able to edit an order after payment.",
+    ]);
+    assert.equal(
+      completed.state.provenance[
+        "businessRules.Customers must not be able to edit an order after payment."
+      ]?.evidence,
+      "Customers must not be able to edit an order after payment.",
+    );
+    assert.equal(isProductDraftCurrent(state, completed.state), false);
   } finally {
     await closeDb(db);
   }

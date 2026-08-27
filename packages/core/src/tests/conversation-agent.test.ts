@@ -8,6 +8,7 @@ import {
   renderArtifacts,
   type ConversationAgentResponse,
   enforceConversationQuestionPolicy,
+  explicitProductRulesFromUserMessage,
 } from "../index";
 
 function conversationDelta(
@@ -128,17 +129,70 @@ describe("Conversation Agent contract", () => {
       ["businessRules.Only the seller/owner can confirm an order."]: {
         source: "USER",
         confidence: "EXPLICIT",
-        evidence: instruction,
+        evidence: "Only the seller/owner can confirm an order.",
       },
       ["businessRules.Customers cannot edit an order after payment."]: {
         source: "USER",
         confidence: "EXPLICIT",
-        evidence: instruction,
+        evidence: "Customers cannot edit an order after payment.",
       },
     });
     expect(next.businessRules).not.toContain(
       "Owner should control confirmation and customer edits should be locked.",
     );
+  });
+
+  it("records natural negative permission rules verbatim in English and Indonesian", () => {
+    const state = createInitialProjectState({
+      id: "conversation-natural-explicit-rules",
+      name: "Orders",
+      rawIdea: "Manage customer orders",
+    });
+    const instruction =
+      "Customers must not be able to edit an order after payment. Customers are not allowed to edit an order after payment. Pelanggan tidak diizinkan untuk mengubah pesanan setelah pembayaran.";
+
+    const next = applyConversationResponse(
+      state,
+      conversationDelta({ message: "Rules recorded." }),
+      instruction,
+    );
+
+    expect(next.businessRules).toEqual([
+      "Customers must not be able to edit an order after payment.",
+      "Customers are not allowed to edit an order after payment.",
+      "Pelanggan tidak diizinkan untuk mengubah pesanan setelah pembayaran.",
+    ]);
+    expect(next.provenance).toMatchObject({
+      ["businessRules.Customers must not be able to edit an order after payment."]:
+        {
+          source: "USER",
+          confidence: "EXPLICIT",
+          evidence:
+            "Customers must not be able to edit an order after payment.",
+        },
+      ["businessRules.Pelanggan tidak diizinkan untuk mengubah pesanan setelah pembayaran."]:
+        {
+          source: "USER",
+          confidence: "EXPLICIT",
+          evidence:
+            "Pelanggan tidak diizinkan untuk mengubah pesanan setelah pembayaran.",
+        },
+      ["businessRules.Customers are not allowed to edit an order after payment."]:
+        {
+          source: "USER",
+          confidence: "EXPLICIT",
+          evidence:
+            "Customers are not allowed to edit an order after payment.",
+        },
+    });
+  });
+
+  it("does not infer product rules from advisory wording", () => {
+    expect(
+      explicitProductRulesFromUserMessage(
+        "Customers should not edit orders after payment.",
+      ),
+    ).toEqual([]);
   });
 
   it("records explicit confirmation and preserves correction history", () => {

@@ -1,5 +1,8 @@
 import { Prisma, type PrismaClient } from "@rockfoundry/db";
 import {
+  applyExplicitUserProductRules,
+  explicitProductRulesFromUserMessage,
+  isExplicitProductRuleRefinement,
   ProjectStateSchema,
   detectContradictions,
   evaluateReadinessDirectly,
@@ -373,6 +376,83 @@ export async function completeConversationTurn(
 
 type ConversationAgentResult = Awaited<ReturnType<typeof runConversationAgent>>;
 
+async function completeExplicitProductRuleTurn(
+  input: Parameters<typeof runClaimedConversationTurn>[0],
+  attempt: number,
+) {
+  const rules = explicitProductRulesFromUserMessage(input.text);
+  const nextState = ProjectStateSchema.parse(input.state);
+  const existingRules = new Set(nextState.businessRules);
+  applyExplicitUserProductRules(nextState, input.text);
+  const changed = rules.some((rule) => !existingRules.has(rule));
+  const curatedState =
+    changed && nextState.studio.currentVersion > 0
+      ? markDesignStale(
+          nextState,
+          nextState.studio.screenMap.map((screen) => screen.id),
+        )
+      : nextState;
+  if (changed) mergeDetectedContradictions(curatedState);
+  const message =
+    rules.length === 1
+      ? "Recorded your explicit product rule."
+      : "Recorded your explicit product rules.";
+  const response = {
+    mode: input.mode,
+    message,
+    stateDelta: {
+      explicitFacts: rules.map((rule) => ({
+        path: "businessRules",
+        value: rule,
+        evidence: rule,
+      })),
+      confirmedDecisions: [],
+      corrections: [],
+      resolvedQuestions: [],
+      resolvedAssumptions: [],
+    },
+    proposals: [],
+    assumptions: [],
+    unresolvedRisks: [],
+    suggestedNextAction: { type: "NONE" },
+  };
+  return completeConversationTurn(input.db, {
+    projectId: input.projectId,
+    turnId: input.turnId,
+    state: curatedState,
+    expectedVersion: input.expectedVersion,
+    attempt,
+    providerCalls: 0,
+    assistant: {
+      content: message,
+      metadata: {
+        mode: input.mode,
+        quickReplies: [],
+        suggestedNextAction: response.suggestedNextAction,
+        proposals: [],
+        assumptions: [],
+        unresolvedRisks: [],
+      },
+    },
+    buildResponse: ({ state, version, readiness, turn, userMessageId }) => ({
+      intent: input.intent,
+      mode: input.mode,
+      message,
+      response,
+      state,
+      version,
+      userMessageId,
+      question: null,
+      quickReplies: [],
+      suggestedNextAction: response.suggestedNextAction,
+      activities: [],
+      requestId: turn.requestId,
+      turn,
+      ...getPackageEligibility(readiness),
+    }),
+  });
+}
+
 export async function runClaimedConversationTurn(input: {
   db: ConversationDb;
   projectId: string;
@@ -388,9 +468,12 @@ export async function runClaimedConversationTurn(input: {
     input: Parameters<typeof runConversationAgent>[0],
   ) => Promise<ConversationAgentResult>;
 }) {
-  const providerCalls = (input.providerCalls ?? 0) + 1;
   const attempt = input.attempt ?? 1;
   try {
+    if (isExplicitProductRuleRefinement(input.text))
+      return await completeExplicitProductRuleTurn(input, attempt);
+
+    const providerCalls = (input.providerCalls ?? 0) + 1;
     const result = await (input.runAgent || runConversationAgent)({
       projectId: input.projectId,
       text: input.text,
@@ -451,7 +534,9 @@ export async function runClaimedConversationTurn(input: {
       projectId: input.projectId,
       turnId: input.turnId,
       attempt,
-      providerCalls,
+      providerCalls: isExplicitProductRuleRefinement(input.text)
+        ? 0
+        : (input.providerCalls ?? 0) + 1,
       error,
     });
     throw error;
