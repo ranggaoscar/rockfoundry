@@ -11,6 +11,7 @@ import {
   InferenceRequest,
   InferenceResponse,
 } from "./schema";
+import { MalformedJsonResponseError } from "./gateway";
 
 export * from "./schema";
 export * from "./gateway";
@@ -352,10 +353,6 @@ export class MockGatewayProvider implements AiGatewayProvider {
 const DesignArchitectureResponseSchema = z.toJSONSchema(
   DesignArchitectureOutputSchema,
 );
-const PrototypeGenerationResponseSchema = z.toJSONSchema(
-  PrototypeGenerationOutputSchema,
-);
-
 type SafeZodError = z.ZodError & { topLevelKeys?: string[] };
 
 function annotateZodError(error: z.ZodError, data: unknown): SafeZodError {
@@ -380,6 +377,115 @@ function normalizeMissingDesignSummary(
   )
     return data;
   return { ...data, summary };
+}
+
+const PROTOTYPE_PATHS = ["index.html", "styles.css", "app.js"] as const;
+const DEFAULT_PROTOTYPE_SUMMARY =
+  "Generated interactive prototype from the approved design architecture.";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseJsonValue(value: unknown) {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function unwrapPrototypeResponse(value: unknown, depth = 0): Record<string, unknown> {
+  const parsed = parseJsonValue(value);
+  if (!isRecord(parsed) || depth > 4) return {};
+  if (
+    "files" in parsed ||
+    "artifacts" in parsed ||
+    "index.html" in parsed ||
+    "html" in parsed
+  ) {
+    return parsed;
+  }
+  for (const key of ["prototype", "output", "result", "response", "data", "content"]) {
+    if (key in parsed) {
+      const nested = unwrapPrototypeResponse(parsed[key], depth + 1);
+      if (Object.keys(nested).length) return nested;
+    }
+  }
+  return parsed;
+}
+
+function fileContent(value: unknown) {
+  if (typeof value === "string") return value;
+  if (!isRecord(value)) return undefined;
+  return typeof value.content === "string"
+    ? value.content
+    : typeof value.code === "string"
+      ? value.code
+      : typeof value.value === "string"
+        ? value.value
+        : undefined;
+}
+
+function prototypeFilesFrom(value: unknown) {
+  const response = unwrapPrototypeResponse(value);
+  const files: Partial<Record<(typeof PROTOTYPE_PATHS)[number], string>> = {};
+  const collect = (path: unknown, content: unknown) => {
+    if (typeof path !== "string" || !PROTOTYPE_PATHS.includes(path as (typeof PROTOTYPE_PATHS)[number])) return;
+    const resolved = fileContent(content);
+    if (resolved !== undefined) files[path as (typeof PROTOTYPE_PATHS)[number]] = resolved;
+  };
+  const listed = response.files ?? response.artifacts ?? response.outputFiles;
+  if (Array.isArray(listed)) {
+    for (const entry of listed) {
+      if (isRecord(entry)) collect(entry.path ?? entry.name ?? entry.fileName, entry);
+    }
+  } else if (isRecord(listed)) {
+    for (const [path, content] of Object.entries(listed)) collect(path, content);
+  }
+  for (const path of PROTOTYPE_PATHS) collect(path, response[path]);
+  collect("index.html", response.html);
+  collect("styles.css", response.css);
+  collect("app.js", response.js ?? response.javascript);
+  return files;
+}
+
+function prototypeMetadataFrom(value: unknown) {
+  const outer = parseJsonValue(value);
+  const responses = [unwrapPrototypeResponse(value), ...(isRecord(outer) ? [outer] : [])];
+  const summary = responses.find(
+    (response) => typeof response.summary === "string" && response.summary.trim(),
+  )?.summary as string | undefined;
+  const assumptionsResponse = responses.find((response) => "assumptions" in response);
+  const assumptions = Array.isArray(assumptionsResponse?.assumptions)
+    ? assumptionsResponse.assumptions.filter((item): item is string => typeof item === "string")
+    : typeof assumptionsResponse?.assumptions === "string"
+      ? [assumptionsResponse.assumptions]
+      : [];
+  return { summary, assumptions, hasAssumptions: Boolean(assumptionsResponse) };
+}
+
+function normalizePrototypeOutput(value: unknown, preserve?: unknown) {
+  const preserved = prototypeFilesFrom(preserve);
+  const files = { ...preserved, ...prototypeFilesFrom(value) };
+  const metadata = prototypeMetadataFrom(value);
+  const preservedMetadata = prototypeMetadataFrom(preserve);
+  return {
+    files: PROTOTYPE_PATHS.flatMap((path) =>
+      files[path] === undefined ? [] : [{ path, content: files[path] }],
+    ),
+    summary:
+      metadata.summary
+        ? metadata.summary
+        : preservedMetadata.summary
+          ? preservedMetadata.summary
+        : DEFAULT_PROTOTYPE_SUMMARY,
+    assumptions: metadata.hasAssumptions
+      ? metadata.assumptions
+      : preservedMetadata.assumptions,
+  };
 }
 
 export class AiGateway {
@@ -541,45 +647,87 @@ export class AiGateway {
     existingFiles?: Array<{ path: string; content: string }>;
     taskType?: string;
   }) {
-    const result = await this.completeWithSchemaRepair(
-      {
-        taskType: input.taskType || "prototype_generation",
-          modelTier: "strong",
-        messages: [
-          {
-            role: "system",
-            content:
-              "Return JSON only. Produce exactly index.html, styles.css, and app.js. Use only local files: no CDN, no external scripts/styles, no fetch/XHR/WebSocket/iframe/object/embed, no top/parent navigation. The Screen Map is authoritative: preserve every route exactly and do not add routes. HTML must include main and nav. CSS must include an @media responsive rule. JavaScript may only handle local hash routing and parent postMessage component selection. If revising, modify the existing prototype visibly while retaining all declared routes.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              product: input.product,
-              architecture: input.architecture,
-              screenMap: input.screenMap,
-              revisionRequest: input.revisionRequest || null,
-              existingFiles: input.existingFiles || null,
-            }),
-          },
-        ],
-        temperature: 0.35,
-        responseFormat: "json",
-        responseSchema: PrototypeGenerationResponseSchema,
-      },
-      PrototypeGenerationOutputSchema,
-      (data) =>
-        normalizeMissingDesignSummary(
-          data,
-          "files",
-          "Generated interactive prototype from the approved design architecture.",
-        ),
+    const taskType = input.taskType || "prototype_generation";
+    const request: InferenceRequest<unknown> = {
+      taskType,
+      modelTier: "strong",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return JSON only. Produce exactly index.html, styles.css, and app.js. Use only local files: no CDN, no external scripts/styles, no fetch/XHR/WebSocket/iframe/object/embed, no top/parent navigation. The Screen Map is authoritative: preserve every route exactly and do not add routes. HTML must include main and nav. CSS must include an @media responsive rule. JavaScript may only handle local hash routing and parent postMessage component selection. If revising, modify the existing prototype visibly while retaining all declared routes.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            product: input.product,
+            architecture: input.architecture,
+            screenMap: input.screenMap,
+            revisionRequest: input.revisionRequest || null,
+            existingFiles: input.existingFiles || null,
+          }),
+        },
+      ],
+      temperature: 0.35,
+      responseFormat: "json",
+      maxRetries: 0,
+      reasoningEffort: "medium",
+    };
+    let initial: InferenceResponse<unknown>;
+    let initialData: unknown;
+    try {
+      initial = await this.provider.complete<unknown>(request);
+      initialData = initial.data;
+    } catch (error) {
+      if (!(error instanceof MalformedJsonResponseError)) throw error;
+      initial = { data: error.rawContent };
+      initialData = error.rawContent;
+    }
+    const normalizedInitial = normalizePrototypeOutput(initialData);
+    const initialValidation = PrototypeGenerationOutputSchema.safeParse(normalizedInitial);
+    if (initialValidation.success) {
+      return {
+        prototype: initialValidation.data,
+        model: initial.metadata?.model || "unknown",
+        latency: initial.metadata?.latency || 0,
+        tokenUsage: initial.usage?.totalTokens || 0,
+      };
+    }
+    const issues = initialValidation.error.issues.map((issue) => ({
+      path: issue.path.join("."),
+      message: issue.message,
+    }));
+    const repaired = await this.provider.complete<unknown>({
+      taskType: "prototype_repair",
+      modelTier: "strong",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return JSON only. Repair the supplied prototype response shape only. Preserve every valid generated file verbatim unless it is the file being corrected. Do not restart or redesign the architecture, routes, or product behavior. Return exactly index.html, styles.css, app.js, summary, and assumptions.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            previousOutput: initialData,
+            preservedFiles: normalizedInitial.files,
+            validationIssues: issues,
+          }),
+        },
+      ],
+      temperature: 0.1,
+      responseFormat: "json",
+      maxRetries: 0,
+      reasoningEffort: "medium",
+    });
+    const prototype = PrototypeGenerationOutputSchema.parse(
+      normalizePrototypeOutput(repaired.data, normalizedInitial),
     );
-    const prototype = PrototypeGenerationOutputSchema.parse(result.data);
     return {
       prototype,
-      model: result.metadata?.model || "unknown",
-      latency: result.metadata?.latency || 0,
-      tokenUsage: result.usage?.totalTokens || 0,
+      model: repaired.metadata?.model || "unknown",
+      latency: repaired.metadata?.latency || 0,
+      tokenUsage: repaired.usage?.totalTokens || 0,
     };
   }
 

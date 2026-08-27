@@ -101,6 +101,7 @@ export async function runDesignGenerationJob(jobId: string, alreadyClaimed = fal
           stageLabel: stageLabel("FAILED"),
           failure: diagnostics,
         }),
+        completedAt: new Date(),
         heartbeatAt: new Date(),
       },
     });

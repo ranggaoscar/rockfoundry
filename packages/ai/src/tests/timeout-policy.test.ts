@@ -35,7 +35,7 @@ describe("initial discovery timeout policy", () => {
     expect(TASK_TIMEOUT.design_architecture).toBe(120_000);
     expect(TASK_MAX_RETRIES.design_architecture).toBe(1);
     expect(TASK_TIMEOUT.prototype_generation).toBe(180_000);
-    expect(TASK_MAX_RETRIES.prototype_generation).toBe(1);
+    expect(TASK_MAX_RETRIES.prototype_generation).toBe(0);
   });
 
   it("allows a 65-second initial extraction to complete", async () => {

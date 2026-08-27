@@ -24,6 +24,28 @@ export function openAiCompatibleUrl(baseUrl: string, path: string) {
   return `${normalizeOpenAiCompatibleBaseUrl(baseUrl)}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+function parseProviderJson<T>(content: string): T {
+  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
+  const objectStart = content.search(/[\[{]/);
+  const objectEnd = Math.max(content.lastIndexOf("}"), content.lastIndexOf("]"));
+  const candidates = [
+    content,
+    fenced,
+    objectStart >= 0 && objectEnd > objectStart
+      ? content.slice(objectStart, objectEnd + 1)
+      : undefined,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate) as T;
+    } catch {
+      // Try the next common JSON wrapper shape.
+    }
+  }
+  throw new MalformedJsonResponseError(content);
+}
+
 export async function discoverOpenAiCompatibleModels(
   baseUrl: string,
   apiKey: string,
@@ -110,6 +132,7 @@ export class NineRouterGateway implements AiGatewayProvider {
     req: InferenceRequest<T>,
     timeout: number,
   ): Promise<InferenceResponse<T>> {
+    const taskType = req.taskType || "initial_idea_extraction";
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -173,10 +196,14 @@ export class NineRouterGateway implements AiGatewayProvider {
 
       let parsed: T;
       if (req.responseFormat === "json" || req.responseSchema) {
-        try {
-          parsed = JSON.parse(content) as T;
-        } catch {
-          throw new Error("Failed to parse JSON response from AI provider");
+        if (taskType === "prototype_generation" || taskType === "prototype_repair") {
+          parsed = parseProviderJson<T>(content);
+        } else {
+          try {
+            parsed = JSON.parse(content) as T;
+          } catch {
+            throw new Error("Failed to parse JSON response from AI provider");
+          }
         }
       } else {
         parsed = content as unknown as T;
@@ -235,5 +262,12 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = "ApiError";
+  }
+}
+
+export class MalformedJsonResponseError extends Error {
+  constructor(public readonly rawContent: string) {
+    super("Failed to parse JSON response from AI provider");
+    this.name = "MalformedJsonResponseError";
   }
 }

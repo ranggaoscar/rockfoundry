@@ -106,6 +106,7 @@ test("prototype jobs claim and stale-recover independently", async () => {
     const failed = await db.designGenerationJob.findUnique({ where: { id: queued.job.id } });
     assert.equal(failed?.status, "FAILED");
     assert.equal(failed?.stage, "FAILED");
+    assert.ok(failed?.completedAt);
   } finally {
     await closeDb(db, dir);
   }

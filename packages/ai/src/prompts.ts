@@ -179,9 +179,9 @@ export const TASK_REASONING_EFFORT: Record<string, "medium" | "high" | "max"> = 
   research: "high",
   screen_architecture: "max",
   design_architecture: "high",
-  prototype_generation: "high",
+  prototype_generation: "medium",
   design_quality_review: "high",
-  prototype_repair: "high",
+  prototype_repair: "medium",
   final_consistency_review: "max",
 };
 
@@ -231,7 +231,7 @@ export const TASK_TIMEOUT: Record<string, number> = {
 export const TASK_MAX_RETRIES: Record<string, number> = {
   initial_idea_extraction: 2,
   design_architecture: 1,
-  prototype_generation: 1,
+  prototype_generation: 0,
   contextual_question_enrichment: 2,
   ambiguity_analysis: 1,
   contradiction_review: 1,

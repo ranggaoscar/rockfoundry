@@ -133,6 +133,7 @@ export async function recoverStaleDesignGenerationJobs(db: DesignJobDb) {
       status: "FAILED",
       stage: "FAILED",
       errorSummary: "Prototype generation was interrupted and can be retried.",
+      completedAt: new Date(),
     },
   });
 }
