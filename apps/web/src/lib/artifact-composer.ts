@@ -574,6 +574,7 @@ export async function latestDraftArtifacts(
 export function publicDraftArtifact(
   artifact: DraftArtifactRow,
   currentCanonicalVersion?: number,
+  currentOverride?: boolean,
 ) {
   const type = artifact.type as DraftArtifactType;
   return {
@@ -585,9 +586,10 @@ export function publicDraftArtifact(
     version: artifact.version,
     canonicalVersion: artifact.canonicalVersion,
     current:
-      currentCanonicalVersion === undefined
+      currentOverride ??
+      (currentCanonicalVersion === undefined
         ? artifact.canonicalVersion === null
-        : artifact.canonicalVersion === currentCanonicalVersion,
+        : artifact.canonicalVersion === currentCanonicalVersion),
     generatedAt: artifact.generatedAt,
   };
 }

@@ -1,6 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
+import { ProjectStateSchema } from "@rockfoundry/core";
+import { prisma } from "@rockfoundry/db";
 import {
   artifactComposerErrorPayload,
   composeDraftArtifacts,
@@ -16,6 +18,28 @@ import {
   jsonError,
   parseProjectState,
 } from "@/lib/local-project";
+import { isProductDraftCurrent } from "@/lib/project-truth";
+
+async function draftIsCurrent(
+  projectId: string,
+  projectVersion: number,
+  draftCanonicalVersion: number | null | undefined,
+  currentState: ReturnType<typeof parseProjectState>,
+) {
+  if (draftCanonicalVersion === null || draftCanonicalVersion === undefined)
+    return false;
+  const revision = await prisma.projectStateRevision.findUnique({
+    where: { projectId_version: { projectId, version: draftCanonicalVersion } },
+    select: { state: true },
+  });
+  if (!revision) return draftCanonicalVersion === projectVersion;
+  try {
+    const draftState = ProjectStateSchema.parse(JSON.parse(revision.state));
+    return isProductDraftCurrent(draftState, currentState);
+  } catch {
+    return draftCanonicalVersion === projectVersion;
+  }
+}
 
 export async function GET(
   _req: NextRequest,
@@ -27,6 +51,12 @@ export async function GET(
   const latest = await latestDraftArtifacts(id, project.version);
   const current = await currentDraftGeneration(id);
   const artifacts = latest?.artifacts || [];
+  const currentDraft = await draftIsCurrent(
+    id,
+    project.version,
+    latest?.generation?.canonicalVersion ?? artifacts[0]?.canonicalVersion,
+    parseProjectState(project),
+  );
   return Response.json({
     currentVersion: project.version,
     generation: current
@@ -46,8 +76,11 @@ export async function GET(
             batches: parseDraftGenerationBatches(latest.generation.composerMetadata),
           }
         : null,
-    documents: artifacts.map((artifact) => publicDraftArtifact(artifact, project.version)),
-    hasCurrentDraft: artifacts.length === DRAFT_ARTIFACT_TYPES.length,
+    documents: artifacts.map((artifact) =>
+      publicDraftArtifact(artifact, project.version, currentDraft),
+    ),
+    hasCurrentDraft:
+      currentDraft && artifacts.length === DRAFT_ARTIFACT_TYPES.length,
   });
 }
 
