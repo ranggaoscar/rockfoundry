@@ -48,6 +48,12 @@ type ScreenMapEntry = {
   status?: string;
 };
 
+type DesignJob = {
+  status?: string;
+  stage?: string;
+  errorSummary?: string | null;
+};
+
 export type ProjectWebMcpContextInput = {
   project: {
     id: string;
@@ -64,12 +70,14 @@ export type ProjectWebMcpContextInput = {
     hasCurrentDraft: boolean;
   };
   screenMap?: ScreenMapEntry[];
+  designJob?: DesignJob | null;
 };
 
 export function buildProjectWebMcpContext({
   project,
   draft,
   screenMap,
+  designJob,
 }: ProjectWebMcpContextInput) {
   const screens =
     screenMap?.length ? screenMap : project.canonicalState.studio?.screenMap || [];
@@ -134,6 +142,9 @@ export function buildProjectWebMcpContext({
       approvedVersion: studio?.approvedVersion || null,
       stale: studio?.stale || false,
       prototypeAvailable: Boolean((studio?.currentVersion || 0) > 0),
+      jobStatus: designJob?.status || null,
+      jobStage: designJob?.stage || null,
+      jobError: designJob?.errorSummary || null,
     },
     openQuestions:
       project.canonicalState.openQuestions?.length

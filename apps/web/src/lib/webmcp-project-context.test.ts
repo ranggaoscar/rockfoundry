@@ -69,6 +69,11 @@ describe("buildProjectWebMcpContext", () => {
           status: "DRAFT",
         },
       ],
+      designJob: {
+        status: "FAILED",
+        stage: "FAILED",
+        errorSummary: "Prototype provider timed out.",
+      },
     });
 
     expect(context).toMatchObject({
@@ -79,7 +84,13 @@ describe("buildProjectWebMcpContext", () => {
         latestAttempt: { status: "FAILED", number: 4 },
       },
       screenMap: [{ name: "Orders", route: "#/orders" }],
-      design: { status: "NEEDS_REVIEW", prototypeAvailable: true },
+      design: {
+        status: "NEEDS_REVIEW",
+        prototypeAvailable: true,
+        jobStatus: "FAILED",
+        jobStage: "FAILED",
+        jobError: "Prototype provider timed out.",
+      },
       openQuestions: ["Who confirms delivery?"],
       assumptions: [{ statement: "Drivers use a mobile workflow." }],
     });

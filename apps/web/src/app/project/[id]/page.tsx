@@ -26,6 +26,7 @@ import { ProductDocuments } from "@/components/product-documents";
 import { humanTopicLabel } from "@/lib/topic-label";
 import { safeConversationFailureMessage } from "@/lib/ai-error-messages";
 import { buildProjectWebMcpContext } from "@/lib/webmcp-project-context";
+import { generateDesignPreviewThroughWebMcp } from "@/lib/webmcp-design-preview";
 import { refineProductThroughConversation } from "@/lib/webmcp-refine-product";
 import type { ProjectStage } from "@/components/workspace-sidebar";
 type ProjectData = {
@@ -400,6 +401,14 @@ export default function ProjectWorkspace({
       draftMayNeedRefresh: false,
     }),
   );
+  const designPreviewRef = useRef<
+    (signal: AbortSignal) => Promise<string>
+  >(async () =>
+    JSON.stringify({
+      status: "failed",
+      message: "Project context is not available yet.",
+    }),
+  );
   const provider = useProviderStatus();
 
   const fetchProject = useCallback(async (id: string) => {
@@ -442,6 +451,29 @@ export default function ProjectWorkspace({
       );
     },
     [fetchProject, projectId],
+  );
+
+  const generateDesignPreview = useCallback(
+    async (signal: AbortSignal) => {
+      const currentProject = projectRef.current;
+      if (!currentProject || currentProject.id !== projectId)
+        return JSON.stringify({
+          status: "failed",
+          message: "Project context is not available yet.",
+        });
+      return JSON.stringify(
+        await generateDesignPreviewThroughWebMcp({
+          projectId: currentProject.id,
+          signal,
+          showDesignWorkbench: () => {
+            pendingDesignRef.current = false;
+            setPrototypeLaunchRequested(false);
+            setWorkbench("design");
+          },
+        }),
+      );
+    },
+    [projectId],
   );
 
   const runInitialTurn = useCallback(
@@ -927,6 +959,7 @@ export default function ProjectWorkspace({
     projectRef.current = project;
     draftStartRef.current = buildProductDraft;
     refineProductRef.current = refineProduct;
+    designPreviewRef.current = generateDesignPreview;
   });
 
   useEffect(() => {
@@ -1008,6 +1041,7 @@ export default function ProjectWorkspace({
                     screenMap: Array.isArray(design.draftScreenMap)
                       ? design.draftScreenMap
                       : undefined,
+                    designJob: design.designJob || null,
                   }),
                 });
               } catch (cause) {
@@ -1037,6 +1071,17 @@ export default function ProjectWorkspace({
                   message: "Product Draft generation could not be started.",
                 },
               ),
+          },
+          { signal: controller.signal },
+        );
+        await modelContext.registerTool(
+          {
+            name: "generate_design_preview",
+            description:
+              "Queue the current project's existing Design Preview job when its Product Draft is current. The Design workbench shows the normal progress.",
+            inputSchema,
+            annotations: { readOnlyHint: false },
+            execute: (_input, { signal }) => designPreviewRef.current(signal),
           },
           { signal: controller.signal },
         );
