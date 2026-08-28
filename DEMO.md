@@ -1,76 +1,46 @@
-# RockFoundry 5-minute demo
+# RockFoundry WebMCP Challenge demo (60-90 seconds)
 
-Share this when someone asks what RockFoundry does.
+This demo shows an agent taking a product from idea to Product Draft and Design Preview through the page-scoped WebMCP tools added for the challenge.
 
-## Install once
+Open [https://foundry.rockbase.web.id](https://foundry.rockbase.web.id).
 
-```bash
-git clone https://github.com/ranggaoscar/rockfoundry.git
-cd rockfoundry
-pnpm install
-pnpm db:generate
-pnpm db:migrate
-pnpm dev
-```
+## 1. Start a product (10 seconds)
 
-Open http://localhost:3000
-
-## Script
-
-### 1. The problem (20s)
-
-> Coding agents are fast. The danger is they invent product decisions you never made — customer identity, permissions, ownership, duplicates.
-
-### 2. Paste this idea (10s)
+Call `rockfoundry_start_product` with:
 
 ```text
-Build a CRM for five marble brands. Each brand has its own salespeople, but the owner should see everything. Leads come from WhatsApp, Instagram, and the website.
+A simple futsal field booking app. Customers choose a field and time slot; the owner confirms bookings and manages availability.
 ```
 
-### 3. Magic moment (90s)
+The tool creates the workspace through RockFoundry's normal project API and opens the new project page.
 
-Watch the first questions. They should hit:
+## 2. Generate the Product Draft (20-30 seconds)
 
-1. customer identity across brands  
-2. sales visibility  
-3. lead ownership  
+Call `rockfoundry_generate_product_draft`.
 
-Not generic “do you need auth?” questions.
+Then call `rockfoundry_inspect_project` to confirm that the Product Draft is running or complete. The normal Documents workbench remains the source of progress and exposes the six generated documents:
 
-### 4. Answer 3–5 decisions (90s)
+- BRD
+- PRD
+- ERD
+- User Flows
+- Screen Map
+- Design Brief
 
-Use the recommended options.  
-Open **Project context**:
+## 3. Generate the Design Preview (30-50 seconds)
 
-- **Decision Debt** should drop  
-- top invention risks shrink  
-- build readiness becomes clearer  
+When `rockfoundry_inspect_project` reports `hasCurrentDraft: true`, call `rockfoundry_generate_design_preview`.
 
-### 5. Export handoff (60s)
+The tool queues the existing Design Preview job and opens the normal Design workbench. It does not wait for completion or create a second prototype pipeline.
 
-Generate the package. Open:
+Call `rockfoundry_inspect_project` again to show:
 
-- `DO_NOT_INVENT.md` first  
-- `AGENT_HANDOFF.md` for Claude Code / Codex / Cursor prompts  
-- `DECISIONS.md` for what is locked  
+- `design.jobStatus`
+- `design.jobStage`
+- `design.jobError` when relevant
+- `design.prototypeAvailable`
+- design review status and version
 
-### 6. Close (20s)
+## Close
 
-> This is the layer before coding agents. Same chat surface as other tools — different job: stop invented product behavior.
-
-## Proof command
-
-```bash
-pnpm eval:invention
-```
-
-Expect: CRM invention benchmark ≥3/5 wins (currently targets 5/5).
-
-## What not to demo
-
-- accounts / billing  
-- code generation  
-- “AI writes the whole app”  
-- twenty industry templates  
-
-Beachhead stays **multi-brand CRM**. Rental and inventory are support paths only.
+> RockFoundry already provided the product workspace. WebMCP makes its existing product, draft, and preview flows directly usable by an agent on the relevant page.
