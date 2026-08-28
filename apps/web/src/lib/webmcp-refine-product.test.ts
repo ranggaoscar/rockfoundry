@@ -26,7 +26,7 @@ function successResponse(state: unknown) {
   );
 }
 
-describe("WebMCP refine_product", () => {
+describe("WebMCP product refinement", () => {
   it("uses the existing conversation endpoint with the instruction and AbortSignal", async () => {
     const controller = new AbortController();
     const refinedState = structuredClone(previousState);

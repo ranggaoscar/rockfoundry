@@ -989,7 +989,7 @@ export default function ProjectWorkspace({
       try {
         await modelContext.registerTool(
           {
-            name: "inspect_project",
+            name: "rockfoundry_inspect_project",
             description:
               "Read the current RockFoundry project, Product Draft, Screen Map, design status, open questions, and unresolved assumptions.",
             inputSchema,
@@ -1059,7 +1059,7 @@ export default function ProjectWorkspace({
         );
         await modelContext.registerTool(
           {
-            name: "generate_product_draft",
+            name: "rockfoundry_generate_product_draft",
             description:
               "Start the current project's existing Product Draft flow. The normal Documents workbench continues to show progress.",
             inputSchema,
@@ -1076,7 +1076,7 @@ export default function ProjectWorkspace({
         );
         await modelContext.registerTool(
           {
-            name: "generate_design_preview",
+            name: "rockfoundry_generate_design_preview",
             description:
               "Queue the current project's existing Design Preview job when its Product Draft is current. The Design workbench shows the normal progress.",
             inputSchema,
@@ -1087,7 +1087,7 @@ export default function ProjectWorkspace({
         );
         await modelContext.registerTool(
           {
-            name: "refine_product",
+            name: "rockfoundry_refine_product",
             description:
               "Refine the currently open product through RockFoundry's normal conversation flow.",
             inputSchema: refineProductInputSchema,
