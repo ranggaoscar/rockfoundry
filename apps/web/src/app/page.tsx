@@ -1,6 +1,14 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowUp, Menu } from "lucide-react";
 import { SettingsPanel, useProviderStatus } from "@/components/settings-panel";
@@ -9,6 +17,7 @@ import {
   type ProjectStage,
   type SidebarProject,
 } from "@/components/workspace-sidebar";
+import { createProjectThroughWebMcp } from "@/lib/webmcp-create-project";
 
 type Example = {
   label: string;
@@ -17,6 +26,26 @@ type Example = {
 
 type RecentProject = SidebarProject & {
   description: string | null;
+};
+
+type WebMcpTool = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations?: { readOnlyHint?: boolean };
+  execute: (
+    input: Record<string, unknown>,
+    options: { signal: AbortSignal },
+  ) => Promise<string> | string;
+};
+
+type WebMcpDocument = Document & {
+  modelContext?: {
+    registerTool: (
+      tool: WebMcpTool,
+      options: { signal: AbortSignal },
+    ) => Promise<void>;
+  };
 };
 
 const EXAMPLES: Example[] = [
@@ -33,6 +62,25 @@ const EXAMPLES: Example[] = [
     idea: "Booking untuk bisnis jasa. Pelanggan pilih jadwal, staf melihat antrean, owner mengatur ketersediaan dan pembayaran.",
   },
 ];
+
+const CREATE_PROJECT_INPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    description: {
+      type: "string",
+      minLength: 1,
+      maxLength: 5000,
+      description: "What product or application should be built",
+    },
+    name: {
+      type: "string",
+      maxLength: 200,
+      description: "Optional project name",
+    },
+  },
+  required: ["description"],
+  additionalProperties: false,
+};
 
 function projectStageFromState(state: unknown): ProjectStage {
   if (!state || typeof state !== "object") return "idea";
@@ -63,11 +111,66 @@ function HomeWorkspace() {
   const [collapsed, setCollapsed] = useState(false);
   const provider = useProviderStatus();
   const indo = /\b(saya|mau|ingin|bikin|buat)\b/i.test(idea);
+  const createProjectRef = useRef<
+    (
+      input: Record<string, unknown>,
+      signal: AbortSignal,
+    ) => Promise<string>
+  >(async () =>
+    JSON.stringify({
+      status: "failed",
+      message: "Project creation is not ready yet.",
+    }),
+  );
 
   const canSubmit = useMemo(
     () => idea.trim().length > 0 && !creating,
     [idea, creating],
   );
+
+  const createProject = useCallback(
+    async (input: Record<string, unknown>, signal: AbortSignal) =>
+      JSON.stringify(
+        await createProjectThroughWebMcp({
+          description: input.description,
+          name: input.name,
+          signal,
+          navigateToProject: (projectUrl) => router.push(projectUrl),
+        }),
+      ),
+    [router],
+  );
+
+  useEffect(() => {
+    createProjectRef.current = createProject;
+  }, [createProject]);
+
+  useEffect(() => {
+    const modelContext = (document as WebMcpDocument).modelContext;
+    if (!modelContext) return;
+    const controller = new AbortController();
+    const registerTool = async () => {
+      try {
+        await modelContext.registerTool(
+          {
+            name: "create_project",
+            description:
+              "Create a new RockFoundry project from a product description and open its project page.",
+            inputSchema: CREATE_PROJECT_INPUT_SCHEMA,
+            annotations: { readOnlyHint: false },
+            execute: (input, { signal }) =>
+              createProjectRef.current(input, signal),
+          },
+          { signal: controller.signal },
+        );
+      } catch {
+        controller.abort();
+        // WebMCP is optional. Suppress registration failures outside supported contexts.
+      }
+    };
+    void registerTool();
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     let active = true;
