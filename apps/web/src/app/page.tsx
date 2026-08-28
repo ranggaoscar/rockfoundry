@@ -153,9 +153,9 @@ function HomeWorkspace() {
       try {
         await modelContext.registerTool(
           {
-            name: "rockfoundry_create_project",
+            name: "rockfoundry_start_product",
             description:
-              "Create a new RockFoundry project from a product description and open its project page.",
+              "Start a new RockFoundry product workspace from a product idea and open it.",
             inputSchema: CREATE_PROJECT_INPUT_SCHEMA,
             annotations: { readOnlyHint: false },
             execute: (input, { signal }) =>
