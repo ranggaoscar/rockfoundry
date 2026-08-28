@@ -284,19 +284,16 @@ describe("generateProjectDesign executable review cases", () => {
 
     const prototypeProduct =
       gateway.runPrototypeGeneration.mock.calls[0]?.[0].product;
-    expect(prototypeProduct.targetUsers).toEqual(["customer"]);
-    expect(prototypeProduct.roles).toEqual(["verified tailor partner"]);
-    expect(prototypeProduct.entities).toEqual(["appointment"]);
-    expect(prototypeProduct.features).toEqual([
-      "schedule selection",
-      "clothing photo upload",
-    ]);
-    expect(prototypeProduct.designInputSnapshot.confirmedTruth.actors).toEqual([
+    expect(prototypeProduct.confirmedActors).toEqual([
       "customer",
       "verified tailor partner",
     ]);
-    expect(prototypeProduct.designInputSnapshot.confirmedTruth.workflows).toEqual([
+    expect(prototypeProduct.confirmedWorkflows).toEqual([
       "customer chooses a schedule and uploads clothing photos",
+    ]);
+    expect(prototypeProduct.confirmedFeatures).toEqual([
+      "schedule selection",
+      "clothing photo upload",
     ]);
     expect(gateway.runDesignArchitecture).not.toHaveBeenCalled();
     expect(gateway.runDesignQualityReview).not.toHaveBeenCalled();
@@ -342,6 +339,28 @@ describe("generateProjectDesign executable review cases", () => {
     expect(gateway.runPrototypeGeneration).toHaveBeenCalledTimes(1);
     expect(gateway.runDesignQualityReview).not.toHaveBeenCalled();
     expect(gateway.runPrototypeRepair).not.toHaveBeenCalled();
+    expect(gateway.runPrototypeGeneration.mock.calls[0]?.[0]).toMatchObject({
+      product: {
+        name: "Kasir",
+        summary: "A cashier app",
+        confirmedActors: ["cashiers"],
+        confirmedWorkflows: ["create order"],
+        confirmedFeatures: [],
+      },
+      reasoningEffort: "low",
+    });
+    expect(gateway.runPrototypeGeneration.mock.calls[0]?.[0].product).not.toHaveProperty(
+      "draftArtifacts",
+    );
+    expect(
+      Object.keys(gateway.runPrototypeGeneration.mock.calls[0]?.[0].product || {}).sort(),
+    ).toEqual([
+      "confirmedActors",
+      "confirmedFeatures",
+      "confirmedWorkflows",
+      "name",
+      "summary",
+    ]);
     expect(onStage).toHaveBeenCalledWith("PROTOTYPE_GENERATION");
     expect(onStage).not.toHaveBeenCalledWith("QUALITY_REVIEW");
   });
@@ -367,27 +386,14 @@ describe("generateProjectDesign executable review cases", () => {
     expect(gateway.runDesignArchitecture).not.toHaveBeenCalled();
     const prototypeInput = gateway.runPrototypeGeneration.mock.calls[0]?.[0];
     if (!prototypeInput) throw new Error("Prototype input was not captured.");
-    expect(prototypeInput.product.designInputSnapshot).toMatchObject({
-      confirmedTruth: {
-        actors: ["customer", "verified tailor partner"],
-        workflows: ["customer chooses a schedule and uploads clothing photos"],
-        scope: ["schedule selection", "clothing photo upload"],
-        constraints: ["initial service area is South Jakarta"],
-        acceptedDecisions: [],
-      },
-      draftSpec: {
-        productName: "Mobile Tailor",
-        summary: "At-home mobile tailoring service",
-      },
-      labeled: {
-        assumptions: ["The service starts in South Jakarta."],
-        proposals: [],
-        openQuestions: ["Pricing and payment timing remain open."],
-      },
+    expect(prototypeInput.product).toMatchObject({
+      name: "Mobile Tailor",
+      summary: "At-home mobile tailoring service",
+      confirmedActors: ["customer", "verified tailor partner"],
+      confirmedWorkflows: ["customer chooses a schedule and uploads clothing photos"],
+      confirmedFeatures: ["schedule selection", "clothing photo upload"],
     });
-    expect(prototypeInput.product.designInputSnapshot.designSignals).toEqual(
-      [],
-    );
+    expect(prototypeInput.product).not.toHaveProperty("draftArtifacts");
     expect(injected.save).toHaveBeenCalled();
     expect(injected.persist).toHaveBeenCalled();
   });
@@ -491,7 +497,13 @@ describe("generateProjectDesign executable review cases", () => {
       screenMap: [
         expect.objectContaining({ id: "history", route: "#/history" }),
       ],
-      product: { draftArtifacts: persistedDraft },
+      product: {
+        name: "Kasir",
+        summary: "A cashier app",
+        confirmedActors: ["cashiers"],
+        confirmedWorkflows: ["create order"],
+        confirmedFeatures: [],
+      },
     });
   });
 

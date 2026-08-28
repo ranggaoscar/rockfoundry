@@ -309,6 +309,19 @@ export function designProductContext(
   };
 }
 
+function initialPrototypeProductContext(
+  state: ProjectState,
+): Record<string, unknown> {
+  const explicit = explicitDesignState(state);
+  return {
+    name: state.name,
+    summary: state.normalizedSummary || state.rawIdea,
+    confirmedActors: [...new Set([...explicit.targetUsers, ...explicit.roles])],
+    confirmedWorkflows: explicit.workflows,
+    confirmedFeatures: explicit.features,
+  };
+}
+
 type DesignGenerationStage =
   | "DESIGN_ARCHITECTURE"
   | "PROTOTYPE_GENERATION"
@@ -341,7 +354,9 @@ async function generateWithRealProvider(
     prototypeMs: number;
   }
 > {
-  const product = designProductContext(state, persistedDraft);
+  const product = input.initialPreview
+    ? initialPrototypeProductContext(state)
+    : designProductContext(state, persistedDraft);
   const screenMap = persistedScreenMap?.length
     ? persistedScreenMap
     : state.studio.screenMap.length
@@ -402,6 +417,7 @@ async function generateWithRealProvider(
       screenMap,
       revisionRequest: input.request,
       existingFiles: input.existing?.files,
+      reasoningEffort: input.initialPreview ? "low" : undefined,
     });
   } catch (error) {
     throw new DesignGenerationError("prototype_generation", error);

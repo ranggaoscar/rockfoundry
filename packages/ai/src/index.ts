@@ -1892,6 +1892,7 @@ export class AiGateway {
     revisionRequest?: string;
     existingFiles?: Array<{ path: string; content: string }>;
     taskType?: string;
+    reasoningEffort?: string;
   }) {
     const taskType = input.taskType || "prototype_generation";
     const request: InferenceRequest<unknown> = {
@@ -1917,7 +1918,7 @@ export class AiGateway {
       temperature: 0.35,
       responseFormat: "json",
       maxRetries: 0,
-      reasoningEffort: "medium",
+      reasoningEffort: input.reasoningEffort || "medium",
     };
     let initial: InferenceResponse<unknown>;
     let initialData: unknown;

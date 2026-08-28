@@ -90,6 +90,7 @@ describe("Design generation JSON transport", () => {
         architecture,
         screenMap: [],
         revisionRequest: "compact",
+        reasoningEffort: "low",
       }),
     ).resolves.toMatchObject({
       prototype: { summary: "Generated compact prototype." },
@@ -106,7 +107,7 @@ describe("Design generation JSON transport", () => {
       architecturePayload.response_format.json_schema.schema.properties,
     ).toHaveProperty("designSpec");
     expect(prototypePayload.response_format).toEqual({ type: "json_object" });
-    expect(prototypePayload.reasoning_effort).toBe("medium");
+    expect(prototypePayload.reasoning_effort).toBe("low");
     expect(prototypePayload.model).toBe("design-model");
     vi.unstubAllGlobals();
   });
