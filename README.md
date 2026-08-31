@@ -6,6 +6,18 @@ RockFoundry is an open-source, local-first product intelligence system that help
 
 RockFoundry does **not** primarily write the production application. It works before implementation, so your coding agent starts with confirmed product truth instead of filling important gaps with guesses.
 
+## See the product
+
+<p align="center">
+  <img src="public/readme/home-rock-foundry.png" alt="RockFoundry home — product intelligence before code" width="900">
+</p>
+
+<p align="center"><em>Turn an early idea into decisions your coding agent can trust.</em></p>
+
+| Product workspace | Design generation |
+| --- | --- |
+| ![RockFoundry project workspace](public/readme/dashboard.png) | ![RockFoundry design generation](public/readme/dashboard-generate.png) |
+
 ## WebMCP Challenge submission
 
 ### Pre-existing RockFoundry
