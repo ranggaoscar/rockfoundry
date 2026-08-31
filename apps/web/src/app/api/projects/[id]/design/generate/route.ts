@@ -21,16 +21,18 @@ export async function POST(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
-    const packageJob = await prisma.packageJob.findFirst({
-      where: {
-        projectId: id,
-        projectVersion: project.version,
-        status: "COMPLETED",
-      },
-    });
-    if (!packageJob && state.studio.currentVersion === 0)
-      return jsonError("Selesaikan Product Package sebelum membuat prototype.", 422);
-    const enqueued = await enqueueDesignGenerationJob(prisma, id, project.version);
+    if (!state.rawIdea.trim() && !state.normalizedSummary?.trim()) {
+      return jsonError(
+        "A product idea or draft artifact is required before creating a design preview.",
+        422,
+        { code: "DESIGN_BLOCKED" },
+      );
+    }
+    const enqueued = await enqueueDesignGenerationJob(
+      prisma,
+      id,
+      project.version,
+    );
     return Response.json(
       {
         job: await latestDesignGenerationJob(prisma, id, project.version),
@@ -39,8 +41,14 @@ export async function POST(
       { status: 202 },
     );
   } catch (error) {
-    if (error instanceof Error && error.message.includes("active prototype job"))
-      return jsonError("A prototype is already being prepared for this project.", 409);
+    if (
+      error instanceof Error &&
+      error.message.includes("active prototype job")
+    )
+      return jsonError(
+        "A prototype is already being prepared for this project.",
+        409,
+      );
     return jsonError("RockFoundry couldn't start the prototype.", 422);
   }
 }

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "pnpm exec tsx --test --test-concurrency=1 src/lib/package-job-claims.test.ts src/lib/design-job-claims.test.ts src/lib/package-worker.test.ts src/lib/package-first-contract.test.ts && pnpm exec vitest run src/lib/package-failure-diagnostics.test.ts"
+    "test": "pnpm exec tsx --test --test-concurrency=1 src/lib/package-job-claims.test.ts src/lib/design-job-claims.test.ts src/lib/package-worker.test.ts src/lib/package-first-contract.test.ts && pnpm exec vitest run src/lib/package-failure-diagnostics.test.ts src/lib/artifact-composer.test.ts src/lib/design-draft-bridge.test.ts src/lib/design-preview.test.ts src/lib/webmcp-project-context.test.ts src/lib/webmcp-refine-product.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

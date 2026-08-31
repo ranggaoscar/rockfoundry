@@ -9,6 +9,12 @@ import {
   classifyDesignFailure,
   formatDesignFailureDiagnostics,
 } from "./failure";
+function parseProviderJson(content: string): unknown {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json|javascript)?\s*([\s\S]*?)\s*```$/i);
+  return JSON.parse(fenced?.[1] || trimmed);
+}
+
 
 /** Keep OpenAI-compatible roots canonical so callers can safely supply either
  * `https://host` or `https://host/v1` without producing `/v1/v1/...`. */
@@ -22,28 +28,6 @@ export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string) {
 
 export function openAiCompatibleUrl(baseUrl: string, path: string) {
   return `${normalizeOpenAiCompatibleBaseUrl(baseUrl)}${path.startsWith("/") ? path : `/${path}`}`;
-}
-
-function parseProviderJson<T>(content: string): T {
-  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
-  const objectStart = content.search(/[\[{]/);
-  const objectEnd = Math.max(content.lastIndexOf("}"), content.lastIndexOf("]"));
-  const candidates = [
-    content,
-    fenced,
-    objectStart >= 0 && objectEnd > objectStart
-      ? content.slice(objectStart, objectEnd + 1)
-      : undefined,
-  ];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    try {
-      return JSON.parse(candidate) as T;
-    } catch {
-      // Try the next common JSON wrapper shape.
-    }
-  }
-  throw new MalformedJsonResponseError(content);
 }
 
 export async function discoverOpenAiCompatibleModels(
@@ -80,7 +64,12 @@ export class NineRouterGateway implements AiGatewayProvider {
     private readonly apiKey: string,
     private readonly models: { default: string; cheap: string; strong: string },
     private readonly reasoningEffort?: string,
+    private readonly providerName = "9router",
   ) {}
+
+  get diagnostics() {
+    return { provider: this.providerName, model: this.models.default } as const;
+  }
 
   async complete<T>(req: InferenceRequest<T>): Promise<InferenceResponse<T>> {
     const taskType = req.taskType || "initial_idea_extraction";
@@ -94,6 +83,7 @@ export class NineRouterGateway implements AiGatewayProvider {
         return await this.attemptRequest(req, timeout);
       } catch (error) {
         lastError = error as Error;
+        const diagnostic = this.safeDiagnostic(req, "provider_request");
 
         // Don't retry if it's a schema validation error (bad request from us)
         if (error instanceof z.ZodError) {
@@ -106,6 +96,9 @@ export class NineRouterGateway implements AiGatewayProvider {
           error.statusCode >= 400 &&
           error.statusCode < 500
         ) {
+          console.warn(
+            `${diagnostic} status=${error.statusCode} error=provider_request_rejected`,
+          );
           throw error;
         }
 
@@ -118,7 +111,7 @@ export class NineRouterGateway implements AiGatewayProvider {
             retryInMs: backoff,
           });
           console.warn(
-            `AI request failed: ${formatDesignFailureDiagnostics(diagnostics)}`,
+            `${diagnostic} ${formatDesignFailureDiagnostics(diagnostics)}`,
           );
           await new Promise((resolve) => setTimeout(resolve, backoff));
         }
@@ -126,6 +119,13 @@ export class NineRouterGateway implements AiGatewayProvider {
     }
 
     throw lastError || new Error("AI request failed after all retries");
+  }
+
+  private safeDiagnostic(req: InferenceRequest<unknown>, stage: string) {
+    const defaults = this.diagnostics;
+    const provider = req.providerDiagnostics?.provider || defaults.provider;
+    const model = req.providerDiagnostics?.model || defaults.model;
+    return `task=${req.taskType || "unknown"} provider=${provider}${model ? ` model=${model}` : ""} stage=${stage}`;
   }
 
   private async attemptRequest<T>(
@@ -189,21 +189,17 @@ export class NineRouterGateway implements AiGatewayProvider {
 
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content;
-
       if (!content) {
         throw new Error("No content returned from AI provider");
       }
-
       let parsed: T;
       if (req.responseFormat === "json" || req.responseSchema) {
-        if (taskType === "prototype_generation" || taskType === "prototype_repair") {
-          parsed = parseProviderJson<T>(content);
-        } else {
-          try {
-            parsed = JSON.parse(content) as T;
-          } catch {
-            throw new Error("Failed to parse JSON response from AI provider");
-          }
+        try {
+          parsed = parseProviderJson(content) as T;
+        } catch {
+          if (taskType === "prototype_generation" || taskType === "prototype_repair")
+            throw new MalformedJsonResponseError(content);
+          throw new Error("Failed to parse JSON response from AI provider");
         }
       } else {
         parsed = content as unknown as T;
@@ -217,7 +213,7 @@ export class NineRouterGateway implements AiGatewayProvider {
           totalTokens: data.usage?.total_tokens,
         },
         metadata: {
-          provider: "9router",
+          provider: this.providerName,
           model,
           latency,
         },
@@ -250,6 +246,7 @@ export class OpenAICompatibleGateway extends NineRouterGateway {
       apiKey,
       { default: model, cheap: model, strong: model },
       reasoningEffort,
+      "openai-compatible",
     );
   }
 }

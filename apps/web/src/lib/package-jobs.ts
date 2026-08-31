@@ -3,6 +3,7 @@ import {
   buildDesignSpec,
   deriveScreenMap,
   generateExport,
+  renderDraftArtifacts,
   renderArtifacts,
   validateConsistency,
 } from "@rockfoundry/core";
@@ -36,7 +37,6 @@ export type PackageJobRuntime = {
   getProject?: typeof getLocalProject;
 };
 
-
 function safeStageDescription(stage: string) {
   const labels: Record<string, string> = {
     PREPARING_PRODUCT: "Menyiapkan keputusan produk",
@@ -64,8 +64,12 @@ export function publicPackageJob(job: {
 }) {
   let completedStages: string[] = [];
   let progress: Record<string, unknown> = {};
-  try { completedStages = JSON.parse(job.completedStages); } catch {}
-  try { progress = JSON.parse(job.progress); } catch {}
+  try {
+    completedStages = JSON.parse(job.completedStages);
+  } catch {}
+  try {
+    progress = JSON.parse(job.progress);
+  } catch {}
   return {
     id: job.id,
     projectId: job.projectId,
@@ -90,7 +94,10 @@ export function buildPackageFailureMetadata(
   return {
     stage,
     task: "product_package",
-    category: error instanceof Error && error.name === "TimeoutError" ? "TIMEOUT" : "UNKNOWN",
+    category:
+      error instanceof Error && error.name === "TimeoutError"
+        ? "TIMEOUT"
+        : "UNKNOWN",
     timings,
   };
 }
@@ -125,7 +132,10 @@ async function advance(
     data: {
       stage,
       completedStages: JSON.stringify(completedStages),
-      progress: JSON.stringify({ stageLabel: safeStageDescription(stage), timings }),
+      progress: JSON.stringify({
+        stageLabel: safeStageDescription(stage),
+        timings,
+      }),
       heartbeatAt: new Date(),
     },
   });
@@ -141,7 +151,11 @@ export async function runPackageJob(
   if (!alreadyClaimed) {
     const claimed = await db.packageJob.updateMany({
       where: { id: jobId, status: "QUEUED" },
-      data: { status: "RUNNING", startedAt: new Date(), heartbeatAt: new Date() },
+      data: {
+        status: "RUNNING",
+        startedAt: new Date(),
+        heartbeatAt: new Date(),
+      },
     });
     if (claimed.count !== 1) return;
   }
@@ -167,7 +181,7 @@ export async function runPackageJob(
     if (!completed.includes("GENERATING_DOCUMENTS")) {
       await advance(db, jobId, "GENERATING_DOCUMENTS", completed, timings);
       const documentStarted = Date.now();
-      const documents = renderArtifacts(state);
+      const documents = renderDraftArtifacts(state);
       timings.documentMs = Date.now() - documentStarted;
       const consistency = validateConsistency(state);
       for (const [type, content] of Object.entries(documents)) {
@@ -282,6 +296,31 @@ export async function runPackageJob(
     if (!completed.includes("FINALIZING_HANDOFF")) {
       const handoffStarted = Date.now();
       await advance(db, jobId, "FINALIZING_HANDOFF", completed, timings);
+      const handoffDocuments = renderArtifacts(state);
+      const consistency = validateConsistency(state);
+      for (const [type, content] of Object.entries(handoffDocuments)) {
+        await db.artifact.upsert({
+          where: {
+            projectId_type_version: {
+              projectId: job.projectId,
+              type,
+              version: job.projectVersion,
+            },
+          },
+          create: {
+            projectId: job.projectId,
+            type,
+            status: consistency.status === "BLOCKING" ? "DRAFT" : "READY",
+            content,
+            version: job.projectVersion,
+          },
+          update: {
+            status: consistency.status === "BLOCKING" ? "DRAFT" : "READY",
+            content,
+            generatedAt: new Date(),
+          },
+        });
+      }
       await generateExport(state);
       timings.handoffMs = Date.now() - handoffStarted;
       completed.push("FINALIZING_HANDOFF");
@@ -338,8 +377,14 @@ export async function latestPackageJob(
   return job ? publicPackageJob(job) : null;
 }
 
-export function isStaleRunningJob(job: { status: string; heartbeatAt: Date | null }) {
-  return job.status === "RUNNING" && (!job.heartbeatAt || Date.now() - job.heartbeatAt.getTime() > 120_000);
+export function isStaleRunningJob(job: {
+  status: string;
+  heartbeatAt: Date | null;
+}) {
+  return (
+    job.status === "RUNNING" &&
+    (!job.heartbeatAt || Date.now() - job.heartbeatAt.getTime() > 120_000)
+  );
 }
 
 export { safeStageDescription };

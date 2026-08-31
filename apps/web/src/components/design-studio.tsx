@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type Screen = {
   id: string;
@@ -21,7 +14,7 @@ type Screen = {
 
 type Studio = {
   status: string;
-  readiness: {
+  readiness?: {
     level: string;
     score: number;
     blockers: string[];
@@ -58,10 +51,29 @@ const VIEWPORTS = {
   Mobile: 390,
 } as const;
 
+const DESIGN_PROGRESS = [
+  ["DESIGN_ARCHITECTURE", "Structuring screens", "Menyusun layar"],
+  ["PROTOTYPE_GENERATION", "Building prototype", "Membangun prototype"],
+  ["QUALITY_REVIEW", "Reviewing result", "Meninjau hasil"],
+] as const;
+
+export function designGenerationReady(input: {
+  packageReady: boolean;
+  draftSpecReady: boolean;
+  packageDesignReady?: boolean;
+}) {
+  return (
+    input.packageReady ||
+    input.draftSpecReady ||
+    Boolean(input.packageDesignReady)
+  );
+}
+
 export function DesignStudio({
   projectId,
   studio,
   packageReady = false,
+  draftSpecReady = false,
   packageDesign,
   language = "en",
   onState,
@@ -74,6 +86,7 @@ export function DesignStudio({
   projectId: string;
   studio?: Studio;
   packageReady?: boolean;
+  draftSpecReady?: boolean;
   packageDesign?: PackageDesign | null;
   language?: "id" | "en";
   onState: (state: unknown, version: number) => void;
@@ -92,33 +105,44 @@ export function DesignStudio({
   const [impactNote, setImpactNote] = useState("");
   const [remotePackageDesign, setRemotePackageDesign] =
     useState<PackageDesign | null>(null);
+  const [draftScreenMap, setDraftScreenMap] = useState<Screen[]>([]);
   const [designJob, setDesignJob] = useState<DesignJob | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [remoteReadiness, setRemoteReadiness] = useState<Studio["readiness"]>();
-  const readiness = remoteReadiness || studio?.readiness;
+  const onStateRef = useRef(onState);
+  useEffect(() => {
+    onStateRef.current = onState;
+  }, [onState]);
   const previewUrl = `/api/projects/${projectId}/design/preview?v=${studio?.currentVersion || 0}`;
   const baseline = remotePackageDesign || packageDesign || null;
   const hasDesign = Boolean(studio && studio.currentVersion > 0);
-  const effectivePackageReady = packageReady || Boolean(baseline) || hasDesign;
+  const effectivePackageReady = designGenerationReady({
+    packageReady,
+    draftSpecReady,
+    packageDesignReady: Boolean(baseline) || hasDesign,
+  });
   const designBusy =
     working || ["QUEUED", "RUNNING"].includes(designJob?.status || "");
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetch(`/api/projects/${projectId}/design`)
-      .then((response) => response.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data.readiness) setRemoteReadiness(data.readiness);
-        if (data.packageDesign) setRemotePackageDesign(data.packageDesign);
-        if (data.designJob) setDesignJob(data.designJob);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
+  const refreshSnapshot = useCallback(async () => {
+    const response = await fetch(`/api/projects/${projectId}/design`);
+    if (!response.ok) return null;
+    const next = await response.json();
+    if (next.packageDesign) setRemotePackageDesign(next.packageDesign);
+    if (Array.isArray(next.draftScreenMap))
+      setDraftScreenMap(next.draftScreenMap);
+    if (next.designJob) setDesignJob(next.designJob);
+    if (next.state && typeof next.version === "number") {
+      onStateRef.current(next.state, next.version);
+    }
+    return next;
   }, [projectId]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshSnapshot().catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshSnapshot]);
   useEffect(() => {
     if (!designJob || !["QUEUED", "RUNNING"].includes(designJob.status)) return;
     const poll = window.setInterval(async () => {
@@ -131,12 +155,7 @@ export function DesignStudio({
       setDesignJob(data.job);
       if (["COMPLETED", "FAILED"].includes(data.job.status)) {
         setStage("");
-        const snapshot = await fetch(`/api/projects/${projectId}/design`);
-        if (!snapshot.ok) return;
-        const next = await snapshot.json();
-        if (next.packageDesign) setRemotePackageDesign(next.packageDesign);
-        if (next.state && typeof next.version === "number")
-          onState(next.state, next.version);
+        await refreshSnapshot();
         if (data.job.status === "FAILED")
           setError(
             data.job.errorSummary ||
@@ -147,7 +166,7 @@ export function DesignStudio({
       }
     }, 1000);
     return () => window.clearInterval(poll);
-  }, [designJob, language, onState, projectId]);
+  }, [designJob, language, projectId, refreshSnapshot]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -269,16 +288,9 @@ export function DesignStudio({
     void send(composer);
   }
 
-  const grouped = useMemo(() => {
-    const groups = new Map<string, Screen[]>();
-    for (const screen of baseline?.screenMap || studio?.screenMap || []) {
-      const key = screen.actorIds[0] || "product";
-      groups.set(key, [...(groups.get(key) || []), screen]);
-    }
-    return [...groups.entries()];
-  }, [baseline?.screenMap, studio?.screenMap]);
-
-  const effectiveScreens = baseline?.screenMap || studio?.screenMap || [];
+  const effectiveScreens =
+    baseline?.screenMap ||
+    (draftScreenMap.length > 0 ? draftScreenMap : studio?.screenMap || []);
   const prototypeFailed = designJob?.status === "FAILED";
   const prototypeActionLabel = prototypeFailed
     ? language === "id"
@@ -291,30 +303,25 @@ export function DesignStudio({
   return (
     <div className="rf-studio">
       <aside className="rf-studio-screens">
-        <p className="rf-studio-kicker">Screen Map</p>
-        {grouped.length === 0 && (
-          <p className="text-[13px] text-muted-foreground">
+        {effectiveScreens.length === 0 ? (
+          <p className="text-[0.8rem] text-muted-foreground">
             {language === "id"
-              ? "Screen Map muncul dari Product Truth."
-              : "Screen Map is derived from Product Truth."}
+              ? "Screen Map akan diturunkan dari Product Draft."
+              : "The Screen Map is derived from the Product Draft."}
           </p>
+        ) : (
+          effectiveScreens.map((screen) => (
+            <a
+              key={screen.id}
+              className="rf-studio-screen"
+              href={previewUrl + screen.route}
+              target="rf-preview"
+            >
+              <span>{screen.name}</span>
+              <span className="rf-studio-source">{screen.route}</span>
+            </a>
+          ))
         )}
-        {grouped.map(([actor, screens]) => (
-          <div key={actor}>
-            <p className="rf-studio-actor">{actor.replaceAll("_", " ")}</p>
-            {screens.map((screen) => (
-              <a
-                key={screen.id}
-                className="rf-studio-screen"
-                href={previewUrl + screen.route}
-                target="rf-preview"
-              >
-                <span>{screen.name}</span>
-                <span className="rf-studio-source">{screen.source}</span>
-              </a>
-            ))}
-          </div>
-        ))}
       </aside>
 
       <section className="rf-studio-preview">
@@ -335,76 +342,99 @@ export function DesignStudio({
             {studio?.currentVersion
               ? `v${studio.currentVersion} · ${studio.status}`
               : baseline
-                ? language === "id"
-                  ? "Baseline · READY"
-                  : "Baseline · READY"
+                ? "Baseline · READY"
                 : language === "id"
-                  ? "Belum ada paket"
-                  : "No package yet"}
+                  ? "Preview belum dibuat"
+                  : "No preview yet"}
           </span>
         </div>
         {!hasDesign ? (
           <div className="rf-studio-empty">
             <p className="rf-studio-kicker">
-              {baseline ? "Baseline DesignSpec" : "Design Readiness"}
+              {baseline ? "Baseline Design Brief" : "Design Preview input"}
             </p>
             {baseline ? (
-              <p className="text-sm leading-6 text-muted-foreground">
+              <p className="mt-2 max-w-[48ch] text-[0.95rem] leading-6 text-muted-foreground">
                 {baseline.summary}
               </p>
             ) : (
-              <p className="rf-studio-score">
-                {readiness?.score ?? 0}% · {readiness?.level || "BLOCKED"}
+              <p className="mt-2 max-w-[48ch] text-[0.95rem] leading-6 text-muted-foreground">
+                {language === "id"
+                  ? "Preview bisa dimulai dari Product Draft yang masih terbuka. Asumsi dan pertanyaan tetap terlihat selama review."
+                  : "The preview can start from an open Product Draft. Assumptions and open questions stay visible during review."}
               </p>
             )}
-            <p>
+            <p className="mt-2 text-[0.875rem] text-muted-foreground">
               {effectiveScreens.length > 0
                 ? `${effectiveScreens.length} ${language === "id" ? "layar terpetakan" : "screens mapped"}`
                 : language === "id"
                   ? "Screen Map belum tersedia"
                   : "Screen Map is not available yet"}
             </p>
-            {prototypeFailed && (
+            {prototypeFailed ? (
               <p className="rf-studio-note">
                 {language === "id"
                   ? "Prototype belum berhasil dibuat."
                   : "Prototype could not be created yet."}
               </p>
-            )}
-            {(readiness?.unresolved.length || 0) > 0 && !baseline && (
-              <p>
-                Prototype can use {readiness?.unresolved.length} unresolved
-                assumptions.
-              </p>
-            )}
-            {showPrototypeAction && (
+            ) : null}
+            {designBusy ? (
+              <ol className="mt-4 space-y-1.5 text-[0.875rem]" role="status">
+                {DESIGN_PROGRESS.map(([key, en, id]) => {
+                  const current = designJob?.stage === key;
+                  const complete =
+                    DESIGN_PROGRESS.findIndex(
+                      (item) => item[0] === designJob?.stage,
+                    ) > DESIGN_PROGRESS.findIndex((item) => item[0] === key);
+                  return (
+                    <li
+                      key={key}
+                      className={
+                        complete || current
+                          ? "text-foreground"
+                          : "text-muted-foreground"
+                      }
+                    >
+                      <span className="mr-2" aria-hidden="true">
+                        {complete ? "✓" : current ? "●" : "○"}
+                      </span>
+                      {language === "id" ? id : en}
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : null}
+            {showPrototypeAction ? (
               <>
                 <button
                   type="button"
-                  className="rf-studio-primary"
+                  className="rf-studio-primary mt-4"
                   disabled={!effectivePackageReady || designBusy}
                   onClick={() => void generate()}
                 >
                   {prototypeActionLabel}
                 </button>
-                <p className="text-xs leading-5 text-muted-foreground">
+                <p className="mt-2 max-w-[42ch] text-[0.75rem] leading-5 text-muted-foreground">
                   {language === "id"
-                    ? "Opsional — buat referensi visual interaktif berdasarkan Product Truth dan Screen Map."
-                    : "Optional — create an interactive visual reference based on Product Truth and the Screen Map."}
+                    ? "Opsional. Prototype menjadi referensi visual dari PRD, User Flows, Screen Map, dan Design Brief."
+                    : "Optional. The prototype uses the PRD, User Flows, Screen Map, and Design Brief as inputs."}
                 </p>
               </>
-            )}
-            {designJob && ["QUEUED", "RUNNING"].includes(designJob.status) && (
-              <p role="status">{designJob.stageLabel}</p>
-            )}
-            {!effectivePackageReady && (
-              <p className="text-xs text-muted-foreground">
-                {language === "id"
-                  ? "Buat Product Package dulu sebelum prototype."
-                  : "Build the Product Package before creating a prototype."}
+            ) : null}
+            {designJob && ["QUEUED", "RUNNING"].includes(designJob.status) ? (
+              <p className="rf-progress-row" role="status">
+                <span className="rf-pulse-dot" />
+                {designJob.stageLabel}
               </p>
-            )}
-            {stage && <p>{stage}</p>}
+            ) : null}
+            {!effectivePackageReady ? (
+              <p className="mt-3 text-[0.75rem] text-muted-foreground">
+                {language === "id"
+                  ? "Product Draft yang belum lengkap tetap bisa dipreview. Asumsi yang belum jelas akan ditampilkan."
+                  : "An incomplete Product Draft can still start a preview. Unresolved assumptions stay visible."}
+              </p>
+            ) : null}
+            {stage ? <p className="rf-progress-row">{stage}</p> : null}
           </div>
         ) : (
           <div className="rf-studio-frame-wrap">
@@ -426,9 +456,6 @@ export function DesignStudio({
         {studio?.stale && (
           <p>Design needs review. Affected: {studio.staleScreens.join(", ")}</p>
         )}
-        {studio?.debt.count ? (
-          <p>Design Debt {studio.debt.count} unresolved design decisions</p>
-        ) : null}
         <ol className="rf-studio-versions">
           {studio?.revisions.map((revision) => (
             <li key={revision.version}>

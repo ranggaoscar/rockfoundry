@@ -22,8 +22,13 @@ import {
 import { SettingsPanel, useProviderStatus } from "@/components/settings-panel";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { DesignStudio } from "@/components/design-studio";
+import { ProductDocuments } from "@/components/product-documents";
 import { humanTopicLabel } from "@/lib/topic-label";
-
+import { safeConversationFailureMessage } from "@/lib/ai-error-messages";
+import { buildProjectWebMcpContext } from "@/lib/webmcp-project-context";
+import { generateDesignPreviewThroughWebMcp } from "@/lib/webmcp-design-preview";
+import { refineProductThroughConversation } from "@/lib/webmcp-refine-product";
+import type { ProjectStage } from "@/components/workspace-sidebar";
 type ProjectData = {
   id: string;
   name: string;
@@ -65,6 +70,12 @@ type Message = {
   topic?: string;
   category?: string;
   createdAt?: string;
+  requestId?: string;
+  userMessageId?: string;
+  conversationTurnId?: string;
+  turnStatus?: string;
+  turnError?: string;
+  retryable?: boolean;
   collapsed?: boolean;
 };
 type Activity = {
@@ -76,10 +87,26 @@ type Activity = {
   failureReason?: string | null;
 };
 type Drawer = "context" | "documents" | "settings" | null;
-type WorkspaceSurface = "discover" | "map" | "design" | "handoff";
-type PackageEligibility = {
-  canBuildPackage: boolean;
-  packageBlockers: string[];
+type Workbench = "documents" | "design" | null;
+
+type WebMcpTool = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations?: { readOnlyHint?: boolean };
+  execute: (
+    input: Record<string, unknown>,
+    options: { signal: AbortSignal },
+  ) => Promise<string> | string;
+};
+
+type WebMcpDocument = Document & {
+  modelContext?: {
+    registerTool: (
+      tool: WebMcpTool,
+      options: { signal: AbortSignal },
+    ) => Promise<void>;
+  };
 };
 
 const PACKAGE_PROGRESS_STAGES = [
@@ -105,8 +132,8 @@ function initialMessages(project: ProjectData): Message[] {
         role: "assistant",
         text: indo ? "Mau bikin apa?" : "What do you want to build?",
         detail: indo
-          ? "Ceritakan idenya dengan bahasa biasa. Gua akan munculkan keputusan tersembunyi yang biasanya ditebak coding agent — baru kita selesaikan Decision Debt sebelum handoff."
-          : "Tell me the idea in plain language. I’ll surface the hidden decisions a coding agent would otherwise invent — then we’ll pay down Decision Debt before handoff.",
+          ? "Ceritakan idenya dengan bahasa biasa. Setelah beberapa jawaban penting, kita susun Product Draft pertama dengan asumsi dan open question yang tetap terlihat."
+          : "Tell me the idea in plain language. After a few meaningful answers, we’ll create a first Product Draft with assumptions and open questions kept visible.",
       },
     ];
   return [{ id: "idea", role: "user", text: idea }];
@@ -119,14 +146,6 @@ function projectStatus(state: any) {
   if (readiness.includes("DRAFT") || readiness.includes("PROTOTYPE"))
     return "Draft only";
   return "Not ready";
-}
-
-function discoverySummary(state: any) {
-  const count = state?.discovery?.importantDecisionsRemaining;
-  if (!state?.discovery?.evaluated || typeof count !== "number")
-    return "Finding missing decisions";
-  if (count === 0) return "Critical decisions locked";
-  return `${count} high-risk decision${count === 1 ? "" : "s"} still open`;
 }
 
 function decisionDebtScore(state: any) {
@@ -172,29 +191,23 @@ function PackageBuildStatus({
   const failed = job.status === "FAILED";
   const queued = job.status === "QUEUED";
   return (
-    <section
-      className="mx-auto mt-10 w-full max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-left"
-      aria-label="Package build status"
-    >
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+    <section className="rf-package-status" aria-label="Final handoff status">
+      <p>
         {failed
-          ? "Pembuatan paket berhenti"
+          ? "Pembuatan final handoff berhenti"
           : queued
-            ? "Paket produk sedang disiapkan"
-            : "Paket produk sedang dibuat"}
+            ? "Final handoff sedang disiapkan"
+            : "Final handoff sedang dibuat"}
       </p>
-      <p className="mt-2 text-sm text-muted-foreground">
+      <p className="mt-1">
         {failed
-          ? job.errorSummary || "Pembuatan paket gagal. Coba lagi."
+          ? job.errorSummary || "Final handoff gagal. Coba lagi."
           : queued
             ? "Menunggu worker..."
             : job.stageLabel}
       </p>
       {!failed && (
-        <ol
-          className="mt-4 space-y-2 text-sm"
-          aria-label="Tahapan pembuatan paket"
-        >
+        <ol aria-label="Tahapan final handoff">
           {PACKAGE_PROGRESS_STAGES.map(([stage, label]) => {
             const complete = job.completedStages.includes(stage);
             const current = !complete && job.stage === stage;
@@ -207,10 +220,7 @@ function PackageBuildStatus({
                     : "text-muted-foreground/70"
                 }
               >
-                <span
-                  className="mr-2 inline-block w-4 text-center"
-                  aria-hidden="true"
-                >
+                <span className="mr-2" aria-hidden="true">
                   {complete ? "✓" : current ? "●" : "○"}
                 </span>
                 {label}
@@ -221,7 +231,7 @@ function PackageBuildStatus({
       )}
       {failed && (
         <button
-          className="rf-primary-button mt-4"
+          className="rf-primary-button mt-3"
           type="button"
           onClick={onRetry}
         >
@@ -246,34 +256,34 @@ function PackageReadyActions({
   const indo = language === "id";
   return (
     <section
-      className="mx-auto mt-8 w-full max-w-3xl rounded-2xl border border-border/70 bg-card/60 p-5 text-left"
-      aria-label={indo ? "Paket produk siap" : "Product package ready"}
+      className="rf-package-status"
+      aria-label={indo ? "Final handoff siap" : "Final handoff ready"}
     >
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
-        {indo ? "PAKET PRODUK SIAP" : "PRODUCT PACKAGE READY"}
+      <p className="text-foreground">
+        {indo ? "Final handoff siap." : "Final handoff is ready."}
       </p>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+      <p className="mt-1">
         {indo
-          ? "Dokumen dan handoff sudah siap ditinjau. Prototype bersifat opsional."
-          : "The documents and handoff are ready to review. The prototype is optional."}
+          ? "Artifact terbaru dan referensi design sudah bisa diunduh."
+          : "The latest artifacts and design references are ready to download."}
       </p>
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <button
           className="rf-primary-button"
           type="button"
           onClick={onDownload}
         >
-          Download Handoff
+          Download final handoff
         </button>
         <button
-          className="rf-header-action"
+          className="rf-header-action inline-flex"
           type="button"
           onClick={onProductMap}
         >
-          {indo ? "Lihat Product Map" : "View Product Map"}
+          {indo ? "Lihat documents" : "View documents"}
         </button>
         <button
-          className="rf-header-action"
+          className="rf-header-action inline-flex"
           type="button"
           onClick={onPrototype}
         >
@@ -284,16 +294,39 @@ function PackageReadyActions({
   );
 }
 
-function packageEligibilityFromResponse(data: any): PackageEligibility | null {
-  if (typeof data?.canBuildPackage !== "boolean") return null;
-  return {
-    canBuildPackage: data.canBuildPackage,
-    packageBlockers: Array.isArray(data.packageBlockers)
-      ? data.packageBlockers.filter(
-          (item: unknown): item is string => typeof item === "string",
-        )
-      : [],
-  };
+function isDesignIntent(text: string) {
+  return /\b(buat design|bikin design|generate design|buat prototype|bikin prototype)\b/i.test(
+    text,
+  );
+}
+
+function projectStageFromState(state: unknown): ProjectStage {
+  if (!state || typeof state !== "object") return "idea";
+  const record = state as Record<string, unknown>;
+  const studio =
+    record.studio && typeof record.studio === "object"
+      ? (record.studio as Record<string, unknown>)
+      : null;
+  if (typeof studio?.currentVersion === "number" && studio.currentVersion > 0) {
+    return "design";
+  }
+  if (Array.isArray(record.decisions) && record.decisions.length > 0) {
+    return "spec";
+  }
+  if (record.readiness) return "spec";
+  return "idea";
+}
+
+function thinkingCopy(elapsed: number, indo: boolean) {
+  if (elapsed < 4) {
+    return indo ? "Memahami idemu" : "Understanding your idea";
+  }
+  if (elapsed < 10) {
+    return indo
+      ? "Menemukan asumsi penting"
+      : "Identifying important assumptions";
+  }
+  return indo ? "Memikirkan alur kerjanya" : "Thinking through the workflow";
 }
 
 export default function ProjectWorkspace({
@@ -310,14 +343,19 @@ export default function ProjectWorkspace({
   const [references, setReferences] = useState<Reference[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [drawer, setDrawer] = useState<Drawer>(null);
-  const [surface, setSurface] = useState<WorkspaceSurface>("discover");
+  const [workbench, setWorkbench] = useState<Workbench>(null);
+  const [draftGenerationRequestId, setDraftGenerationRequestId] = useState(0);
+  const [draftGenerationInFlight, setDraftGenerationInFlight] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [retryingTurnId, setRetryingTurnId] = useState<string | null>(null);
+  const [initialTurnStatus, setInitialTurnStatus] = useState<
+    "IDLE" | "RUNNING" | "COMPLETED" | "FAILED"
+  >("IDLE");
+  const [initialTurnError, setInitialTurnError] = useState("");
   const [thinkingElapsedSec, setThinkingElapsedSec] = useState(0);
   const [pageError, setPageError] = useState("");
   const [exportReady, setExportReady] = useState(false);
-  const [packageEligibility, setPackageEligibility] =
-    useState<PackageEligibility | null>(null);
   const [prototypeLaunchRequested, setPrototypeLaunchRequested] =
     useState(false);
   const [packageJob, setPackageJob] = useState<{
@@ -332,11 +370,45 @@ export default function ProjectWorkspace({
   const [renaming, setRenaming] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState("");
   const [recentProjects, setRecentProjects] = useState<
-    Array<{ id: string; name: string; updatedAt?: string }>
+    Array<{
+      id: string;
+      name: string;
+      updatedAt?: string;
+      stage?: ProjectStage;
+    }>
   >([]);
   const [navOpen, setNavOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
-  const answeringRef = useRef(false);
+  const pendingDesignRef = useRef(false);
+  const initialTurnStartedRef = useRef(false);
+  const activeConversationRef = useRef<{
+    controller: AbortController;
+    generation: number;
+  } | null>(null);
+  const conversationGenerationRef = useRef(0);
+  const projectRef = useRef<ProjectData | null>(null);
+  const draftStartRef = useRef<() =>
+    | { status: "running" | "already_running" | "failed"; message: string }
+    | undefined
+  >(() => undefined);
+  const refineProductRef = useRef<
+    (input: Record<string, unknown>, signal: AbortSignal) => Promise<string>
+  >(async () =>
+    JSON.stringify({
+      status: "failed",
+      assistantSummary: "Project context is not available yet.",
+      draftMayNeedRefresh: false,
+    }),
+  );
+  const designPreviewRef = useRef<
+    (signal: AbortSignal) => Promise<string>
+  >(async () =>
+    JSON.stringify({
+      status: "failed",
+      message: "Project context is not available yet.",
+    }),
+  );
   const provider = useProviderStatus();
 
   const fetchProject = useCallback(async (id: string) => {
@@ -349,9 +421,7 @@ export default function ProjectWorkspace({
       );
     const data = await response.json();
     setProject(data.project);
-    setExportReady(
-      Boolean(data.project.canonicalState?.studio?.currentVersion > 0),
-    );
+    setExportReady(false);
     setActivity(data.activity || []);
     setMessages(
       data.messages?.length
@@ -361,10 +431,169 @@ export default function ProjectWorkspace({
     return data.project as ProjectData;
   }, []);
 
+  const refineProduct = useCallback(
+    async (input: Record<string, unknown>, signal: AbortSignal) => {
+      const currentProject = projectRef.current;
+      if (!currentProject || currentProject.id !== projectId)
+        return JSON.stringify({
+          status: "failed",
+          assistantSummary: "Project context is not available yet.",
+          draftMayNeedRefresh: false,
+        });
+      return JSON.stringify(
+        await refineProductThroughConversation({
+          projectId: currentProject.id,
+          instruction: input.instruction,
+          previousState: currentProject.canonicalState,
+          signal,
+          refreshProject: fetchProject,
+        }),
+      );
+    },
+    [fetchProject, projectId],
+  );
+
+  const generateDesignPreview = useCallback(
+    async (signal: AbortSignal) => {
+      const currentProject = projectRef.current;
+      if (!currentProject || currentProject.id !== projectId)
+        return JSON.stringify({
+          status: "failed",
+          message: "Project context is not available yet.",
+        });
+      return JSON.stringify(
+        await generateDesignPreviewThroughWebMcp({
+          projectId: currentProject.id,
+          signal,
+          showDesignWorkbench: () => {
+            pendingDesignRef.current = false;
+            setPrototypeLaunchRequested(false);
+            setWorkbench("design");
+          },
+        }),
+      );
+    },
+    [projectId],
+  );
+
+  const runInitialTurn = useCallback(
+    async (id: string, rawIdea: string, retry = false) => {
+      if (!rawIdea.trim()) return;
+      setInitialTurnError("");
+      setInitialTurnStatus("RUNNING");
+      setWorking(true);
+      try {
+        const response = await fetch(`/api/projects/${id}/extract`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rawIdea: rawIdea.trim(), retry }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+              "RockFoundry couldn't reach the configured AI provider. Retry or open Provider Settings.",
+          );
+        }
+        if (data.state && typeof data.version === "number") {
+          setProject((current) =>
+            current
+              ? {
+                  ...current,
+                  canonicalState: data.state,
+                  version: data.version,
+                }
+              : current,
+          );
+        }
+        setInitialTurnStatus(
+          data.status === "RUNNING"
+            ? "RUNNING"
+            : data.status === "FAILED"
+              ? "FAILED"
+              : "COMPLETED",
+        );
+        if (typeof data.message === "string" && data.message.trim()) {
+          setMessages((current) =>
+            current.some((message) => message.role === "assistant")
+              ? current
+              : [
+                  ...current,
+                  {
+                    id: `initial-assistant-${Date.now()}`,
+                    role: "assistant",
+                    text: data.message,
+                  },
+                ],
+          );
+        } else if (data.status === "RUNNING") {
+          const refreshed = await fetchProject(id);
+          setInitialTurnStatus(
+            refreshed.canonicalState?.generationMetadata?.initialConversation
+              ?.status === "COMPLETED"
+              ? "COMPLETED"
+              : "RUNNING",
+          );
+        }
+      } catch (cause) {
+        const message =
+          cause instanceof Error
+            ? cause.message
+            : "RockFoundry couldn't reach the configured AI provider. Retry or open Provider Settings.";
+        setInitialTurnStatus("FAILED");
+        setInitialTurnError(message);
+      } finally {
+        setWorking(false);
+      }
+    },
+    [fetchProject],
+  );
+
   useEffect(() => {
+    let cancelled = false;
     params.then(({ id }) => {
+      if (cancelled) return;
       setProjectId(id);
       fetchProject(id)
+        .then(async (loaded) => {
+          if (cancelled) return;
+          const statusResponse = await fetch(`/api/projects/${id}/extract`);
+          const status = statusResponse.ok
+            ? await statusResponse.json().catch(() => null)
+            : null;
+          if (cancelled) return;
+          if (status?.status === "COMPLETED") {
+            setInitialTurnStatus("COMPLETED");
+            if (typeof status.message === "string") {
+              setMessages((current) =>
+                current.some((message) => message.role === "assistant")
+                  ? current
+                  : [
+                      ...current,
+                      {
+                        id: `initial-assistant-${Date.now()}`,
+                        role: "assistant",
+                        text: status.message,
+                      },
+                    ],
+              );
+            }
+          } else if (
+            !initialTurnStartedRef.current &&
+            status?.status !== "FAILED"
+          ) {
+            initialTurnStartedRef.current = true;
+            void runInitialTurn(
+              id,
+              loaded.description || loaded.canonicalState?.rawIdea || "",
+            );
+          } else if (status?.status === "FAILED") {
+            setInitialTurnStatus("FAILED");
+            setInitialTurnError(
+              "RockFoundry belum berhasil memahami ide ini. Coba lagi atau buka Provider Settings.",
+            );
+          }
+        })
         .catch((cause) =>
           setPageError(
             cause instanceof Error
@@ -372,9 +601,62 @@ export default function ProjectWorkspace({
               : "RockFoundry couldn't load this project.",
           ),
         )
-        .finally(() => setLoading(false));
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
     });
-  }, [fetchProject, params]);
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchProject, params, runInitialTurn]);
+
+  useEffect(() => {
+    if (!projectId || initialTurnStatus !== "RUNNING") return;
+    let cancelled = false;
+    const poll = window.setInterval(async () => {
+      const response = await fetch(`/api/projects/${projectId}/extract`);
+      if (!response.ok || cancelled) return;
+      const status = await response.json().catch(() => null);
+      if (cancelled || !status) return;
+      if (status.status === "COMPLETED") {
+        setInitialTurnStatus("COMPLETED");
+        if (typeof status.message === "string") {
+          setMessages((current) =>
+            current.some((message) => message.role === "assistant")
+              ? current
+              : [
+                  ...current,
+                  {
+                    id: `initial-assistant-${Date.now()}`,
+                    role: "assistant",
+                    text: status.message,
+                  },
+                ],
+          );
+        }
+        if (status.state && typeof status.version === "number") {
+          setProject((current) =>
+            current
+              ? {
+                  ...current,
+                  canonicalState: status.state,
+                  version: status.version,
+                }
+              : current,
+          );
+        }
+      } else if (status.status === "FAILED") {
+        setInitialTurnStatus("FAILED");
+        setInitialTurnError(
+          "RockFoundry belum berhasil memahami ide ini. Coba lagi atau buka Provider Settings.",
+        );
+      }
+    }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [initialTurnStatus, projectId]);
 
   useEffect(() => {
     let active = true;
@@ -388,6 +670,7 @@ export default function ProjectWorkspace({
               id: string;
               name: string;
               updatedAt?: string;
+              canonicalState?: unknown;
             }>
           )
             .slice(0, 8)
@@ -395,6 +678,7 @@ export default function ProjectWorkspace({
               id: item.id,
               name: item.name,
               updatedAt: item.updatedAt,
+              stage: projectStageFromState(item.canonicalState),
             })),
         );
       })
@@ -405,46 +689,6 @@ export default function ProjectWorkspace({
       active = false;
     };
   }, [projectId]);
-
-  const fetchQuestion = useCallback(async () => {
-    if (!projectId) return;
-    const response = await fetch(`/api/projects/${projectId}/questions`);
-    if (!response.ok) return;
-    const data = await response.json();
-    setQuestion(data.questions?.[0] || null);
-    const eligibility = packageEligibilityFromResponse(data);
-    if (eligibility) setPackageEligibility(eligibility);
-    if (data.readiness || data.decisionDebt) {
-      setProject((current) =>
-        current
-          ? {
-              ...current,
-              canonicalState: {
-                ...current.canonicalState,
-                ...(data.readiness
-                  ? {
-                      readiness: data.readiness.level,
-                      readinessScore: data.readiness.score,
-                      readinessBreakdown: data.readiness.breakdown,
-                    }
-                  : {}),
-                ...(data.decisionDebt
-                  ? { decisionDebt: data.decisionDebt }
-                  : {}),
-                discovery: data.discovery || current.canonicalState.discovery,
-              },
-            }
-          : current,
-      );
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchQuestion();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [fetchQuestion]);
 
   const fetchReferences = useCallback(async () => {
     if (!projectId) return;
@@ -478,18 +722,17 @@ export default function ProjectWorkspace({
     };
   }, [working]);
 
-  const thinkingStatus =
-    !working || thinkingElapsedSec < 10
-      ? "Agent is thinking..."
-      : thinkingElapsedSec < 30
-        ? "This is a big idea. I need to think a little deeper — please wait..."
-        : "Still thinking through the important decisions...";
-
   const state = project?.canonicalState || {};
   const indo = isIndonesianProject(state);
-  const debtScore = decisionDebtScore(state);
-  const canBuildPackage = packageEligibility?.canBuildPackage === true;
-  const packageBlockers = packageEligibility?.packageBlockers || [];
+  const thinkingStatus = thinkingCopy(thinkingElapsedSec, indo);
+  const initialTurnWorking = initialTurnStatus === "RUNNING";
+  const packageReady = Boolean(
+    exportReady || packageJob?.status === "COMPLETED",
+  );
+  const draftAvailable = Boolean(
+    state.rawIdea?.trim() || state.normalizedSummary?.trim(),
+  );
+  const designReady = packageReady || draftAvailable;
 
   const visibleMessages = useMemo(() => {
     if (
@@ -521,370 +764,348 @@ export default function ProjectWorkspace({
     });
   }, [visibleMessages.length, working]);
 
-  async function runExtraction(rawIdea: string) {
-    if (!projectId || !rawIdea.trim()) return;
-    setWorking(true);
-    setPageError("");
-    setMessages((current) =>
-      current.some(
-        (message) => message.role === "user" && message.text === rawIdea.trim(),
-      )
-        ? current
-        : [
-            ...current,
-            { id: `user-${Date.now()}`, role: "user", text: rawIdea.trim() },
-          ],
-    );
-    try {
-      const response = await fetch(`/api/projects/${projectId}/extract`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawIdea: rawIdea.trim() }),
-      });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "RockFoundry couldn't analyze that idea.",
-        );
-      setProject((current) =>
-        current
-          ? {
-              ...current,
-              canonicalState: data.state,
-              version: data.version,
-              description: rawIdea.trim(),
-            }
-          : current,
-      );
-      const eligibility = packageEligibilityFromResponse(data);
-      if (eligibility) setPackageEligibility(eligibility);
-      const nextQuestion = data.question || null;
-      setQuestion(nextQuestion);
-      if (nextQuestion) {
-        setMessages((current) => [
-          ...current,
-          {
-            id: `question-${nextQuestion.id}`,
-            role: "assistant",
-            text: nextQuestion.text,
-            detail: nextQuestion.reasonAsked,
-            options: nextQuestion.options,
-            recommendation: nextQuestion.recommendation,
-            questionId: nextQuestion.id,
-            topic: nextQuestion.topic,
-            category: nextQuestion.category,
-          },
-        ]);
-      }
-    } catch (cause) {
-      setPageError(
-        cause instanceof Error
-          ? cause.message
-          : "RockFoundry couldn't analyze that idea.",
-      );
-      setMessages((current) => [
-        ...current,
-        {
-          id: `error-${Date.now()}`,
-          role: "system",
-          text: "I couldn't update the project yet. You can retry without losing the conversation.",
-        },
-      ]);
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  async function sendMessage(event?: FormEvent) {
+  async function sendMessage(event?: FormEvent, directText?: string) {
     event?.preventDefault();
-    const text = composer.trim();
-    if (!text || working) return;
+    const submittedText = (directText ?? composer).trim();
+    if (!submittedText || working || initialTurnStatus === "RUNNING") return;
     setComposer("");
-    if (!project?.description) {
-      await runExtraction(text);
-      return;
-    }
+    const optimisticId = `user-${crypto.randomUUID()}`;
+    const controller = new AbortController();
+    const generation = conversationGenerationRef.current + 1;
+    conversationGenerationRef.current = generation;
+    activeConversationRef.current = { controller, generation };
+    const isCurrent = () =>
+      activeConversationRef.current?.generation === generation;
+    setMessages((current) => [
+      ...current,
+      { id: optimisticId, role: "user", text: submittedText },
+    ]);
     setWorking(true);
     try {
+      const requestId = crypto.randomUUID();
       const response = await fetch(`/api/projects/${projectId}/conversation`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          question?.answerType === "FREE_TEXT"
-            ? { text, explicitQuestionId: question.id }
-            : { text },
-        ),
+        headers: {
+          "Content-Type": "application/json",
+          "x-conversation-request-id": requestId,
+        },
+        body: JSON.stringify({ text: submittedText }),
+        signal: controller.signal,
       });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "RockFoundry couldn't process that message.",
+      if (!isCurrent()) return;
+      const data = await response.json().catch(() => ({}));
+      if (!isCurrent()) return;
+      if (response.status === 202 || data.turn?.status === "RUNNING") {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === optimisticId
+              ? {
+                  ...message,
+                  userMessageId: data.userMessageId || message.userMessageId,
+                  conversationTurnId:
+                    data.turn?.id || message.conversationTurnId,
+                  turnStatus: "RUNNING",
+                  retryable: false,
+                }
+              : message,
+          ),
         );
-      if (
-        data.intent === "ACTIVE_DECISION_ANSWER" &&
-        data.answer &&
-        data.questionId
-      ) {
-        setWorking(false);
-        await answerQuestion(data.answer, data.questionId);
         return;
+      }
+      if (!response.ok) {
+        const retryFailureMessage = safeConversationFailureMessage(data.error);
+        if (data.retryable && data.userMessageId) {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === optimisticId
+                ? {
+                    ...message,
+                    userMessageId: data.userMessageId,
+                    conversationTurnId: data.turn?.id,
+                    turnStatus: "FAILED",
+                    turnError: retryFailureMessage,
+                    retryable: true,
+                  }
+                : message,
+            ),
+          );
+        }
+        throw new Error(
+          data.retryable
+            ? retryFailureMessage
+            : data.error || "RockFoundry couldn't process that message.",
+        );
       }
       setProject((current) =>
         current
           ? { ...current, canonicalState: data.state, version: data.version }
           : current,
       );
-      const eligibility = packageEligibilityFromResponse(data);
-      if (eligibility) setPackageEligibility(eligibility);
-      const nextQuestion = data.question || null;
-      setQuestion(nextQuestion);
+      setQuestion(null);
+      const quickReplies = Array.isArray(data.quickReplies)
+        ? data.quickReplies
+            .filter(
+              (item: unknown): item is { label: string; value?: string } =>
+                item !== null &&
+                typeof item === "object" &&
+                "label" in item &&
+                typeof item.label === "string",
+            )
+            .map((item: { label: string; value?: string }) => ({
+              id: item.value || item.label,
+              label: item.label,
+            }))
+        : [];
       setMessages((current) => [
-        ...current,
-        { id: `user-${Date.now()}`, role: "user", text },
-        ...(nextQuestion
-          ? [
-              {
-                id: `question-${nextQuestion.id}-${Date.now()}`,
-                role: "assistant" as const,
-                text: nextQuestion.text,
-                detail: nextQuestion.reasonAsked,
-                options: nextQuestion.options,
-                recommendation: nextQuestion.recommendation,
-                questionId: nextQuestion.id,
-                topic: nextQuestion.topic,
-                category: nextQuestion.category,
-              },
-            ]
-          : []),
+        ...current.filter((message) => message.id !== optimisticId),
+        {
+          id: data.userMessageId || optimisticId,
+          role: "user",
+          text: submittedText,
+          requestId: data.requestId || requestId,
+          userMessageId: data.userMessageId,
+          conversationTurnId: data.turn?.id,
+          turnStatus: data.turn?.status,
+        },
+        {
+          id: `assistant-${crypto.randomUUID()}`,
+          role: "assistant",
+          text:
+            typeof data.message === "string"
+              ? data.message
+              : "RockFoundry updated the product context.",
+          options: quickReplies.length ? quickReplies : undefined,
+        },
       ]);
+      if (isDesignIntent(submittedText)) {
+        pendingDesignRef.current = false;
+        setWorkbench("design");
+        setPrototypeLaunchRequested(true);
+      }
       await fetchReferences();
     } catch (cause) {
+      if (!isCurrent() || controller.signal.aborted) return;
       setPageError(
         cause instanceof Error
           ? cause.message
           : "RockFoundry couldn't process that message.",
       );
     } finally {
+      if (!isCurrent()) return;
+      activeConversationRef.current = null;
       setWorking(false);
     }
   }
 
-  async function reviseDecision(topic: string) {
-    if (!projectId || !topic || working) return;
+  async function retryMessage(message: Message) {
+    const userMessageId = message.userMessageId || message.id;
+    if (!projectId || !userMessageId || working || retryingTurnId) return;
+    setPageError("");
+    setRetryingTurnId(message.conversationTurnId || userMessageId);
     setWorking(true);
-    setDrawer(null);
     try {
-      const response = await fetch(`/api/projects/${projectId}/questions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "revise", topic }),
-      });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "RockFoundry couldn't open that decision for revision.",
-        );
-      setProject((current) =>
-        current
-          ? { ...current, canonicalState: data.state, version: data.version }
-          : current,
-      );
-      const eligibility = packageEligibilityFromResponse(data);
-      if (eligibility) setPackageEligibility(eligibility);
-      const nextQuestion = data.question || null;
-      setQuestion(nextQuestion);
-      if (nextQuestion) {
-        setMessages((current) => [
-          ...current,
-          {
-            id: `revise-${nextQuestion.id}-${Date.now()}`,
-            role: "assistant",
-            text: nextQuestion.text,
-            detail:
-              nextQuestion.reasonAsked ||
-              "Revise this decision. The previous answer will be marked superseded.",
-            options: nextQuestion.options,
-            recommendation: nextQuestion.recommendation,
-            questionId: nextQuestion.id,
-            topic: nextQuestion.topic,
-            category: nextQuestion.category,
-          },
-        ]);
-      }
-    } catch (cause) {
-      setPageError(
-        cause instanceof Error
-          ? cause.message
-          : "RockFoundry couldn't open that decision for revision.",
-      );
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  async function answerQuestion(
-    option: QuestionOption | string,
-    questionIdFromMessage?: string,
-  ) {
-    const activeQuestionId = questionIdFromMessage || question?.id;
-    if (!projectId || !activeQuestionId || working || answeringRef.current)
-      return;
-    if (
-      question &&
-      questionIdFromMessage &&
-      questionIdFromMessage !== question.id
-    )
-      return;
-    answeringRef.current = true;
-    const answer = typeof option === "string" ? option : option.id;
-    setWorking(true);
-    setMessages((current) => [
-      ...current,
-      {
-        id: `answer-${Date.now()}`,
-        role: "user",
-        text: typeof option === "string" ? option : option.label,
-      },
-    ]);
-    try {
-      const response = await fetch(`/api/projects/${projectId}/questions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: activeQuestionId, answer }),
-      });
-      const data = await response.json();
-      if (response.status === 409) {
-        await fetchQuestion();
-        return;
-      }
-      if (!response.ok)
-        throw new Error(
-          data.error || "RockFoundry couldn't save that decision.",
-        );
-      setProject((current) =>
-        current
-          ? { ...current, canonicalState: data.state, version: data.version }
-          : current,
-      );
-      const eligibility = packageEligibilityFromResponse(data);
-      if (eligibility) setPackageEligibility(eligibility);
-      const nextQuestion = data.question || null;
-      setQuestion(nextQuestion);
-      const affects = Array.isArray(data.decision?.affects)
-        ? data.decision.affects.filter(Boolean)
-        : [];
-      const impactLines: Message[] = [];
-      const impactHeadline =
-        typeof data.impact?.headline === "string"
-          ? data.impact.headline
-          : affects.length
-            ? `Locked. This decision affects ${affects.join(", ")}.`
-            : "Decision recorded.";
-      const impactDetailParts = [
-        typeof data.impact?.detail === "string" ? data.impact.detail : "",
-      ].filter(Boolean);
-      if (data.decision || data.impact) {
-        impactLines.push({
-          id: `impact-${data.decision?.id || activeQuestionId}`,
-          role: "assistant",
-          text: impactHeadline,
-          detail: impactDetailParts.join(" ") || undefined,
-        });
-      }
-      if (nextQuestion && nextQuestion.id !== question?.id) {
-        setMessages((current) => [
-          ...current,
-          ...impactLines,
-          {
-            id: `question-${nextQuestion.id}`,
-            role: "assistant",
-            text: nextQuestion.text,
-            detail: nextQuestion.reasonAsked,
-            options: nextQuestion.options,
-            recommendation: nextQuestion.recommendation,
-            questionId: nextQuestion.id,
-            topic: nextQuestion.topic,
-            category: nextQuestion.category,
-          },
-        ]);
-      } else if (!nextQuestion) {
-        setMessages((current) => [
-          ...current,
-          ...impactLines,
-          {
-            id: `readiness-${activeQuestionId}`,
-            role: "assistant",
-            text: "No critical blockers remain. The current decisions are enough to draft the build documents.",
-          },
-        ]);
-      } else if (impactLines.length) {
-        setMessages((current) => [...current, ...impactLines]);
-      }
-    } catch (cause) {
-      setPageError(
-        cause instanceof Error
-          ? cause.message
-          : "RockFoundry couldn't save that decision.",
-      );
-    } finally {
-      answeringRef.current = false;
-      setWorking(false);
-    }
-  }
-
-  async function addReferenceFromMessage(text: string) {
-    const url = text.match(/https?:\/\/[^\s)]+/)?.[0];
-    if (!url || !projectId || working) return false;
-    setWorking(true);
-    setMessages((current) => [
-      ...current,
-      { id: `user-${Date.now()}`, role: "user", text },
-      {
-        id: `tool-${Date.now()}`,
-        role: "tool",
-        text: `Inspecting ${new URL(url).hostname}...`,
-        detail: "Public reference content is treated as untrusted evidence.",
-      },
-    ]);
-    try {
-      const type = url.includes("github.com/") ? "GITHUB_REPO" : "URL";
-      const response = await fetch(`/api/projects/${projectId}/references`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, url }),
-      });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "RockFoundry couldn't inspect that reference.",
-        );
-      setReferences((current) => [data.reference, ...current]);
-      setMessages((current) => [
-        ...current,
+      const response = await fetch(
+        `/api/projects/${projectId}/conversation/retry`,
         {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          text: "Reference added as evidence. Its interaction patterns stay separate from the product rules you still need to decide.",
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userMessageId }),
         },
-      ]);
-      return true;
-    } catch (cause) {
-      setPageError(
-        cause instanceof Error
-          ? cause.message
-          : "RockFoundry couldn't inspect that reference.",
       );
-      return false;
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Retry failed.");
+      setProject((current) =>
+        current
+          ? { ...current, canonicalState: data.state, version: data.version }
+          : current,
+      );
+      await fetchProject(projectId);
+    } catch (cause) {
+      setPageError(cause instanceof Error ? cause.message : "Retry failed.");
     } finally {
+      setRetryingTurnId(null);
       setWorking(false);
     }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = composer.trim();
     await sendMessage();
   }
+
+  function buildProductDraft() {
+    if (!projectId || !project || project.id !== projectId)
+      return { status: "failed" as const, message: "Project context is not available yet." };
+    if (
+      !project.canonicalState?.rawIdea?.trim() &&
+      !project.canonicalState?.normalizedSummary?.trim()
+    )
+      return {
+        status: "failed" as const,
+        message: "Add a product idea before generating a Product Draft.",
+      };
+    if (working)
+      return { status: "failed" as const, message: "RockFoundry is processing a conversation update. Try again when it finishes." };
+    if (draftGenerationInFlight)
+      return { status: "already_running" as const, message: "Product Draft generation is already running in the Documents workbench." };
+    setPageError("");
+    setDraftGenerationInFlight(true);
+    setWorkbench("documents");
+    setDraftGenerationRequestId((current) => current + 1);
+    return { status: "running" as const, message: "Product Draft generation started. The Documents workbench is showing its normal progress." };
+  }
+
+  useEffect(() => {
+    projectRef.current = project;
+    draftStartRef.current = buildProductDraft;
+    refineProductRef.current = refineProduct;
+    designPreviewRef.current = generateDesignPreview;
+  });
+
+  useEffect(() => {
+    const modelContext = (document as WebMcpDocument).modelContext;
+    if (!modelContext || !projectId) return;
+
+    const controller = new AbortController();
+    const inputSchema = {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    };
+    const refineProductInputSchema = {
+      type: "object",
+      properties: {
+        instruction: {
+          type: "string",
+          minLength: 1,
+          maxLength: 5000,
+        },
+      },
+      required: ["instruction"],
+      additionalProperties: false,
+    };
+
+    const registerTools = async () => {
+      try {
+        await modelContext.registerTool(
+          {
+            name: "rockfoundry_inspect_project",
+            description:
+              "Read the current RockFoundry project, Product Draft, Screen Map, design status, open questions, and unresolved assumptions.",
+            inputSchema,
+            annotations: { readOnlyHint: true },
+            execute: async (_input, { signal }) => {
+              const currentProject = projectRef.current;
+              if (!currentProject || currentProject.id !== projectId)
+                return JSON.stringify({
+                  status: "failed",
+                  message: "Project context is not available yet.",
+                });
+              try {
+                const [draftResponse, designResponse] = await Promise.all([
+                  fetch(`/api/projects/${currentProject.id}/documents`, {
+                    signal,
+                  }),
+                  fetch(`/api/projects/${currentProject.id}/design`, {
+                    signal,
+                  }),
+                ]);
+                if (!draftResponse.ok)
+                  throw new Error("Could not load the current Product Draft.");
+                if (!designResponse.ok)
+                  throw new Error("Could not load the current design status.");
+                const [draft, design] = await Promise.all([
+                  draftResponse.json(),
+                  designResponse.json(),
+                ]);
+                return JSON.stringify({
+                  status: "success",
+                  context: buildProjectWebMcpContext({
+                    project: {
+                      ...currentProject,
+                      canonicalState: design.state || currentProject.canonicalState,
+                      version:
+                        typeof design.version === "number"
+                          ? design.version
+                          : currentProject.version,
+                    },
+                    draft: {
+                      generation: draft.generation || null,
+                      currentDraft: draft.currentDraft || null,
+                      latestAttempt: draft.latestAttempt || null,
+                      documents: Array.isArray(draft.documents)
+                        ? draft.documents
+                        : [],
+                      hasCurrentDraft: Boolean(draft.hasCurrentDraft),
+                    },
+                    screenMap: Array.isArray(design.draftScreenMap)
+                      ? design.draftScreenMap
+                      : undefined,
+                    designJob: design.designJob || null,
+                  }),
+                });
+              } catch (cause) {
+                return JSON.stringify({
+                  status: "failed",
+                  message:
+                    cause instanceof Error
+                      ? cause.message
+                      : "Could not inspect the current project.",
+                });
+              }
+            },
+          },
+          { signal: controller.signal },
+        );
+        await modelContext.registerTool(
+          {
+            name: "rockfoundry_generate_product_draft",
+            description:
+              "Start the current project's existing Product Draft flow. The normal Documents workbench continues to show progress.",
+            inputSchema,
+            annotations: { readOnlyHint: false },
+            execute: () =>
+              JSON.stringify(
+                draftStartRef.current() || {
+                  status: "failed",
+                  message: "Product Draft generation could not be started.",
+                },
+              ),
+          },
+          { signal: controller.signal },
+        );
+        await modelContext.registerTool(
+          {
+            name: "rockfoundry_generate_design_preview",
+            description:
+              "Queue the current project's existing Design Preview job when its Product Draft is current. The Design workbench shows the normal progress.",
+            inputSchema,
+            annotations: { readOnlyHint: false },
+            execute: (_input, { signal }) => designPreviewRef.current(signal),
+          },
+          { signal: controller.signal },
+        );
+        await modelContext.registerTool(
+          {
+            name: "rockfoundry_refine_product",
+            description:
+              "Refine the currently open product through RockFoundry's normal conversation flow.",
+            inputSchema: refineProductInputSchema,
+            annotations: { readOnlyHint: false },
+            execute: (input, { signal }) =>
+              refineProductRef.current(input, signal),
+          },
+          { signal: controller.signal },
+        );
+      } catch {
+        controller.abort();
+        // WebMCP is optional. Suppress registration failures outside supported contexts.
+      }
+    };
+
+    void registerTools();
+    return () => controller.abort();
+  }, [projectId]);
 
   async function buildProductPackage() {
     if (
@@ -924,7 +1145,8 @@ export default function ProjectWorkspace({
         setPackageJob(data.job);
         if (data.job.status === "COMPLETED") {
           setExportReady(true);
-          setSurface("design");
+          setWorkbench("design");
+          if (pendingDesignRef.current) setPrototypeLaunchRequested(true);
         }
       })
       .catch(() => undefined);
@@ -946,7 +1168,11 @@ export default function ProjectWorkspace({
       if (data.job.status === "COMPLETED") {
         await fetchProject(projectId);
         setExportReady(true);
-        setSurface("design");
+        setWorkbench("design");
+        if (pendingDesignRef.current) {
+          setPrototypeLaunchRequested(true);
+          pendingDesignRef.current = false;
+        }
         setMessages((current) =>
           current.some((message) => message.id === `package-${data.job.id}`)
             ? current
@@ -955,7 +1181,9 @@ export default function ProjectWorkspace({
                 {
                   id: `package-${data.job.id}`,
                   role: "assistant",
-                  text: "Product package is ready. Review the design, revise it in plain language, then approve and download the handoff.",
+                  text: indo
+                    ? "Handoff final sudah tersusun. Design workbench terbuka di kanan."
+                    : "The final handoff is assembled. The Design workbench is open on the right.",
                 },
               ],
         );
@@ -967,7 +1195,43 @@ export default function ProjectWorkspace({
         );
     }, 1000);
     return () => window.clearInterval(poll);
-  }, [packageJob, projectId]);
+  }, [fetchProject, indo, packageJob, projectId]);
+
+  async function reviseDecision(topic: string) {
+    if (!projectId || !topic || working) return;
+    setWorking(true);
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/questions?revise=${encodeURIComponent(topic)}`,
+      );
+      const data = await response.json();
+      if (!response.ok || !data.questions?.[0])
+        throw new Error("That decision is not available for revision.");
+      const nextQuestion = data.questions[0] as Question;
+      setQuestion(nextQuestion);
+      setMessages((current) => [
+        ...current,
+        {
+          id: `revise-${nextQuestion.id}-${Date.now()}`,
+          role: "assistant",
+          text: nextQuestion.text,
+          detail: nextQuestion.reasonAsked,
+          options: nextQuestion.options,
+          questionId: nextQuestion.id,
+          topic: nextQuestion.topic,
+          category: nextQuestion.category,
+        },
+      ]);
+    } catch (cause) {
+      setPageError(
+        cause instanceof Error
+          ? cause.message
+          : "RockFoundry couldn't open that decision for revision.",
+      );
+    } finally {
+      setWorking(false);
+    }
+  }
 
   async function renameProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1014,11 +1278,19 @@ export default function ProjectWorkspace({
         projects={
           recentProjects.length
             ? recentProjects
-            : [{ id: project.id, name: project.name }]
+            : [
+                {
+                  id: project.id,
+                  name: project.name,
+                  stage: projectStageFromState(state),
+                },
+              ]
         }
         activeProjectId={project.id}
         provider={provider}
         mobileOpen={navOpen}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((current) => !current)}
         onCloseMobile={() => setNavOpen(false)}
         onGoHome={() => {
           setNavOpen(false);
@@ -1036,14 +1308,15 @@ export default function ProjectWorkspace({
       />
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="rf-topbar flex h-14 items-center gap-3 border-b border-border px-4 lg:px-6">
+        <header className="rf-topbar flex min-h-12 items-center gap-2 border-b border-border px-3 py-2 lg:px-5">
           <button
             className="rf-icon-button lg:hidden"
             type="button"
             aria-label="Open projects"
             onClick={() => setNavOpen(true)}
           >
-            <Menu className="size-4" />
+            <Menu className="size-4 shrink-0" />
+            <span className="pointer-fine:hidden absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-1/2" />
           </button>
           <div className="min-w-0 flex-1">
             {renaming ? (
@@ -1069,7 +1342,7 @@ export default function ProjectWorkspace({
             ) : (
               <button
                 type="button"
-                className="rf-project-title truncate text-left text-[16px] font-semibold"
+                className="rf-project-title block max-w-full truncate text-left text-[1rem] font-semibold"
                 onClick={() => {
                   setProjectNameDraft(project.name);
                   setRenaming(true);
@@ -1081,312 +1354,369 @@ export default function ProjectWorkspace({
             )}
             <button
               type="button"
-              className="rf-status-line"
-              onClick={() => setDrawer("context")}
-              title={`${readinessPlainLabel(state)}. Decision Debt is invention risk for coding agents (higher is worse).`}
+              className="rf-status-line hidden sm:block"
+              onClick={() => setWorkbench("documents")}
+              title={
+                draftAvailable
+                  ? "Open the current Product Draft"
+                  : "Open the product idea"
+              }
             >
-              Decision Debt:{" "}
-              {debtScore !== null ? (
-                <span className="tabular-nums">{debtScore}</span>
-              ) : (
-                "—"
-              )}{" "}
-              ·{" "}
-              {indo
-                ? `${state.decisionDebt?.unresolvedHighRiskCount || 0} keputusan penting belum selesai`
-                : discoverySummary(state)}
+              {draftAvailable
+                ? indo
+                  ? "Product draft tersedia"
+                  : "Product draft available"
+                : indo
+                  ? "Ide produk"
+                  : "Product idea"}
             </button>
           </div>
           <button
             className="rf-header-action hidden sm:inline-flex"
             type="button"
-            onClick={() => {
-              setSurface("map");
-              setDrawer("context");
-            }}
+            data-active={workbench === "documents"}
+            onClick={() =>
+              setWorkbench(workbench === "documents" ? null : "documents")
+            }
           >
-            Product Map
+            Documents
           </button>
           <button
             className="rf-header-action hidden sm:inline-flex"
             type="button"
-            onClick={() => {
-              setSurface("design");
-              setDrawer(null);
-            }}
+            data-active={workbench === "design"}
+            onClick={() =>
+              setWorkbench(workbench === "design" ? null : "design")
+            }
           >
             Design
           </button>
           <button
             className="rf-header-action inline-flex"
             type="button"
-            onClick={() => {
-              setSurface("handoff");
-              setDrawer("documents");
-            }}
+            aria-label="Handoff"
+            onClick={() => setDrawer("documents")}
           >
-            <FileText className="size-3.5" /> Handoff
+            <FileText className="size-3.5 shrink-0" />
+            <span className="max-sm:hidden">Handoff</span>
           </button>
         </header>
 
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          {surface === "design" ? (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {packageJob?.status === "COMPLETED" && (
+        <div
+          className="rf-studio-frame relative min-h-0 flex-1"
+          data-workbench={workbench ? "open" : "closed"}
+        >
+          <div className="rf-chat-pane relative flex min-h-0 flex-col">
+            <div
+              ref={conversationRef}
+              className="rf-conversation mx-auto min-h-0 w-full max-w-[46rem] flex-1 overflow-y-auto px-4 pb-64 pt-5 sm:px-7"
+            >
+              {visibleMessages.map((message, index) => {
+                const previous = visibleMessages[index - 1];
+                const hidesAnswer =
+                  message.role === "user" &&
+                  Boolean(previous?.questionId && previous.options?.length);
+                if (hidesAnswer) return null;
+                return (
+                  <MessageRow
+                    key={message.id}
+                    message={message}
+                    language={indo ? "id" : "en"}
+                    nextUserText={
+                      visibleMessages
+                        .slice(index + 1)
+                        .find((item) => item.role === "user")?.text
+                    }
+                    activeQuestionId={question?.id}
+                    working={working}
+                    activityOpen={activityOpen}
+                    onToggleActivity={() =>
+                      setActivityOpen((current) => !current)
+                    }
+                    onAnswer={(option) => {
+                      if (
+                        typeof option === "object" &&
+                        option !== null &&
+                        "retryable" in option &&
+                        option.retryable
+                      ) {
+                        void retryMessage(option as Message);
+                        return;
+                      }
+                      void sendMessage(
+                        undefined,
+                        typeof option === "string"
+                          ? option
+                          : "label" in option
+                            ? option.label
+                            : "",
+                      );
+                    }}
+                  />
+                );
+              })}
+              {working || initialTurnWorking ? (
+                <div className="rf-typing" role="status" aria-live="polite">
+                  <span className="rf-pulse-dot" />
+                  {initialTurnWorking
+                    ? indo
+                      ? "RockFoundry sedang memahami idenya…"
+                      : "RockFoundry is thinking through your idea…"
+                    : thinkingStatus}
+                </div>
+              ) : null}
+              {initialTurnStatus === "FAILED" ? (
+                <div className="rf-error" role="alert">
+                  <span>
+                    {initialTurnError ||
+                      (indo
+                        ? "Respons awal belum berhasil dibuat."
+                        : "The first response could not be generated yet.")}
+                  </span>
+                  <button
+                    className="rf-header-action"
+                    type="button"
+                    onClick={() =>
+                      void runInitialTurn(
+                        project.id,
+                        project.description || state.rawIdea || "",
+                        true,
+                      )
+                    }
+                  >
+                    {indo ? "Coba lagi" : "Retry"}
+                  </button>
+                </div>
+              ) : null}
+              {pageError ? (
+                <div className="rf-error" role="alert">
+                  <span>{pageError}</span>
+                  <button type="button" onClick={() => setPageError("")}>
+                    <X className="size-4 shrink-0" />
+                  </button>
+                </div>
+              ) : null}
+              {packageJob &&
+              !working &&
+              ["QUEUED", "RUNNING", "FAILED"].includes(packageJob.status) ? (
+                <PackageBuildStatus
+                  job={packageJob}
+                  onRetry={() => void buildProductPackage()}
+                />
+              ) : packageJob?.status === "COMPLETED" ? (
                 <PackageReadyActions
                   language={indo ? "id" : "en"}
                   onDownload={() =>
-                    window.location.assign(`/api/projects/${projectId}/export`)
+                    window.location.assign(
+                      `/api/projects/${projectId}/export?mode=handoff`,
+                    )
                   }
-                  onProductMap={() => {
-                    setSurface("map");
-                    setDrawer("context");
-                  }}
+                  onProductMap={() => setWorkbench("documents")}
                   onPrototype={() => {
                     setPrototypeLaunchRequested(true);
-                    setSurface("design");
-                    setDrawer(null);
+                    setWorkbench("design");
                   }}
                 />
-              )}
-              <DesignStudio
-                projectId={project.id}
-                studio={state.studio}
-                packageReady={Boolean(
-                  exportReady || packageJob?.status === "COMPLETED",
-                )}
-                showDownloadHandoff={packageJob?.status !== "COMPLETED"}
-                showPrototypeAction={packageJob?.status !== "COMPLETED"}
-                autoGenerate={prototypeLaunchRequested}
-                onAutoGenerateHandled={() => setPrototypeLaunchRequested(false)}
-                language={indo ? "id" : "en"}
-                onDownloadHandoff={() =>
-                  window.location.assign(`/api/projects/${projectId}/export`)
-                }
-                onState={(nextState, version) =>
-                  setProject((current) =>
-                    current
-                      ? {
-                          ...current,
-                          canonicalState: nextState,
-                          version,
-                        }
-                      : current,
-                  )
-                }
-              />
+              ) : null}
             </div>
-          ) : (
-            <>
-              <div
-                ref={conversationRef}
-                className="rf-conversation mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-y-auto px-4 pb-36 pt-5 sm:px-8 sm:pt-6"
-              >
-                {visibleMessages.map((message, index) => {
-                  const previous = visibleMessages[index - 1];
-                  const hidesAnswer =
-                    message.role === "user" &&
-                    Boolean(previous?.questionId && previous.options?.length);
-                  if (hidesAnswer) return null;
-                  return (
-                    <MessageRow
-                      key={message.id}
-                      message={message}
-                      language={indo ? "id" : "en"}
-                      nextUserText={
-                        visibleMessages
-                          .slice(index + 1)
-                          .find((item) => item.role === "user")?.text
-                      }
-                      activeQuestionId={question?.id}
-                      working={working}
-                      activityOpen={activityOpen}
-                      onToggleActivity={() =>
-                        setActivityOpen((current) => !current)
-                      }
-                      onAnswer={(option) =>
-                        answerQuestion(option, message.questionId)
-                      }
-                    />
-                  );
-                })}
-                {working && (
-                  <div className="rf-typing" role="status" aria-live="polite">
-                    <span className="rf-pulse-dot" /> {thinkingStatus}
-                  </div>
-                )}
-                {pageError && (
-                  <div className="rf-error" role="alert">
-                    <span>{pageError}</span>
-                    <button type="button" onClick={() => setPageError("")}>
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                )}
-                {packageJob &&
-                !working &&
-                ["QUEUED", "RUNNING", "FAILED"].includes(packageJob.status) ? (
-                  <PackageBuildStatus
-                    job={packageJob}
-                    onRetry={() => void buildProductPackage()}
-                  />
-                ) : packageJob?.status === "COMPLETED" ? (
-                  <PackageReadyActions
-                    language={indo ? "id" : "en"}
-                    onDownload={() =>
-                      window.location.assign(
-                        `/api/projects/${projectId}/export`,
-                      )
-                    }
-                    onProductMap={() => {
-                      setSurface("map");
-                      setDrawer("context");
-                    }}
-                    onPrototype={() => {
-                      setPrototypeLaunchRequested(true);
-                      setSurface("design");
-                      setDrawer(null);
-                    }}
-                  />
-                ) : canBuildPackage && !working && !packageJob ? (
-                  <section
-                    className="mx-auto mt-10 max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-center"
-                    aria-label={
-                      indo
-                        ? "Paket produk siap dibuat"
-                        : "Product package ready to build"
-                    }
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
-                      {indo
-                        ? "PAKET PRODUK SIAP DIBUAT"
-                        : "PRODUCT PACKAGE READY TO BUILD"}
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      {indo
-                        ? "Keputusan penting sudah cukup untuk menyusun dokumen dan handoff."
-                        : "The important decisions are sufficient to assemble the documents and handoff."}
-                    </p>
-                    <button
-                      className="rf-primary-button mt-4"
-                      type="button"
-                      onClick={() => void buildProductPackage()}
-                    >
-                      {indo ? "Buat paket produk" : "Build product package"}
-                    </button>
-                  </section>
-                ) : null}
-                {!question &&
-                  !working &&
-                  messages.length > 2 &&
-                  packageEligibility &&
-                  !canBuildPackage &&
-                  !packageJob && (
-                    <section
-                      className="mx-auto mt-10 max-w-md rounded-2xl border border-border/70 bg-card/60 p-5 text-left"
-                      aria-label={
-                        indo
-                          ? "Paket produk belum siap"
-                          : "Product package blocker"
-                      }
-                    >
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground">
-                        {indo
-                          ? "PAKET PRODUK BELUM SIAP"
-                          : "PRODUCT PACKAGE NOT READY"}
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        {indo
-                          ? "Selesaikan blocker berikut sebelum membuat paket produk:"
-                          : "Resolve these blockers before building the product package:"}
-                      </p>
-                      <ul className="mt-3 space-y-2 text-sm leading-5 text-muted-foreground">
-                        {packageBlockers.map((blocker) => (
-                          <li
-                            key={blocker}
-                            className="border-l-2 border-border pl-3"
-                          >
-                            {blocker}
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  )}
-              </div>
 
-              <div className="rf-composer-dock">
-                <form
-                  onSubmit={handleSubmit}
-                  className="mx-auto w-full max-w-[820px] px-4 pb-2 sm:px-8"
-                >
-                  <div className="relative">
-                    <label className="sr-only" htmlFor="project-composer">
-                      Message RockFoundry
-                    </label>
-                    <textarea
-                      id="project-composer"
-                      name="message"
-                      value={composer}
-                      onChange={(event) => setComposer(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          void handleSubmit(
-                            event as unknown as FormEvent<HTMLFormElement>,
-                          );
-                        }
-                      }}
-                      placeholder={
-                        question
-                          ? indo
-                            ? "Tulis jawaban..."
-                            : "Answer naturally..."
-                          : project.description
-                            ? indo
-                              ? "Tambah konteks atau URL referensi..."
-                              : "Add context or a reference URL..."
-                            : indo
-                              ? "Ceritakan idenya..."
-                              : "Describe your idea..."
+            <div className="rf-composer-dock">
+              <form
+                onSubmit={handleSubmit}
+                className="mx-auto w-full max-w-[46rem] px-4 pb-2 sm:px-7"
+              >
+                <div className="rf-composer-shell relative">
+                  <label className="sr-only" htmlFor="project-composer">
+                    Message RockFoundry
+                  </label>
+                  <textarea
+                    id="project-composer"
+                    name="message"
+                    value={composer}
+                    onChange={(event) => setComposer(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSubmit(
+                          event as unknown as FormEvent<HTMLFormElement>,
+                        );
                       }
-                      rows={1}
-                      className="rf-composer min-h-[54px] w-full resize-none pr-14"
-                      disabled={working}
-                    />
+                    }}
+                    placeholder={
+                      project.description
+                        ? indo
+                          ? "Tambah konteks, URL, atau minta design..."
+                          : "Add context, a URL, or ask for design..."
+                        : indo
+                          ? "Ceritakan idenya..."
+                          : "Describe your idea..."
+                    }
+                    rows={1}
+                    className="rf-composer min-h-[56px] w-full resize-none pb-12"
+                    disabled={working}
+                  />
+                  <div className="absolute inset-x-3 bottom-2.5 flex items-center gap-2">
                     <button
-                      className="rf-send-button absolute bottom-2.5 right-3"
+                      className="rf-chip"
+                      type="button"
+                      onClick={() => setWorkbench("documents")}
+                    >
+                      Documents
+                    </button>
+                    <button
+                      className="rf-chip"
+                      type="button"
+                      onClick={() => {
+                        pendingDesignRef.current = false;
+                        setWorkbench("design");
+                        setPrototypeLaunchRequested(true);
+                      }}
+                    >
+                      Design
+                    </button>
+                    <span className="ml-auto" />
+                    <button
+                      className="rf-send-button"
                       type={working ? "button" : "submit"}
-                      disabled={working ? false : !composer.trim()}
-                      onClick={working ? () => setWorking(false) : undefined}
-                      aria-label={working ? "Stop generation" : "Send message"}
+                      onClick={
+                        working
+                          ? () => {
+                              activeConversationRef.current?.controller.abort();
+                              conversationGenerationRef.current += 1;
+                              activeConversationRef.current = null;
+                              setWorking(false);
+                            }
+                          : undefined
+                      }
                     >
                       {working ? (
                         <Square className="size-3.5 fill-current" />
                       ) : (
-                        <ArrowUp className="size-4" />
+                        <ArrowUp className="size-4 shrink-0" />
                       )}
                     </button>
+                    {draftAvailable ? (
+                      <>
+                        <button
+                          className="rf-primary-button"
+                          type="button"
+                          onClick={() => void buildProductDraft()}
+                          disabled={working || draftGenerationInFlight}
+                        >
+                          {indo
+                            ? "Generate Product Draft"
+                            : "Generate Product Draft"}
+                        </button>
+                        <button
+                          className="rf-header-action inline-flex"
+                          type="button"
+                          onClick={() => {
+                            pendingDesignRef.current = false;
+                            setWorkbench("design");
+                            setPrototypeLaunchRequested(true);
+                          }}
+                          disabled={working}
+                        >
+                          {indo
+                            ? "Buat Design Preview"
+                            : "Generate Design Preview"}
+                        </button>
+                      </>
+                    ) : null}
                   </div>
-                  <div className="flex items-center justify-between px-1 py-2 text-[11px] text-muted-foreground">
-                    <span>
-                      {indo
-                        ? "Enter untuk mengirim · Shift+Enter untuk baris baru"
-                        : "Enter to send · Shift+Enter for a new line"}
-                    </span>
-                    <span>{provider.label}</span>
-                  </div>
-                </form>
+                </div>
+                <div className="flex items-center justify-between px-1 py-2 text-[0.72rem] text-muted-foreground">
+                  <span>
+                    {indo
+                      ? "Enter untuk mengirim · Shift+Enter untuk baris baru"
+                      : "Enter to send · Shift+Enter for a new line"}
+                  </span>
+                  <span>{provider.label}</span>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {workbench ? (
+            <aside className="rf-workbench" aria-label="Product workbench">
+              <div className="rf-workbench-head">
+                <p className="rf-workbench-kicker">
+                  {workbench === "documents" ? "PRODUCT DRAFT" : "DESIGN"}
+                </p>
+                <button
+                  className="rf-icon-button"
+                  type="button"
+                  aria-label="Close workbench"
+                  onClick={() => setWorkbench(null)}
+                >
+                  <X className="size-4 shrink-0" />
+                </button>
               </div>
-            </>
-          )}
+              {workbench === "documents" ? (
+                <ProductDocuments
+                  projectId={project.id}
+                  language={indo ? "id" : "en"}
+                  onContinueChat={() => {
+                    setWorkbench(null);
+                    document.getElementById("project-composer")?.focus();
+                  }}
+                  onOpenDesign={() => {
+                    pendingDesignRef.current = false;
+                    setWorkbench("design");
+                    setPrototypeLaunchRequested(true);
+                  }}
+                  onGenerateHandoff={() => void buildProductPackage()}
+                  generationRequestId={draftGenerationRequestId}
+                  onGenerated={() =>
+                    setMessages((current) => [
+                      ...current,
+                      {
+                        id: `draft-${Date.now()}`,
+                        role: "assistant",
+                        text: indo
+                          ? "Product Draft sudah dibuat. Yang belum jelas tetap terlihat sebagai asumsi atau open question."
+                          : "The Product Draft is ready. Unresolved details stay visible as assumptions or open questions.",
+                      },
+                    ])
+                  }
+                  onGenerationSettled={() => setDraftGenerationInFlight(false)}
+                />
+              ) : (
+                <DesignStudio
+                  projectId={project.id}
+                  studio={state.studio}
+                  packageReady={designReady}
+                  draftSpecReady={draftAvailable}
+                  showDownloadHandoff={false}
+                  showPrototypeAction
+                  autoGenerate={prototypeLaunchRequested}
+                  onAutoGenerateHandled={() =>
+                    setPrototypeLaunchRequested(false)
+                  }
+                  language={indo ? "id" : "en"}
+                  onDownloadHandoff={() =>
+                    window.location.assign(
+                      `/api/projects/${projectId}/export?mode=handoff`,
+                    )
+                  }
+                  onState={(nextState, version) =>
+                    setProject((current) =>
+                      current
+                        ? {
+                            ...current,
+                            canonicalState: nextState,
+                            version,
+                          }
+                        : current,
+                    )
+                  }
+                />
+              )}
+            </aside>
+          ) : null}
         </div>
       </section>
-
-      <SettingsPanel
-        open={drawer === "settings"}
-        onClose={() => setDrawer(null)}
-      />
-      {drawer && drawer !== "settings" && (
+      {drawer && drawer !== "settings" ? (
         <DrawerPanel
           drawer={drawer}
           project={project}
@@ -1397,11 +1727,13 @@ export default function ProjectWorkspace({
           working={working}
           onClose={() => setDrawer(null)}
           onDownload={() =>
-            window.location.assign(`/api/projects/${projectId}/export`)
+            window.location.assign(
+              `/api/projects/${projectId}/export?mode=handoff`,
+            )
           }
           onReviseDecision={reviseDecision}
         />
-      )}
+      ) : null}
     </main>
   );
 }
@@ -1423,7 +1755,7 @@ function MessageRow({
   working: boolean;
   activityOpen: boolean;
   onToggleActivity: () => void;
-  onAnswer: (option: QuestionOption | string) => void;
+  onAnswer: (option: QuestionOption | Message | string) => void;
 }) {
   if (message.role === "tool") {
     return (
@@ -1441,27 +1773,28 @@ function MessageRow({
             <ChevronRight className="size-4" />
           )}
         </button>
-        {activityOpen && (
+        {activityOpen ? (
           <div className="mt-2 pl-7 text-xs leading-5 text-muted-foreground">
             {message.detail ||
               "Tool activity is shown at a useful level. Raw payloads remain hidden."}
           </div>
-        )}
+        ) : null}
       </div>
     );
   }
-  if (message.role === "system")
+  if (message.role === "system") {
     return (
       <div className="rf-system-row" role="status">
         {message.text}
       </div>
     );
+  }
   const isUser = message.role === "user";
-  const isQuestion = Boolean(message.questionId && message.options?.length);
-  const isActive =
-    isQuestion && message.questionId === activeQuestionId && !working;
-  const isResolvedQuestion =
-    isQuestion && message.questionId !== activeQuestionId;
+  const isQuestion = Boolean(message.options?.length);
+  const isActive = isQuestion && !working;
+  const isResolvedQuestion = Boolean(
+    message.questionId && message.questionId !== activeQuestionId,
+  );
   if (isResolvedQuestion) {
     return (
       <div className="rf-message-row rf-message-agent">
@@ -1480,7 +1813,7 @@ function MessageRow({
   }
   return (
     <div
-      data-question-id={isQuestion ? message.questionId : undefined}
+      data-question-id={message.questionId}
       className={`rf-message-row ${isUser ? "rf-message-user" : "rf-message-agent"}`}
     >
       <div
@@ -1489,39 +1822,42 @@ function MessageRow({
         {isUser ? "Y" : "R"}
       </div>
       <div className="min-w-0 flex-1">
-        {isQuestion ? (
+        {message.questionId ? (
           <div className="rf-topic">
             {humanTopicLabel(message.topic, language)}
           </div>
         ) : isUser ? null : (
-          <div className="mb-1 text-[12px] font-medium text-muted-foreground">
+          <div className="mb-1 text-[0.75rem] font-medium text-muted-foreground">
             RockFoundry
           </div>
         )}
         <div className={isQuestion ? "rf-question-text" : "rf-message-text"}>
           {message.text}
         </div>
-        {message.detail && (
-          <div className="mt-2 text-[13px] leading-5 text-muted-foreground">
-            {isQuestion ? (
-              <>
-                <span className="font-medium text-foreground/80">
-                  Kenapa ini penting
-                </span>
-                <span className="mt-0.5 block">{message.detail}</span>
-              </>
-            ) : (
-              message.detail
-            )}
+        {isUser && message.retryable ? (
+          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <span>{safeConversationFailureMessage(message.turnError)}</span>
+            <button
+              type="button"
+              className="rf-header-action"
+              disabled={working}
+              onClick={() => onAnswer(message)}
+            >
+              {working
+                ? "Retrying…"
+                : language === "id"
+                  ? "Coba lagi"
+                  : "Retry"}
+            </button>
           </div>
-        )}
-        {message.recommendationReason && message.recommendedOptionId && (
-          <p className="mt-3 text-[13px] leading-5 text-muted-foreground">
-            {message.recommendationReason}
-          </p>
-        )}
-        {message.options && (
-          <div className="mt-4 space-y-2">
+        ) : null}
+        {message.detail ? (
+          <div className="mt-2 text-[0.875rem] leading-6 text-muted-foreground">
+            {message.detail}
+          </div>
+        ) : null}
+        {message.options ? (
+          <div className="rf-options">
             {message.options.map((option) => (
               <button
                 key={option.id}
@@ -1531,31 +1867,15 @@ function MessageRow({
                 aria-disabled={!isActive}
                 onClick={() => onAnswer(option)}
               >
-                <span>
-                  <span className="font-medium">{option.label}</span>
-                  {message.recommendedOptionId === option.id && (
-                    <span className="ml-2 inline-flex rounded-full border border-foreground/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      {language === "id"
-                        ? "Rekomendasi Agent"
-                        : "Agent recommendation"}
-                    </span>
-                  )}
-                  {option.description && (
-                    <span className="mt-0.5 block text-[12px] leading-5 text-muted-foreground">
-                      {option.description}
-                    </span>
-                  )}
-                </span>
-                <ChevronRight className="size-4 text-muted-foreground" />
+                <span className="font-medium">{option.label}</span>
               </button>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
 }
-
 function DrawerPanel({
   drawer,
   project,
@@ -1962,19 +2282,31 @@ function DocumentsContent({
   exportReady: boolean;
   onDownload: () => void;
 }) {
-  const status = state.readiness ? projectStatus(state) : "Draft";
+  const status = exportReady ? "Ready" : "Not prepared";
+  const hasDesign = state.studio?.currentVersion > 0;
+  const hasReferences =
+    Array.isArray(state.references) && state.references.length > 0;
+  const supportingReferences = hasReferences
+    ? "reference/BRD.md · reference/PRD.md · reference/ERD.md · reference/references.json"
+    : "reference/BRD.md · reference/PRD.md · reference/ERD.md";
   const core = [
     {
-      file: "BRD.md",
-      description: "Business model, actors, goals, scope, and rules.",
+      file: "BRD.md · PRD.md · ERD.md",
+      description:
+        "Business, product, and data documents included in the final package.",
     },
     {
-      file: "PRD.md",
-      description: "Product behavior and accepted decisions.",
+      file: "USER_FLOWS.md · SCREEN_MAP.md · DESIGN_BRIEF.md",
+      description:
+        "The reviewed flow and design inputs used by the coding agent.",
     },
     {
-      file: "ERD.md",
-      description: "Confirmed entities and relationships only.",
+      file: "PRODUCT_SPEC.md",
+      description: "Compact compatibility summary of the product truth.",
+    },
+    {
+      file: "AGENT_HANDOFF.md",
+      description: "Start-here implementation brief for a coding agent.",
     },
   ];
   const advanced = [
@@ -1987,34 +2319,20 @@ function DocumentsContent({
       description: "Every confirmed decision with provenance.",
     },
     {
-      file: "INVARIANTS.md",
-      description: "Constraints that stay true across the build.",
+      file: "reference/",
+      description: supportingReferences,
     },
-    {
-      file: "READINESS.md",
-      description: "Coverage, Decision Debt, and artifact gaps.",
-    },
-    {
-      file: "AGENT_HANDOFF.md",
-      description: "Start-here brief for the coding agent.",
-    },
-    { file: "decisions.json", description: "Machine-readable decision log." },
   ];
   return (
     <div className="space-y-5 px-5 py-5">
       <p className="text-sm leading-6 text-muted-foreground">
-        Generate the handoff, then download the core brief and its guardrails
-        for the coding agent.
-      </p>
-      <p className="text-xs leading-5 text-muted-foreground">
-        {readinessPlainLabel(state)}
-        {decisionDebtScore(state) !== null
-          ? ` · Decision Debt ${decisionDebtScore(state)}/100`
-          : ""}
+        {exportReady
+          ? "This package contains the latest reviewed artifacts and design references."
+          : "Final handoff is separate from the working draft. Review Documents and choose Prepare final handoff when ready."}
       </p>
       <section className="space-y-2">
         <h3 className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
-          Primary build documents
+          Final package contents
         </h3>
         {core.map((doc) => (
           <div
@@ -2036,7 +2354,7 @@ function DocumentsContent({
       </section>
       <section>
         <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
-          Advanced coding-agent package
+          Coding-agent guardrails
         </h3>
         <div className="space-y-1">
           {advanced.map((doc) => (
@@ -2052,7 +2370,7 @@ function DocumentsContent({
           ))}
         </div>
       </section>
-      {exportReady && (
+      {exportReady && hasDesign && (
         <section>
           <h3 className="mb-2 text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
             Product design reference
@@ -2061,17 +2379,9 @@ function DocumentsContent({
             <div>design/DESIGN_SPEC.json</div>
             <div>design/SCREEN_MAP.json</div>
             <div>design/DESIGN_DECISIONS.md</div>
-            {state.studio?.currentVersion > 0 ? (
-              <>
-                <div>design/prototype/index.html</div>
-                <div>design/prototype/styles.css</div>
-                <div>design/prototype/app.js</div>
-              </>
-            ) : (
-              <div className="pt-1 text-xs">
-                Prototype optional — not included yet.
-              </div>
-            )}
+            <div className="pt-1 text-xs">
+              Prototype files are included when generated.
+            </div>
           </div>
         </section>
       )}
@@ -2085,7 +2395,8 @@ function DocumentsContent({
         </button>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Build the product package from Discovery to generate this handoff.
+          Prepare the final handoff from Documents after reviewing the current
+          draft.
         </p>
       )}
     </div>

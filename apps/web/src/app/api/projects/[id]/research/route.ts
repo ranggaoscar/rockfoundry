@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
+import { evaluateReadinessDirectly } from "@rockfoundry/core";
 import { z } from "zod";
 import {
   getLocalProject,
@@ -8,12 +9,12 @@ import {
   parseProjectState,
   saveProjectState,
 } from "@/lib/local-project";
-import { persistQuestionMessage } from "@/lib/discovery";
-import { runConversationTurn } from "@/lib/conversation";
+import { persistConversationMessage, persistUserMessage } from "@/lib/conversation";
+import { runConversationAgent } from "@/lib/conversation-agent";
+import { getPackageEligibility } from "@/lib/package-readiness";
 
 const SearchInput = z.object({ query: z.string().trim().min(3).max(300) });
 
-/** Compatibility adapter: all web search execution lives in AgentRunner + ToolRegistry. */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -24,31 +25,29 @@ export async function POST(
     if (!project) return jsonError("Project not found", 404);
     const { query } = SearchInput.parse(await request.json());
     const state = parseProjectState(project);
-    const turn = await runConversationTurn({
+    await persistUserMessage(id, query, { intent: "RESEARCH_REQUEST" });
+    const turn = await runConversationAgent({
       projectId: id,
       text: query,
-      intent: "RESEARCH_REQUEST",
+      mode: "RESEARCH_REQUEST",
       state,
     });
-    const question =
-      turn.result.finalAction.type === "ASK_USER"
-        ? (turn.questionForAction as
-            import("@rockfoundry/core").Question | null)
-        : null;
-    state.discovery.activeQuestionId = question?.id;
-    const saved = await saveProjectState(id, state, project.version);
-    if (question) await persistQuestionMessage(id, question);
+    const saved = await saveProjectState(id, turn.state, project.version);
+    const readiness = evaluateReadinessDirectly(saved.state);
+    await persistConversationMessage(id, "assistant", turn.response.message, {
+      mode: turn.response.mode,
+      quickReplies: turn.response.quickReplies,
+      suggestedNextAction: turn.response.suggestedNextAction,
+    });
     return Response.json({
       query,
+      message: turn.response.message,
+      response: turn.response,
       state: saved.state,
       version: saved.version,
-      question,
-      activities: turn.result.activities.map((activity) => ({
-        toolName:
-          activity.action.type === "CALL_TOOL"
-            ? activity.action.toolName
-            : undefined,
-      })),
+      question: null,
+      activities: [],
+      ...getPackageEligibility(readiness),
     });
   } catch (error) {
     if (error instanceof z.ZodError)

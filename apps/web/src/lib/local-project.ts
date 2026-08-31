@@ -1,11 +1,11 @@
-import { prisma } from "@rockfoundry/db";
+import { Prisma, prisma } from "@rockfoundry/db";
 import {
   createInitialProjectState,
   evaluateReadinessDirectly,
   ProjectStateSchema,
   type ProjectState,
 } from "@rockfoundry/core";
-
+import { safeConversationTurnErrorSummary } from "./ai-error";
 export function jsonError(
   message: string,
   status = 500,
@@ -59,6 +59,11 @@ export async function getProjectMessages(projectId: string) {
   const messages = await prisma.conversationMessage.findMany({
     where: { projectId },
     orderBy: { createdAt: "asc" },
+    include: {
+      conversationTurn: {
+        select: { id: true, status: true, requestId: true, errorSummary: true },
+      },
+    },
   });
   return messages.map(publicMessage);
 }
@@ -68,6 +73,14 @@ export function publicMessage(message: {
   role: string;
   content: string;
   metadata: string | null;
+  requestId?: string | null;
+  conversationTurnId?: string | null;
+  conversationTurn?: {
+    id: string;
+    status: string;
+    requestId: string;
+    errorSummary?: string | null;
+  } | null;
   createdAt: Date;
 }) {
   let metadata: Record<string, unknown> = {};
@@ -83,6 +96,17 @@ export function publicMessage(message: {
       ? message.role
       : "system",
     text: message.content,
+    requestId: message.requestId || message.conversationTurn?.requestId,
+    userMessageId: message.role === "user" ? message.id : undefined,
+    conversationTurnId: message.conversationTurnId || message.conversationTurn?.id,
+    turnStatus: message.conversationTurn?.status,
+    turnError:
+      message.conversationTurn?.status === "FAILED"
+        ? safeConversationTurnErrorSummary(message.conversationTurn.errorSummary) ||
+          "The conversation turn failed and can be retried."
+        : undefined,
+    retryable:
+      message.role === "user" && message.conversationTurn?.status === "FAILED",
     questionId:
       typeof metadata.questionId === "string" ? metadata.questionId : undefined,
     topic: typeof metadata.topic === "string" ? metadata.topic : undefined,
@@ -106,26 +130,35 @@ export function publicMessage(message: {
   };
 }
 
-export async function saveProjectState(
+export async function saveProjectStateInTransaction(
+  transaction: Prisma.TransactionClient,
   projectId: string,
   state: ProjectState,
   expectedVersion?: number,
   description?: string,
   name?: string,
+  assistantMessage?: {
+    content: string;
+    metadata: Record<string, unknown>;
+    conversationTurnId?: string;
+    requestId?: string;
+  },
 ) {
   const parsed = ProjectStateSchema.parse({
     ...state,
     name: name?.trim() || state.name,
   });
-  const current = await prisma.project.findUnique({ where: { id: projectId } });
+  const current = await transaction.project.findUnique({ where: { id: projectId } });
   if (!current || current.deletedAt) throw new Error("PROJECT_NOT_FOUND");
-  if (expectedVersion !== undefined && current.version !== expectedVersion)
-    throw new Error("PROJECT_VERSION_CONFLICT");
   const version = current.version + 1;
+  if (expectedVersion !== undefined && current.version !== expectedVersion) {
+    throw new Error("PROJECT_VERSION_CONFLICT");
+  }
   const readiness = evaluateReadinessDirectly(parsed);
   const nextState = ProjectStateSchema.parse({
     ...parsed,
     readiness: readiness.level,
+    draftSpecReady: readiness.draftSpecReady,
     readinessScore: readiness.score,
     readinessBreakdown: readiness.breakdown,
     decisionDebt: readiness.decisionDebt,
@@ -137,26 +170,84 @@ export async function saveProjectState(
       unresolvedTopics: readiness.discovery.unresolvedTopics,
     },
   });
-  await prisma.$transaction([
-    prisma.project.update({
-      where: { id: projectId },
-      data: {
-        name: name?.trim() || nextState.name,
-        canonicalState: JSON.stringify(nextState),
-        version,
-        ...(description === undefined ? {} : { description }),
-      },
-    }),
-    prisma.projectStateRevision.create({
-      data: {
-        projectId,
-        version,
-        state: JSON.stringify(nextState),
-        reason: "canonical state update",
-      },
-    }),
-  ]);
-  return { state: nextState, version };
+  const claimed = await transaction.project.updateMany({
+    where: {
+      id: projectId,
+      version: expectedVersion === undefined ? current.version : expectedVersion,
+    },
+    data: {
+      name: name?.trim() || nextState.name,
+      canonicalState: JSON.stringify(nextState),
+      version,
+      ...(description === undefined ? {} : { description }),
+    },
+  });
+  if (claimed.count !== 1) throw new Error("PROJECT_VERSION_CONFLICT");
+  await transaction.projectStateRevision.create({
+    data: {
+      projectId,
+      version,
+      state: JSON.stringify(nextState),
+      reason: "canonical state update",
+    },
+  });
+  if (assistantMessage) {
+    const existing = assistantMessage.conversationTurnId
+      ? await transaction.conversationMessage.findFirst({
+          where: {
+            projectId,
+            conversationTurnId: assistantMessage.conversationTurnId,
+            role: "assistant",
+          },
+        })
+      : await transaction.conversationMessage.findFirst({
+          where: {
+            projectId,
+            role: "assistant",
+            content: assistantMessage.content,
+          },
+        });
+    if (!existing) {
+      await transaction.conversationMessage.create({
+        data: {
+          projectId,
+          role: "assistant",
+          content: assistantMessage.content,
+          conversationTurnId: assistantMessage.conversationTurnId,
+          requestId: assistantMessage.requestId,
+          metadata: JSON.stringify({ source: "AGENT", ...assistantMessage.metadata }),
+        },
+      });
+    }
+  }
+  return { state: nextState, version, readiness };
+}
+
+export async function saveProjectState(
+  projectId: string,
+  state: ProjectState,
+  expectedVersion?: number,
+  description?: string,
+  name?: string,
+  assistantMessage?: {
+    content: string;
+    metadata: Record<string, unknown>;
+    conversationTurnId?: string;
+    requestId?: string;
+  },
+) {
+  const saved = await prisma.$transaction((transaction) =>
+    saveProjectStateInTransaction(
+      transaction,
+      projectId,
+      state,
+      expectedVersion,
+      description,
+      name,
+      assistantMessage,
+    ),
+  );
+  return { state: saved.state, version: saved.version };
 }
 
 export function publicProject(project: {

@@ -1,26 +1,20 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import {
-  evaluateReadinessDirectly,
-  QuestionEngine,
-  type Question,
-} from "@rockfoundry/core";
-import {
-  getLocalProject,
-  jsonError,
-  parseProjectState,
-  saveProjectState,
-} from "@/lib/local-project";
-import {
-  classifyMessage,
-  mapNaturalAnswer,
-  persistConversationMessage,
-  runConversationTurn,
-} from "@/lib/conversation";
-import { persistQuestionMessage, persistUserMessage } from "@/lib/discovery";
-import { getPackageEligibility } from "@/lib/package-readiness";
 import { z } from "zod";
+import { getLocalProject, jsonError, parseProjectState } from "@/lib/local-project";
+import {
+  claimConversationTurn,
+  conversationModeAndIntent,
+  getConversationTurn,
+  parseStoredConversationResponse,
+  publicConversationTurn,
+  retryableConversationTurnPayload,
+  runClaimedConversationTurn,
+  CONVERSATION_TURN_STATUS,
+} from "@/lib/conversation-turn";
+import { conversationAiErrorMessage } from "@/lib/ai-error";
+import { prisma } from "@rockfoundry/db";
 
 const Input = z.object({
   text: z.string().trim().min(1).max(5000),
@@ -28,102 +22,147 @@ const Input = z.object({
   explicitOptionId: z.string().min(1).nullable().optional(),
 });
 
+function existingTurnResponse(
+  turn: Awaited<ReturnType<typeof getConversationTurn>>,
+): Response {
+  if (!turn) return jsonError("Conversation turn not found.", 404);
+  const payload = parseStoredConversationResponse(turn);
+  if (payload) return Response.json({ ...payload, replayed: true });
+  const response = {
+    requestId: turn.requestId,
+    turn: publicConversationTurn(turn),
+  };
+  if (turn.status === CONVERSATION_TURN_STATUS.RUNNING) {
+    return Response.json({ ...response, recoverable: true }, { status: 202 });
+  }
+  if (turn.status === CONVERSATION_TURN_STATUS.FAILED) {
+    const userMessage = turn.messages.find(
+      (message) => message.role === "user" && message.conversationTurnId === turn.id,
+    );
+    return Response.json(
+      {
+        requestId: turn.requestId,
+        ...retryableConversationTurnPayload(turn, userMessage?.id),
+      },
+      { status: 409 },
+    );
+  }
+  return Response.json(response);
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let claimedProjectId: string | undefined;
+  let claimedRequestId: string | undefined;
+  let claimedTurnId: string | undefined;
+  let hasClaimedTurn = false;
+
   try {
     const { id } = await params;
+    claimedProjectId = id;
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const body = Input.parse(await req.json());
+    if (body.explicitQuestionId || body.explicitOptionId) {
+      return jsonError(
+        "Quick replies are optional. Send the answer as a normal conversation message.",
+        409,
+      );
+    }
+
     const state = parseProjectState(project);
-    const engine = new QuestionEngine();
-    const active = state.discovery.activeQuestionId
-      ? engine.resolveQuestion(state, state.discovery.activeQuestionId)
-      : null;
-    const classified = classifyMessage(body.text);
-    if (
-      body.explicitQuestionId &&
-      body.explicitQuestionId !== state.discovery.activeQuestionId
-    ) {
-      return jsonError("That discovery question is no longer active.", 409);
-    }
-
-    const mappedOption =
-      body.explicitOptionId ||
-      (classified === "NEW_PRODUCT_CONTEXT"
-        ? mapNaturalAnswer(body.text, active)
-        : null);
-    const explicitActiveAnswer =
-      active && body.explicitQuestionId === active.id
-        ? body.explicitOptionId || mappedOption || body.text.trim()
-        : null;
-
-    // An explicitly targeted active question accepts a selected option, a
-    // natural option mapping, or the raw free-form text without AI planning.
-    if (active && (explicitActiveAnswer || mappedOption)) {
-      return Response.json({
-        intent: "ACTIVE_DECISION_ANSWER",
-        answer: explicitActiveAnswer || mappedOption,
-        questionId: active.id,
-        handoff: "/api/projects/" + id + "/questions",
-      });
-    }
-
-    const intent = classified;
-    await persistUserMessage(id, body.text, { intent });
-    if (intent === "NEW_PRODUCT_CONTEXT") {
-      state.rawIdea =
-        `${state.rawIdea}\n\nAdditional user context: ${body.text}`.trim();
-      state.normalizedSummary =
-        `${state.normalizedSummary || state.rawIdea}\n${body.text}`.trim();
-    }
-    const turn = await runConversationTurn({
+    const requestId =
+      req.headers.get("x-conversation-request-id")?.trim() || crypto.randomUUID();
+    claimedRequestId = requestId;
+    const { intent, mode } = conversationModeAndIntent(body.text);
+    const claim = await claimConversationTurn(prisma, {
       projectId: id,
+      requestId,
       text: body.text,
+      metadata: { intent, mode },
+    });
+    if (claim.kind === "EXISTING") {
+      return existingTurnResponse(claim.turn);
+    }
+    claimedTurnId = claim.turn.id;
+    hasClaimedTurn = true;
+
+    const result = await runClaimedConversationTurn({
+      db: prisma,
+      projectId: id,
+      turnId: claim.turn.id,
+      text: body.text,
+      mode,
       intent,
       state,
+      expectedVersion: project.version,
     });
-    const question =
-      turn.result.finalAction.type === "ASK_USER"
-        ? (turn.questionForAction as Question | null)
-        : null;
-    state.discovery.activeQuestionId = (question as Question | null)?.id;
-    const saved = await saveProjectState(id, state, project.version);
-    const readiness = evaluateReadinessDirectly(saved.state);
-    if (question) await persistQuestionMessage(id, question);
-    if (intent === "HANDOFF_REQUEST")
-      await persistConversationMessage(
-        id,
-        "assistant",
-        question
-          ? "Handoff still has high-risk gaps. Resolve this blocker before generating artifacts."
-          : "Handoff requirements were checked.",
-        { source: "AGENT", kind: "HANDOFF_CHECK" },
-      );
-    return Response.json({
-      intent,
-      state: saved.state,
-      version: saved.version,
-      question,
-      activities: turn.result.activities.map((activity) => ({
-        action: activity.action.type,
-        toolName:
-          activity.action.type === "CALL_TOOL"
-            ? activity.action.toolName
-            : undefined,
-      })),
-      ...getPackageEligibility(readiness),
-    });
+    return Response.json(result.payload);
   } catch (error) {
-    if (error instanceof z.ZodError)
+    if (error instanceof z.ZodError) {
       return jsonError("Enter a valid message.", 400);
+    }
+
+    if (hasClaimedTurn && claimedProjectId && claimedRequestId) {
+      try {
+        const turn = claimedTurnId
+          ? await getConversationTurn(prisma, {
+              projectId: claimedProjectId,
+              turnId: claimedTurnId,
+            })
+          : await prisma.conversationTurn.findUnique({
+              where: {
+                projectId_requestId: {
+                  projectId: claimedProjectId,
+                  requestId: claimedRequestId,
+                },
+              },
+              include: { messages: true },
+            });
+        if (turn) {
+          const userMessage = turn.messages.find(
+            (message) =>
+              message.role === "user" &&
+              message.conversationTurnId === turn.id,
+          );
+          const status =
+            error instanceof Error &&
+            error.message === "PROJECT_VERSION_CONFLICT"
+              ? 409
+              : 422;
+          return Response.json(
+            {
+              error:
+                status === 409
+                  ? "The conversation turn failed after saving your message. Retry is available."
+                  : conversationAiErrorMessage(error),
+              retryable: true,
+              turn: publicConversationTurn(turn),
+              userMessageId: userMessage?.id ?? null,
+              retryEndpoint: `/api/projects/${claimedProjectId}/conversation/retry`,
+            },
+            { status },
+          );
+        }
+      } catch {
+        // Fall through to the generic safe error when durable recovery lookup fails.
+      }
+    }
+
+    if (error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT") {
+      return jsonError(
+        "The project changed while this conversation turn was running. Retry the turn.",
+        409,
+        { retryable: true },
+      );
+    }
     return jsonError(
-      "RockFoundry couldn't process that conversation turn.",
+      conversationAiErrorMessage(error),
       422,
     );
   }
 }
 
-export type ConversationResponseQuestion = Question;
+export type ConversationResponseQuestion = null;

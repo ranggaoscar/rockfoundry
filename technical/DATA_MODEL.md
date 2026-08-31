@@ -11,21 +11,21 @@ Previous Alpha PostgreSQL data is not automatically migrated into Agentic V1.
 
 ## Core models
 
-| Model                 | Purpose                                                                              |
-| --------------------- | ------------------------------------------------------------------------------------ |
-| `Project`             | Local product-discovery boundary and current state/version                           |
-| `ConversationMessage` | User, agent, tool, warning, decision, and artifact messages                          |
-| `Decision`            | User-controlled product decision with source, confidence, rationale, and graph edges |
-| `Assumption`          | Inference that still needs confirmation or can safely remain provisional             |
-| `OpenQuestion`        | Contextual question tied to an unresolved requirement                                |
-| `Contradiction`       | Conflict between facts, decisions, requirements, or constraints                      |
-| `Requirement`         | Coverage unit with category, risk, status, and affected concepts                     |
-| `Reference`           | Public URL/GitHub evidence and analysis status                                       |
-| `ToolRun`             | Validated tool invocation, status, safe summary, and timestamps                      |
-| `AgentRun`            | Provider interaction metadata without secrets or raw sensitive payloads              |
-| `Artifact`            | BRD, PRD, or ERD snapshot/status/content metadata                                    |
-| `ProviderProfile`     | Non-secret active provider metadata; secret values stay outside project state        |
-| `ProjectRevision`     | Versioned canonical state snapshot for history and rollback                          |
+| Model                 | Purpose                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| `Project`             | Local product-discovery boundary and current state/version                                |
+| `ConversationMessage` | User, agent, tool, warning, decision, and artifact messages                               |
+| `Decision`            | User-controlled product decision with source, confidence, rationale, and graph edges      |
+| `Assumption`          | Inference that still needs confirmation or can safely remain provisional                  |
+| `OpenQuestion`        | Contextual question tied to an unresolved requirement                                     |
+| `Contradiction`       | Conflict between facts, decisions, requirements, or constraints                           |
+| `Requirement`         | Coverage unit with category, risk, status, and affected concepts                          |
+| `Reference`           | Public URL/GitHub evidence and analysis status                                            |
+| `ToolRun`             | Validated tool invocation, status, safe summary, and timestamps                           |
+| `AgentRun`            | Provider interaction metadata without secrets or raw sensitive payloads                   |
+| `Artifact`            | Versioned Product Draft, design-input, and final handoff snapshot/status/content metadata |
+| `ProviderProfile`     | Non-secret active provider metadata; secret values stay outside project state             |
+| `ProjectRevision`     | Versioned canonical state snapshot for history and rollback                               |
 
 ## Canonical state shape
 

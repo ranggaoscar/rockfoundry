@@ -1,37 +1,101 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lightbulb, Menu } from "lucide-react";
+import { ArrowUp, Menu } from "lucide-react";
 import { SettingsPanel, useProviderStatus } from "@/components/settings-panel";
-import { WorkspaceSidebar } from "@/components/workspace-sidebar";
+import {
+  WorkspaceSidebar,
+  type ProjectStage,
+  type SidebarProject,
+} from "@/components/workspace-sidebar";
+import { createProjectThroughWebMcp } from "@/lib/webmcp-create-project";
 
 type Example = {
   label: string;
   idea: string;
 };
 
-type RecentProject = {
-  id: string;
-  name: string;
+type RecentProject = SidebarProject & {
   description: string | null;
-  updatedAt?: string;
+};
+
+type WebMcpTool = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations?: { readOnlyHint?: boolean };
+  execute: (
+    input: Record<string, unknown>,
+    options: { signal: AbortSignal },
+  ) => Promise<string> | string;
+};
+
+type WebMcpDocument = Document & {
+  modelContext?: {
+    registerTool: (
+      tool: WebMcpTool,
+      options: { signal: AbortSignal },
+    ) => Promise<void>;
+  };
 };
 
 const EXAMPLES: Example[] = [
   {
-    label: "Multi-brand CRM",
-    idea: "Build a CRM for five marble brands. Each brand has its own salespeople, but the owner should see everything. Leads come from WhatsApp, Instagram, and the website.",
+    label: "CRM untuk tim sales",
+    idea: "CRM untuk tim sales. Setiap brand punya sales sendiri, owner lihat semua, lead datang dari WhatsApp Instagram dan website, ada follow-up dan quotation.",
   },
   {
-    label: "Multi-branch rental",
-    idea: "Create a rental car booking system for several branches with vehicles, availability, transfers, and customer history.",
+    label: "Aplikasi keuangan usaha kecil",
+    idea: "Aplikasi keuangan usaha kecil untuk owner warung. Fokus ke transaksi harian, kategori, dan posisi kas, bukan dashboard akuntansi kompleks.",
   },
   {
-    label: "Multi-warehouse inventory",
-    idea: "Build an inventory system for three marble warehouses that tracks individual slabs, transfers, and current location.",
+    label: "Booking untuk bisnis jasa",
+    idea: "Booking untuk bisnis jasa. Pelanggan pilih jadwal, staf melihat antrean, owner mengatur ketersediaan dan pembayaran.",
   },
 ];
+
+const CREATE_PROJECT_INPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    description: {
+      type: "string",
+      minLength: 1,
+      maxLength: 5000,
+      description: "What product or application should be built",
+    },
+    name: {
+      type: "string",
+      maxLength: 200,
+      description: "Optional project name",
+    },
+  },
+  required: ["description"],
+  additionalProperties: false,
+};
+
+function projectStageFromState(state: unknown): ProjectStage {
+  if (!state || typeof state !== "object") return "idea";
+  const record = state as Record<string, unknown>;
+  const studio =
+    record.studio && typeof record.studio === "object"
+      ? (record.studio as Record<string, unknown>)
+      : null;
+  if (typeof studio?.currentVersion === "number" && studio.currentVersion > 0) {
+    return "design";
+  }
+  const decisions = Array.isArray(record.decisions) ? record.decisions : [];
+  if (decisions.length > 0 || record.readiness) return "spec";
+  return "idea";
+}
 
 function HomeWorkspace() {
   const router = useRouter();
@@ -44,13 +108,69 @@ function HomeWorkspace() {
     searchParams.get("settings") === "1",
   );
   const [navOpen, setNavOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const provider = useProviderStatus();
+  const indo = /\b(saya|mau|ingin|bikin|buat)\b/i.test(idea);
+  const createProjectRef = useRef<
+    (
+      input: Record<string, unknown>,
+      signal: AbortSignal,
+    ) => Promise<string>
+  >(async () =>
+    JSON.stringify({
+      status: "failed",
+      message: "Project creation is not ready yet.",
+    }),
+  );
 
   const canSubmit = useMemo(
     () => idea.trim().length > 0 && !creating,
     [idea, creating],
   );
-  const returning = recent.length > 0;
+
+  const createProject = useCallback(
+    async (input: Record<string, unknown>, signal: AbortSignal) =>
+      JSON.stringify(
+        await createProjectThroughWebMcp({
+          description: input.description,
+          name: input.name,
+          signal,
+          navigateToProject: (projectUrl) => router.push(projectUrl),
+        }),
+      ),
+    [router],
+  );
+
+  useEffect(() => {
+    createProjectRef.current = createProject;
+  }, [createProject]);
+
+  useEffect(() => {
+    const modelContext = (document as WebMcpDocument).modelContext;
+    if (!modelContext) return;
+    const controller = new AbortController();
+    const registerTool = async () => {
+      try {
+        await modelContext.registerTool(
+          {
+            name: "rockfoundry_start_product",
+            description:
+              "Start a new RockFoundry product workspace from a product idea and open it.",
+            inputSchema: CREATE_PROJECT_INPUT_SCHEMA,
+            annotations: { readOnlyHint: false },
+            execute: (input, { signal }) =>
+              createProjectRef.current(input, signal),
+          },
+          { signal: controller.signal },
+        );
+      } catch {
+        controller.abort();
+        // WebMCP is optional. Suppress registration failures outside supported contexts.
+      }
+    };
+    void registerTool();
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -59,12 +179,23 @@ function HomeWorkspace() {
       .then((data) => {
         if (!active || !data?.projects) return;
         setRecent(
-          (data.projects as RecentProject[]).slice(0, 8).map((project) => ({
-            id: project.id,
-            name: project.name,
-            description: project.description,
-            updatedAt: project.updatedAt,
-          })),
+          (
+            data.projects as Array<{
+              id: string;
+              name: string;
+              description: string | null;
+              updatedAt?: string;
+              canonicalState?: unknown;
+            }>
+          )
+            .slice(0, 8)
+            .map((project) => ({
+              id: project.id,
+              name: project.name,
+              description: project.description,
+              updatedAt: project.updatedAt,
+              stage: projectStageFromState(project.canonicalState),
+            })),
         );
       })
       .catch(() => {
@@ -110,6 +241,8 @@ function HomeWorkspace() {
         projects={recent}
         provider={provider}
         mobileOpen={navOpen}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((current) => !current)}
         onCloseMobile={() => setNavOpen(false)}
         onGoHome={() => {
           setIdea("");
@@ -128,63 +261,44 @@ function HomeWorkspace() {
         }}
       />
 
-      <section className="flex min-w-0 flex-1 flex-col">
-        <header className="rf-topbar flex h-14 items-center justify-between border-b border-border px-4 lg:px-6">
+      <section className="rf-first-view flex min-w-0 flex-1 flex-col">
+        <header className="rf-topbar flex h-12 items-center justify-between border-b border-border px-4 lg:px-6">
           <button
             className="rf-icon-button lg:hidden"
             type="button"
             aria-label="Open projects"
             onClick={() => setNavOpen(true)}
           >
-            <Menu className="size-4" />
+            <Menu className="size-4 shrink-0" />
+            <span className="pointer-fine:hidden absolute top-1/2 left-1/2 size-[max(100%,3rem)] -translate-1/2" />
           </button>
-          <div className="text-[13px] text-muted-foreground">
-            Local workspace
-          </div>
+          <p className="text-[0.75rem] text-muted-foreground">
+            Local product studio
+          </p>
         </header>
 
-        <div className="flex min-h-0 flex-1 justify-center overflow-y-auto px-4 pt-8 pb-10 sm:px-8 sm:pt-14">
-          <div className="flex w-full max-w-[760px] flex-col">
-            <p className="mb-3 text-[12px] font-medium tracking-[0.04em] text-muted-foreground">
-              RockFoundry
-            </p>
-            <h1 className="max-w-[18ch] text-[1.75rem] font-semibold tracking-tight text-pretty sm:text-[2rem]">
-              {returning
-                ? "Start another product brief"
-                : "What do you want to build?"}
-            </h1>
-            <p className="mt-2 max-w-[46ch] text-[14px] leading-6 text-muted-foreground">
-              {returning
-                ? "Your recent projects stay in the sidebar. Describe a new idea when you are ready."
-                : "Describe what you want to build. RockFoundry surfaces hidden product decisions, records what you confirm, and prepares the handoff."}
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px]">
-              <span
-                className="rounded-full border border-border px-2.5 py-1 text-muted-foreground"
-                aria-live="polite"
-              >
-                {provider.model
-                  ? `${provider.label} · ${provider.model}`
-                  : "Offline Mock · deterministic local discovery"}
+        <div className="flex min-h-0 flex-1 justify-center overflow-y-auto px-4 pt-10 pb-12 sm:px-8 sm:pt-16">
+          <div className="flex w-full max-w-[42rem] flex-col">
+            <div className="mb-5 flex items-center gap-2">
+              <span className="rf-mark" aria-hidden="true">
+                <img src="/brand/rockfoundry-mark.svg" alt="" />
               </span>
-              <button
-                type="button"
-                className="rf-revise-button"
-                onClick={() => setSettingsOpen(true)}
-              >
-                {provider.publicDemo
-                  ? provider.model
-                    ? `Public demo · ${provider.model}`
-                    : "Public demo · Offline fallback"
-                  : provider.mode === "mock"
-                    ? "Connect model"
-                    : "AI settings"}
-              </button>
+              <p className="text-[0.8rem] font-medium tracking-[0.04em] text-muted-foreground">
+                RockFoundry
+              </p>
             </div>
+            <h1 className="max-w-[16ch] text-[2.15rem] font-semibold tracking-tight text-pretty sm:text-[2.6rem]">
+              {indo ? "Mau bikin apa?" : "What are you building?"}
+            </h1>
+            <p className="mt-3 max-w-[46ch] text-pretty text-[1rem] leading-7 text-muted-foreground sm:text-[0.95rem] sm:leading-6">
+              {indo
+                ? "Mulai dari ide mentah. Kita pikirkan produknya, susun spec, lalu bikin design."
+                : "Start from a rough idea. We think through the product, shape the spec, then design it."}
+            </p>
 
             <form
               onSubmit={(event) => void startProject(event)}
-              className="relative mt-7"
+              className="rf-composer-shell relative mt-8"
             >
               <label className="sr-only" htmlFor="idea-composer">
                 Describe your idea
@@ -200,100 +314,42 @@ function HomeWorkspace() {
                     void startProject();
                   }
                 }}
-                placeholder="Describe your idea..."
-                rows={4}
-                className="rf-composer min-h-[132px] w-full resize-none pb-14"
+                placeholder={
+                  indo
+                    ? "Ceritakan idenya..."
+                    : "Describe the product you want to build..."
+                }
+                rows={5}
+                className="rf-composer min-h-[148px] w-full resize-none pb-14"
                 disabled={creating}
               />
-              <button
-                className="rf-idea-button absolute right-3 bottom-3"
-                type="submit"
-                disabled={!canSubmit}
-                aria-label={
-                  /\b(saya|mau|ingin|bikin|buat)\b/i.test(idea)
-                    ? "Mulai discovery"
-                    : "Start discovery"
-                }
-              >
-                <Lightbulb className="size-4" strokeWidth={2.2} />
-                <span>
-                  {/\b(saya|mau|ingin|bikin|buat)\b/i.test(idea)
-                    ? "Mulai discovery"
-                    : "Start discovery"}
-                </span>
-              </button>
-              <div className="mt-2 px-1 text-[12px] text-muted-foreground">
-                {creating
-                  ? "Creating project..."
-                  : "Enter to start · Shift+Enter for a new line"}
+              <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-3">
+                <p className="min-w-0 truncate text-[0.72rem] text-muted-foreground">
+                  {creating
+                    ? "Creating project..."
+                    : "Enter to start · Shift+Enter for a new line"}
+                </p>
+                <button
+                  className="rf-idea-button"
+                  type="submit"
+                  disabled={!canSubmit}
+                  aria-label={indo ? "Mulai" : "Start"}
+                >
+                  <ArrowUp className="size-4 shrink-0" />
+                  <span className="max-sm:hidden">
+                    {indo ? "Mulai" : "Start"}
+                  </span>
+                </button>
               </div>
             </form>
 
-            {error && (
-              <p className="mt-4 text-[14px] text-destructive" role="alert">
+            {error ? (
+              <p className="mt-4 text-[0.95rem] text-destructive" role="alert">
                 {error}
               </p>
-            )}
-
-            {!returning ? (
-              <section
-                className="mt-7 grid gap-3 border-t border-border pt-5 text-[13px] sm:grid-cols-3"
-                aria-label="How RockFoundry works"
-              >
-                <div>
-                  <span className="font-medium">1. Describe</span>
-                  <p className="mt-1 text-muted-foreground">
-                    Start with the rough idea.
-                  </p>
-                </div>
-                <div>
-                  <span className="font-medium">2. Decide</span>
-                  <p className="mt-1 text-muted-foreground">
-                    Resolve rules an implementer would otherwise guess.
-                  </p>
-                </div>
-                <div>
-                  <span className="font-medium">3. Handoff</span>
-                  <p className="mt-1 text-muted-foreground">
-                    Build documents, an interactive design, and a coding-agent
-                    handoff.
-                  </p>
-                </div>
-              </section>
             ) : null}
 
-            {returning ? (
-              <section
-                className="mt-7 border-t border-border pt-5"
-                aria-labelledby="continue-project-title"
-              >
-                <h2
-                  id="continue-project-title"
-                  className="text-[13px] font-medium"
-                >
-                  Continue a recent project
-                </h2>
-                <div className="mt-3 space-y-1">
-                  {recent.slice(0, 3).map((project) => (
-                    <button
-                      key={project.id}
-                      type="button"
-                      className="rf-project-item"
-                      onClick={() => router.push(`/project/${project.id}`)}
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {project.name}
-                      </span>
-                      <span className="text-[12px] text-muted-foreground">
-                        Open
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            <div className="mt-6 flex flex-wrap gap-2">
+            <div className="mt-7 flex flex-col gap-2">
               {EXAMPLES.map((example) => (
                 <button
                   key={example.label}

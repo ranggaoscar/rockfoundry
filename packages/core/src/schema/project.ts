@@ -188,6 +188,7 @@ export const ProjectStateSchema = z.object({
     unresolvedTopics: [],
   }),
   readiness: ReadinessLevelSchema.default("NOT_READY"),
+  draftSpecReady: z.boolean().default(false),
   readinessScore: z.number().min(0).max(100).default(0),
   readinessBreakdown: z
     .object({

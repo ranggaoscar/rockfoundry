@@ -24,6 +24,9 @@ export interface ArtifactDocuments {
   BRD: string;
   PRD: string;
   ERD: string;
+  USER_FLOWS: string;
+  SCREEN_MAP: string;
+  DESIGN_BRIEF: string;
   DO_NOT_INVENT: string;
   DECISIONS: string;
   INVARIANTS: string;
@@ -32,9 +35,20 @@ export interface ArtifactDocuments {
   DECISIONS_JSON: string;
 }
 
+export type DraftArtifactDocuments = Pick<
+  ArtifactDocuments,
+  "BRD" | "PRD" | "ERD" | "USER_FLOWS" | "SCREEN_MAP" | "DESIGN_BRIEF"
+>;
+
 export interface ExportPackage {
   buffer: Buffer;
   documents: ArtifactDocuments;
+  metadata: { sizeBytes: number; fileCount: number; generatedAt: string };
+}
+
+export interface DraftExportPackage {
+  buffer: Buffer;
+  documents: DraftArtifactDocuments;
   metadata: { sizeBytes: number; fileCount: number; generatedAt: string };
 }
 
@@ -70,6 +84,147 @@ function openQuestions(state: ProjectState) {
     ? list(state.openQuestions)
     : "None recorded.";
 }
+
+function draftTruthLedger(state: ProjectState) {
+  const confirmed = [
+    state.normalizedSummary || state.rawIdea,
+    ...state.targetUsers.map((value) => `Target user: ${value}`),
+    ...state.roles.map((value) => `Role: ${value}`),
+    ...state.objectives.map((value) => `Objective: ${value}`),
+    ...state.problems.map((value) => `Problem: ${value}`),
+    ...state.workflows.map((value) => `Workflow: ${value}`),
+    ...state.features.map((value) => `Feature: ${value}`),
+    ...state.entities.map((value) => `Entity: ${value}`),
+    ...state.permissions.map((value) => `Permission: ${value}`),
+    ...state.businessRules.map((value) => `Business rule: ${value}`),
+    ...state.decisions
+      .filter((item) => item.status === "ACCEPTED")
+      .map((item) => `Decision (${item.topic}): ${item.decision}`),
+  ].filter((value): value is string => Boolean(value && value.trim()));
+
+  const proposals = [
+    ...state.assumptions
+      .filter((item) => !item.resolved)
+      .map((item) => item.statement),
+    ...(Array.isArray(state.generationMetadata.conversationProposals)
+      ? state.generationMetadata.conversationProposals.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const proposal = item as Record<string, unknown>;
+          const statement =
+            typeof proposal.statement === "string" ? proposal.statement : "";
+          return statement.trim() ? [statement] : [];
+        })
+      : []),
+  ];
+
+  const open = [
+    ...state.openQuestions,
+    ...state.contradictions
+      .filter((item) => item.status === "OPEN")
+      .map((item) => item.explanation),
+  ];
+
+  return `## CONFIRMED
+
+${list(confirmed)}
+
+## ASSUMPTIONS / PROPOSALS
+
+${proposals.length ? list(proposals) : "- None recorded yet."}
+
+## OPEN QUESTIONS
+
+${open.length ? list(open) : "- No explicit questions recorded yet. Review unresolved sections before implementation."}
+`;
+}
+
+function renderUserFlows(state: ProjectState) {
+  const actors = state.targetUsers.length ? state.targetUsers : state.roles;
+  const flows = state.workflows.length
+    ? state.workflows
+    : state.features.length
+      ? state.features
+      : [UNRESOLVED];
+  return `# User Flows
+
+This is an early product draft. Each flow is grounded in the current canonical state; missing steps stay open for review.
+
+${draftTruthLedger(state)}
+## FLOW MAP
+
+${flows
+  .map(
+    (flow, index) => `### FLOW-${String(index + 1).padStart(3, "0")} — ${flow}
+
+- Actor: ${actors[index % Math.max(actors.length, 1)] || UNRESOLVED}
+- Captured outcome: ${flow}
+- Additional steps, failure handling, and completion rules: ${UNRESOLVED}`,
+  )
+  .join("\n\n")}
+`;
+}
+
+function renderScreenMap(state: ProjectState) {
+  const screens = state.studio.screenMap.length
+    ? state.studio.screenMap
+    : deriveScreenMap(state);
+  return `# Screen Map
+
+This map is a design starting point derived from the current draft. Screens marked inferred are proposals, not confirmed product behavior.
+
+${draftTruthLedger(state)}
+## SCREENS
+
+${
+  screens.length
+    ? screens
+        .map(
+          (screen, index) => `### ${index + 1}. ${screen.name}
+
+- Route: \`${screen.route}\`
+- Actor(s): ${screen.actorIds.length ? screen.actorIds.join(", ") : UNRESOLVED}
+- Purpose: ${screen.purpose}
+- Status: ${screen.status}
+- Source: ${screen.source}`,
+        )
+        .join("\n\n")
+    : UNRESOLVED
+}
+`;
+}
+
+function renderDesignBrief(state: ProjectState) {
+  const screens = state.studio.screenMap.length
+    ? state.studio.screenMap
+    : deriveScreenMap(state);
+  const design = buildDesignSpec(state, screens);
+  return `# Design Brief
+
+Design Preview should consume the current PRD, User Flows, Screen Map, and this brief. It may visualize open questions, but must not turn proposals into confirmed behavior.
+
+${draftTruthLedger(state)}
+## DESIGN DIRECTION
+
+- Product: ${state.name || UNRESOLVED}
+- Mood: ${design.direction.mood}
+- Tone: ${design.direction.tone}
+- Density: ${design.density}
+- Platform: ${design.direction.platform}
+- Shell: ${design.direction.shell}
+- Navigation: ${design.direction.navigation}
+- Visual keywords: ${design.direction.visualKeywords.length ? design.direction.visualKeywords.join(", ") : UNRESOLVED}
+
+## SOURCE DOCUMENTS
+
+- PRD.md
+- USER_FLOWS.md
+- SCREEN_MAP.md
+
+## OPEN DESIGN QUESTIONS
+
+${design.states.length ? list(design.states) : `- ${UNRESOLVED}`}
+`;
+}
 function entityName(value: string) {
   const cleaned = value
     .replace(/[^a-zA-Z0-9 ]/g, " ")
@@ -96,9 +251,7 @@ function renderDoNotInvent(state: ProjectState) {
           "No high-risk unresolved decisions were catalogued. Still refuse to invent ownership, permissions, or identity rules that are not explicit below.",
         ];
 
-  const accepted = state.decisions.filter((item) =>
-    ["ACCEPTED", "PROPOSED"].includes(item.status),
-  );
+  const accepted = state.decisions.filter((item) => item.status === "ACCEPTED");
 
   return `# DO NOT INVENT
 
@@ -163,51 +316,38 @@ ${
 }
 
 function renderDecisionsMarkdown(state: ProjectState) {
-  const graph = state.decisionGraph?.nodes?.length
+  const accepted = state.decisions.filter((item) => item.status === "ACCEPTED");
+  const graphSource = state.decisionGraph?.nodes?.length
     ? state.decisionGraph
     : buildDecisionGraph(state);
-  const debt = debtFor(state);
+  const acceptedIds = new Set(accepted.map((item) => item.id));
+  const graph = {
+    nodes: graphSource.nodes.filter((node) => acceptedIds.has(node.decisionId)),
+    edges: graphSource.edges.filter((edge) => acceptedIds.has(edge.from)),
+  };
 
-  return `# Decisions
+  return `# Confirmed Decisions
 
-## Decision Debt
+This file contains only product decisions explicitly accepted as truth. Proposals and unresolved risks remain outside this contract.
 
-- Score: **${debt.score}/100**
-- Invention risk: **${debt.inventionRisk}**
-- Decided: ${debt.decidedCount}
-- Unresolved high-risk: ${debt.unresolvedHighRiskCount}
-
-## Accepted and proposed decisions
+## Accepted product decisions
 
 ${
-  state.decisions.length
-    ? state.decisions
+  accepted.length
+    ? accepted
         .map((item) => {
           const affects = item.affects?.length
             ? item.affects.map((value) => `  - ${value}`).join("\n")
             : "  - (not linked yet)";
-          return `### ${item.topic}\n\n- **Decision:** ${item.decision}\n- **Status:** ${item.status}\n- **Source:** ${item.source}\n- **Confidence:** ${item.confidence}\n- **Reason:** ${item.reason || "—"}\n- **Affects:**\n${affects}`;
+          return `### ${item.topic}\n\n- **Decision:** ${item.decision}\n- **Source:** ${item.source}\n- **Confidence:** ${item.confidence}\n- **Reason:** ${item.reason || "—"}\n- **Affects:**\n${affects}`;
         })
         .join("\n\n")
-    : "_No decisions recorded yet._"
-}
-
-## Top remaining invention risks
-
-${
-  debt.topRisks.length
-    ? debt.topRisks
-        .map(
-          (item) =>
-            `- **${item.title}** (\`${item.topic}\`, weight ${item.riskWeight}): ${item.reason}`,
-        )
-        .join("\n")
-    : "- None ranked."
+    : "_No confirmed decisions recorded yet._"
 }
 
 ## Decision graph snapshot
 
-- Nodes: ${graph.nodes.length}
+- Nodes: ${graph.nodes.filter((node) => node.status === "ACTIVE").length}
 - Edges: ${graph.edges.length}
 
 ${
@@ -225,9 +365,7 @@ ${
 }
 
 function renderInvariants(state: ProjectState) {
-  const accepted = state.decisions.filter((item) =>
-    ["ACCEPTED", "PROPOSED"].includes(item.status),
-  );
+  const accepted = state.decisions.filter((item) => item.status === "ACCEPTED");
   return `# Invariants
 
 These statements should remain true while implementing the product. If code would violate one, stop and ask.
@@ -313,10 +451,133 @@ ${
 `;
 }
 
+function renderProductSpec(state: ProjectState) {
+  const debt = debtFor(state);
+  const relationships = derivedRelationships(state);
+  const confirmed = state.decisions.filter(
+    (item) => item.status === "ACCEPTED",
+  );
+  const proposed = state.decisions.filter((item) => item.status === "PROPOSED");
+  const conversationProposals = Array.isArray(
+    state.generationMetadata.conversationProposals,
+  )
+    ? state.generationMetadata.conversationProposals.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === "object",
+      )
+    : [];
+  const openContradictions = state.contradictions.filter(
+    (item) => item.status === "OPEN",
+  );
+
+  return `# Product Spec
+
+## Product overview
+
+${state.normalizedSummary || state.rawIdea || UNRESOLVED}
+
+## Problem
+
+${list(state.problems)}
+
+## Target users and roles
+
+${list(state.targetUsers.length ? state.targetUsers : state.roles)}
+
+### Roles
+
+${list(state.roles)}
+
+## Core experience
+
+### Objectives
+
+${list(state.objectives)}
+
+### Main flows
+
+${list(state.workflows)}
+
+### Features
+
+${list(state.features.length ? state.features : state.requirements)}
+
+## Product rules
+
+${listOrUnresolved(derivedBusinessRuleLines(state))}
+
+### Permissions
+
+${listOrUnresolved(derivedPermissionLines(state))}
+
+### Constraints
+
+${list(state.constraints)}
+
+## Data relationships
+
+### Entities
+
+${list(state.entities)}
+
+### Relationships
+
+${
+  relationships.length
+    ? relationships
+        .map(relationshipLine)
+        .map((line) => `- ${line}`)
+        .join("\n")
+    : UNRESOLVED
+}
+
+## Confirmed decisions
+
+${confirmed.length ? confirmed.map((item) => `- **${item.topic}:** ${item.decision}${item.reason ? ` — ${item.reason}` : ""}`).join("\n") : "- None recorded yet."}
+
+## Proposals and assumptions
+
+${
+  proposed.length || conversationProposals.length
+    ? [
+        ...proposed.map(
+          (item) => `- **Proposal — ${item.topic}:** ${item.decision}`,
+        ),
+        ...conversationProposals.map(
+          (item) =>
+            `- **Conversation proposal — ${String(item.topic || "unresolved topic")}:** ${String(item.statement || "Unconfirmed proposal")}`,
+        ),
+      ].join("\n")
+    : "- No proposals were accepted as product truth."
+}
+
+${assumptions(state)}
+
+## Open questions
+
+${openQuestions(state)}
+
+## Unresolved constraints and contradictions
+
+${openContradictions.length ? openContradictions.map((item) => `- ${item.explanation} — ${item.recommendedResolution}`).join("\n") : "- No open contradictions recorded."}
+
+### Out of scope / do not assume
+
+${listOrUnresolved(derivedNonGoals(state))}
+
+## Readiness and provenance
+
+- Readiness: ${state.readiness} (${state.readinessScore}%)
+- Decision Debt: ${debt.score}/100 (${debt.inventionRisk})
+- Every confirmed fact remains traceable through canonical provenance and decision history.
+- Unresolved matters remain unresolved; see DO_NOT_INVENT.md before implementation.
+`;
+}
+
 function renderAgentHandoff(state: ProjectState) {
   const debt = debtFor(state);
   const decided = state.decisions
-    .filter((item) => ["ACCEPTED", "PROPOSED"].includes(item.status))
+    .filter((item) => item.status === "ACCEPTED")
     .map((item) => `- ${item.topic}: ${item.decision}`)
     .join("\n");
   return `# Agent Handoff
@@ -329,23 +590,24 @@ The approved prototype, when included, is an optional visual and interaction ref
 
 ## Package contents
 
-- \`BRD.md\` — business problem, goals, scope
-- \`PRD.md\` — product behavior and requirements
-- \`ERD.md\` — entities and relationships
+- \`BRD.md\`, \`PRD.md\`, \`ERD.md\` — business, product, and data truth
+- \`USER_FLOWS.md\`, \`SCREEN_MAP.md\`, \`DESIGN_BRIEF.md\` — reviewed workflow and design inputs
+- \`PRODUCT_SPEC.md\` — compact compatibility summary
+- \`AGENT_HANDOFF.md\` — coding-agent implementation brief
+- \`DECISIONS.md\` — confirmed product decisions only
 - \`DO_NOT_INVENT.md\` — hard constraints against invented product rules
-- \`DECISIONS.md\` / \`decisions.json\` — explicit decisions and remaining risks
-- \`INVARIANTS.md\` — must-hold rules while coding
-- \`READINESS.md\` — build readiness and Decision Debt
-- \`design/SCREEN_MAP.json\` — deterministic screen inventory derived from Product Truth
-- \`design/DESIGN_SPEC.json\` — baseline implementation direction derived from Product Truth and Screen Map
+- \`design/\` — optional design artifacts
+- \`reference/\` — optional supporting evidence
 
 ## Read order (all tools)
 
-1. \`DO_NOT_INVENT.md\`
-2. \`DECISIONS.md\` / \`decisions.json\`
-3. \`INVARIANTS.md\`
-4. \`PRD.md\` + \`ERD.md\`
-5. \`BRD.md\` for business context
+1. \`BRD.md\`, \`PRD.md\`, and \`ERD.md\`
+2. \`USER_FLOWS.md\`, \`SCREEN_MAP.md\`, and \`DESIGN_BRIEF.md\`
+3. \`AGENT_HANDOFF.md\`
+4. \`DO_NOT_INVENT.md\`
+5. \`DECISIONS.md\`
+6. \`design/\` when present
+7. \`reference/\` only for deeper implementation detail
 
 ## Prompt — Claude Code
 
@@ -353,8 +615,8 @@ The approved prototype, when included, is an optional visual and interaction ref
 You are implementing from a RockFoundry handoff package in this folder.
 
 Mandatory:
-1. Read DO_NOT_INVENT.md first. Obey it as hard constraints.
-2. Implement only decisions in DECISIONS.md / decisions.json.
+1. Read PRD.md and DO_NOT_INVENT.md first; use BRD.md, ERD.md, USER_FLOWS.md, SCREEN_MAP.md, and DESIGN_BRIEF.md as supporting context. Obey unresolved boundaries as hard constraints.
+2. Implement only decisions in DECISIONS.md.
 3. If identity, permissions, ownership, duplicates, or multi-brand behavior is unresolved, do NOT pick a default. Add a TODO and stop that path.
 4. Cite the decision topic in code comments for multi-brand rules.
 5. Prefer failing closed over SaaS-generic defaults.
@@ -364,7 +626,7 @@ Mandatory:
 
 \`\`\`text
 Build from this RockFoundry package.
-Source of truth: DO_NOT_INVENT.md, DECISIONS.md, INVARIANTS.md, then PRD/ERD.
+Source of truth: BRD.md, PRD.md, ERD.md, DO_NOT_INVENT.md, and DECISIONS.md.
 Do not invent customer identity, sales visibility, lead ownership, quotation branding, or duplicate handling if unresolved.
 Leave explicit TODOs instead of guessing multi-tenant behavior.
 \`\`\`
@@ -384,8 +646,8 @@ Never silently invent cross-brand rules.
 Implement from this RockFoundry handoff package.
 
 Rules:
-1. Read DO_NOT_INVENT.md first and obey it strictly.
-2. Treat DECISIONS.md and INVARIANTS.md as source of truth.
+1. Read PRD.md and DO_NOT_INVENT.md first and obey them strictly.
+2. Treat DECISIONS.md as the source of confirmed product decisions.
 3. If a behavior is unresolved, do not invent it. Leave a clear TODO or ask.
 4. Prefer the explicit decisions over any generic SaaS defaults.
 5. When identity, permissions, ownership, or multi-unit behavior is involved, cite the decision you are following.
@@ -402,9 +664,9 @@ ${
 Reference:
 - design/DESIGN_SPEC.json
 - design/SCREEN_MAP.json
-- design/prototype/
+- design/prototype/ when present
 
-The prototype is an approved visual and interaction reference.
+The prototype is an approved visual and interaction reference when included.
 Implementation may translate it into the production stack, but must preserve
 approved workflows, screen hierarchy, interaction priorities, and role boundaries.
 Do not invent alternative product behavior. Do not copy prototype code blindly.
@@ -430,7 +692,7 @@ ${
 
 - Project: ${state.name || "Untitled project"}
 - Readiness: ${state.readiness} (${state.readinessScore}%)
-- Decision Debt: ${debt.score}/100 (${debt.inventionRisk})
+- Remaining unknowns: ${debt.unresolvedHighRiskCount}
 - ${debt.summary}
 
 ## Suggested implementation order
@@ -467,16 +729,12 @@ function renderDecisionsJson(state: ProjectState) {
 }
 
 export function renderArtifacts(state: ProjectState): ArtifactDocuments {
-  const status = `${state.readiness} (${state.readinessScore}%)`;
   const debt = debtFor(state);
   const brd = `# Business Requirements Document
 
 ## 1. Executive Summary
 
 ${state.normalizedSummary || state.rawIdea || UNRESOLVED}
-
-**Discovery status:** ${status}  
-**Decision Debt:** ${debt.score}/100 (${debt.inventionRisk})
 
 ## 2. Business Problem
 
@@ -558,6 +816,8 @@ ${openQuestions(state)}
 ### Decision Debt warnings
 
 ${list(debt.codingAgentWarnings)}
+
+${draftTruthLedger(state)}
 `;
 
   const prd = `# Product Requirements Document
@@ -565,8 +825,6 @@ ${list(debt.codingAgentWarnings)}
 ## 1. Product Overview
 
 ${state.normalizedSummary || state.rawIdea || UNRESOLVED}
-
-**Decision Debt:** ${debt.score}/100 (${debt.inventionRisk})
 
 ## 2. Product Goals
 
@@ -664,6 +922,8 @@ ${openQuestions(state)}
 ### Do not invent
 
 See \`DO_NOT_INVENT.md\`.
+
+${draftTruthLedger(state)}
 `;
 
   const entities = [...new Set(state.entities.filter(Boolean))];
@@ -718,8 +978,6 @@ ${listOrUnresolved(derivedStateStatusLines(state))}`,
 
 The data model is derived from canonical entities, explicit canonical relationships, and accepted decisions whose endpoints are already known entities. Unresolved fields remain explicit instead of being invented.
 
-**Decision Debt:** ${debt.score}/100 (${debt.inventionRisk})
-
 ## 2. Entity Relationship Diagram
 
 Mermaid edges below are emitted only for known relationships. Cardinality shows the known one/many shape; requiredness, optionality, fields, indexes, and constraints remain unresolved unless they exist in canonical state.
@@ -761,12 +1019,21 @@ ${openQuestions(state)}
 ### Identity and ownership risks
 
 ${list(debt.topRisks.map((item) => `${item.title}: ${item.reason}`))}
+
+${draftTruthLedger(state)}
 `;
+
+  const userFlows = renderUserFlows(state);
+  const screenMap = renderScreenMap(state);
+  const designBrief = renderDesignBrief(state);
 
   return {
     BRD: brd,
     PRD: prd,
     ERD: erd,
+    USER_FLOWS: userFlows,
+    SCREEN_MAP: screenMap,
+    DESIGN_BRIEF: designBrief,
     DO_NOT_INVENT: renderDoNotInvent(state),
     DECISIONS: renderDecisionsMarkdown(state),
     INVARIANTS: renderInvariants(state),
@@ -776,33 +1043,33 @@ ${list(debt.topRisks.map((item) => `${item.title}: ${item.reason}`))}
   };
 }
 
+export function renderDraftArtifacts(
+  state: ProjectState,
+): DraftArtifactDocuments {
+  const documents = renderArtifacts(state);
+  return {
+    BRD: documents.BRD,
+    PRD: documents.PRD,
+    ERD: documents.ERD,
+    USER_FLOWS: documents.USER_FLOWS,
+    SCREEN_MAP: documents.SCREEN_MAP,
+    DESIGN_BRIEF: documents.DESIGN_BRIEF,
+  };
+}
+
 function renderHandoffReadme(state: ProjectState) {
-  const design = state.studio.approvedVersion
-    ? "The approved prototype under design/prototype/ is the visual and interaction reference."
-    : state.studio.currentVersion
-      ? "A draft prototype is included under design/prototype/. Review and approve it before treating it as visual reference."
-      : "No prototype is included. Screen Map and baseline DesignSpec remain the implementation reference.";
-  const implementationGuidance = state.studio.currentVersion
-    ? "The target implementation stack may differ from this prototype. Translate the approved visual and interaction intent into the target stack; do not copy prototype code blindly and do not invent unresolved product behavior."
-    : "No prototype is included. Do not invent visual or interaction requirements beyond design/SCREEN_MAP.json and design/DESIGN_SPEC.json.";
-  return `# ${state.name} — Coding Agent Start Here
+  const design = state.studio.currentVersion
+    ? "Use design/ when present for screen and prototype context."
+    : "Use design/ only when it is present; do not invent visual requirements when it is absent.";
+  return `# ${state.name} — Handoff package
 
-Start with AGENT_HANDOFF.md. It defines Product Truth, the do-not-invent boundary, and the required read order.
-
-## Read in this order
-
-1. AGENT_HANDOFF.md
-2. decisions/DO_NOT_INVENT.md
-3. decisions/DECISIONS.md and decisions/decisions.json
-4. decisions/INVARIANTS.md
-5. product/PRD.md and product/ERD.md
-6. product/BRD.md
+1. Read BRD.md, PRD.md, ERD.md, USER_FLOWS.md, SCREEN_MAP.md, and DESIGN_BRIEF.md first. PRODUCT_SPEC.md remains a compact compatibility summary.
+2. Read AGENT_HANDOFF.md for implementation order and coding-agent guidance.
+3. Respect DO_NOT_INVENT.md; unresolved behavior must stay unresolved.
+4. Use design/ when present.
+5. Use reference/ only for deeper implementation detail and external evidence.
 
 ${design}
-
-Product Truth is authoritative. Use design/SCREEN_MAP.json and design/DESIGN_SPEC.json as the implementation reference. Prototype is optional and may be absent; coding agents must not invent unresolved behavior or visual requirements.
-
-${implementationGuidance}
 `;
 }
 
@@ -815,26 +1082,30 @@ export async function generateExport(
     : deriveScreenMap(state);
   const baselineDesignSpec = buildDesignSpec(state, screenMap);
   const zip = new JSZip();
-  zip.file("README.md", renderHandoffReadme(state));
-  zip.file("product/BRD.md", documents.BRD);
-  zip.file("product/PRD.md", documents.PRD);
-  zip.file("product/ERD.md", documents.ERD);
-  zip.file("decisions/DO_NOT_INVENT.md", documents.DO_NOT_INVENT);
-  zip.file("decisions/DECISIONS.md", documents.DECISIONS);
-  zip.file("decisions/INVARIANTS.md", documents.INVARIANTS);
-  zip.file("decisions/READINESS.md", documents.READINESS);
-  zip.file("decisions/decisions.json", documents.DECISIONS_JSON);
-  zip.file("AGENT_HANDOFF.md", documents.AGENT_HANDOFF);
-  zip.file(
-    "design/DESIGN_SPEC.json",
-    JSON.stringify(baselineDesignSpec, null, 2),
-  );
-  zip.file("design/SCREEN_MAP.json", JSON.stringify(screenMap, null, 2));
-  zip.file(
-    "design/DESIGN_DECISIONS.md",
-    "# Baseline design decisions\n\nThis deterministic baseline is derived from Product Truth and the Screen Map. A prototype is optional and is not required for coding-agent handoff.\n",
-  );
-  let fileCount = 13;
+  const files = new Set<string>();
+  const add = (path: string, content: string) => {
+    zip.file(path, content);
+    files.add(path);
+  };
+
+  add("README.md", renderHandoffReadme(state));
+  add("PRODUCT_SPEC.md", renderProductSpec(state));
+  add("BRD.md", documents.BRD);
+  add("PRD.md", documents.PRD);
+  add("ERD.md", documents.ERD);
+  add("USER_FLOWS.md", documents.USER_FLOWS);
+  add("SCREEN_MAP.md", documents.SCREEN_MAP);
+  add("DESIGN_BRIEF.md", documents.DESIGN_BRIEF);
+  add("AGENT_HANDOFF.md", documents.AGENT_HANDOFF);
+  add("DECISIONS.md", documents.DECISIONS);
+  add("DO_NOT_INVENT.md", documents.DO_NOT_INVENT);
+  add("reference/BRD.md", documents.BRD);
+  add("reference/PRD.md", documents.PRD);
+  add("reference/ERD.md", documents.ERD);
+  add("reference/USER_FLOWS.md", documents.USER_FLOWS);
+  add("reference/SCREEN_MAP.md", documents.SCREEN_MAP);
+  add("reference/DESIGN_BRIEF.md", documents.DESIGN_BRIEF);
+
   const pack = state.generationMetadata.designPackage as
     | {
         spec?: unknown;
@@ -842,22 +1113,65 @@ export async function generateExport(
         summary?: string;
       }
     | undefined;
-  if (state.studio.currentVersion > 0 && pack?.files?.length) {
+  const prototypeFiles = (pack?.files || []).filter(
+    (file) =>
+      typeof file.path === "string" &&
+      file.path.length > 0 &&
+      !file.path.includes("..") &&
+      !file.path.startsWith("/") &&
+      typeof file.content === "string",
+  );
+  const hasDesign =
+    state.studio.currentVersion > 0 || prototypeFiles.length > 0;
+  if (hasDesign) {
     const label = state.studio.status === "APPROVED" ? "APPROVED" : "DRAFT";
-    zip.file("design/DESIGN_SPEC.json", JSON.stringify(pack.spec || baselineDesignSpec, null, 2));
-    zip.file(
-      "design/SCREEN_MAP.json",
-      JSON.stringify(screenMap, null, 2),
+    add(
+      "design/DESIGN_SPEC.json",
+      JSON.stringify(
+        state.studio.currentVersion > 0 && pack?.spec
+          ? pack.spec
+          : baselineDesignSpec,
+        null,
+        2,
+      ),
     );
-    zip.file(
+    add("design/SCREEN_MAP.json", JSON.stringify(screenMap, null, 2));
+    add(
       "design/DESIGN_DECISIONS.md",
-      `# Design decisions (${label} v${state.studio.currentVersion})\n\n${pack.summary || ""}\n`,
+      state.studio.currentVersion > 0
+        ? `# Design decisions (${label} v${state.studio.currentVersion})\n\n${pack?.summary || ""}\n`
+        : "# Baseline design decisions\n\nThis deterministic baseline is derived from Product Truth and the Screen Map. A prototype is optional and is not required for coding-agent handoff.\n",
     );
-    for (const file of pack.files) {
-      zip.file(`design/prototype/${file.path}`, file.content);
+    for (const file of prototypeFiles) {
+      add(`design/prototype/${file.path}`, file.content);
     }
-    fileCount += pack.files.length;
   }
+
+  const references = state.references.filter(
+    (reference) =>
+      typeof reference.url === "string" && /^https?:\/\//i.test(reference.url),
+  );
+  if (references.length) {
+    add(
+      "reference/references.json",
+      JSON.stringify(
+        references.map(
+          ({ id, type, url, status, source, untrusted, metadata }) => ({
+            id,
+            type,
+            url,
+            status,
+            source,
+            untrusted,
+            metadata: metadata && typeof metadata === "object" ? metadata : {},
+          }),
+        ),
+        null,
+        2,
+      ),
+    );
+  }
+
   const buffer = await zip.generateAsync({ type: "nodebuffer" });
   const generatedAt = new Date().toISOString();
   return {
@@ -865,8 +1179,28 @@ export async function generateExport(
     documents,
     metadata: {
       sizeBytes: buffer.length,
-      fileCount,
+      fileCount: files.size,
       generatedAt,
+    },
+  };
+}
+
+export async function generateDraftExport(
+  state: ProjectState,
+): Promise<DraftExportPackage> {
+  const documents = renderDraftArtifacts(state);
+  const zip = new JSZip();
+  for (const [name, content] of Object.entries(documents)) {
+    zip.file(`${name}.md`, content);
+  }
+  const buffer = await zip.generateAsync({ type: "nodebuffer" });
+  return {
+    buffer,
+    documents,
+    metadata: {
+      sizeBytes: buffer.length,
+      fileCount: Object.keys(documents).length,
+      generatedAt: new Date().toISOString(),
     },
   };
 }

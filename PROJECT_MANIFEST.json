@@ -41,7 +41,14 @@
     "appDirectory": "OS-aware local application data directory/.rockfoundry",
     "database": "rockfoundry.db",
     "projectsDirectory": "projects/<project-id>",
-    "primaryArtifacts": ["BRD.md", "PRD.md", "ERD.md"],
+    "primaryArtifacts": [
+      "BRD.md",
+      "PRD.md",
+      "ERD.md",
+      "USER_FLOWS.md",
+      "SCREEN_MAP.md",
+      "DESIGN_BRIEF.md"
+    ],
     "previousAlphaDataMigration": false
   },
   "canonicalEntities": [
@@ -127,7 +134,14 @@
     "artifact_generate"
   ],
   "artifacts": {
-    "primary": ["BRD", "PRD", "ERD"],
+    "primary": [
+      "BRD",
+      "PRD",
+      "ERD",
+      "USER_FLOWS",
+      "SCREEN_MAP",
+      "DESIGN_BRIEF"
+    ],
     "handoff": [
       "DO_NOT_INVENT.md",
       "DECISIONS.md",
@@ -140,6 +154,9 @@
       "BRD.md",
       "PRD.md",
       "ERD.md",
+      "USER_FLOWS.md",
+      "SCREEN_MAP.md",
+      "DESIGN_BRIEF.md",
       "DO_NOT_INVENT.md",
       "DECISIONS.md",
       "decisions.json",
@@ -193,7 +210,7 @@
     },
     {
       "id": "RESET-005",
-      "decision": "The only primary generated documents are BRD.md, PRD.md, and ERD.md.",
+      "decision": "The early Product Draft contains BRD.md, PRD.md, ERD.md, USER_FLOWS.md, SCREEN_MAP.md, and DESIGN_BRIEF.md; AGENT_HANDOFF.md is reserved for explicit final handoff.",
       "status": "accepted"
     }
   ],
@@ -224,6 +241,9 @@
       "BRD.md",
       "PRD.md",
       "ERD.md",
+      "USER_FLOWS.md",
+      "SCREEN_MAP.md",
+      "DESIGN_BRIEF.md",
       "DO_NOT_INVENT.md",
       "DECISIONS.md",
       "decisions.json",

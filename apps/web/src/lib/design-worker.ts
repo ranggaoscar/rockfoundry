@@ -7,8 +7,7 @@ import {
   startDesignGenerationJobHeartbeat,
   type DesignJobStage,
 } from "./design-job-claims";
-
-export { claimNextDesignGenerationJob, recoverStaleDesignGenerationJobs } from "./design-job-claims";
+import { latestDraftArtifacts } from "./artifact-composer";
 
 let started = false;
 let interval: ReturnType<typeof setInterval> | undefined;
@@ -43,17 +42,12 @@ export async function runDesignGenerationJob(jobId: string, alreadyClaimed = fal
     if (!project || project.version !== job.projectVersion)
       throw new Error("PROJECT_VERSION_CONFLICT");
     const state = parseProjectState(project);
-    const packageJob = await prisma.packageJob.findFirst({
-      where: {
-        projectId: job.projectId,
-        projectVersion: job.projectVersion,
-        status: "COMPLETED",
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!packageJob && state.studio.currentVersion === 0)
-      throw new Error("PACKAGE_NOT_READY");
-
+    const draft = await latestDraftArtifacts(job.projectId, job.projectVersion);
+    const persistedDraft = draft
+      ? Object.fromEntries(
+          draft.artifacts.map((artifact) => [artifact.type, artifact.content]),
+        )
+      : undefined;
     const result = await designModule.generateProjectDesign(
       job.projectId,
       state,
@@ -69,6 +63,7 @@ export async function runDesignGenerationJob(jobId: string, alreadyClaimed = fal
             totalMs: null,
           });
         },
+        persistedDraft,
       },
     );
     await prisma.designGenerationJob.update({

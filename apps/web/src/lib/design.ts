@@ -9,11 +9,13 @@ import {
   evaluateDesignReadiness,
   generateMockPrototype,
   markDesignStale,
+  renderDraftArtifacts,
   validatePrototypeFiles,
   validatePrototypeQuality,
   DesignGenerationResultSchema,
   deriveScreenMap,
   type DesignGenerationResult,
+  type DesignScreen,
   type ProjectState,
 } from "@rockfoundry/core";
 import { resolveProviderSettings } from "./provider-config";
@@ -26,11 +28,21 @@ import {
   formatDesignFailureDiagnostics,
   safeDesignFailureMessage,
 } from "@rockfoundry/ai";
+import {
+  latestDraftArtifacts,
+  DRAFT_ARTIFACT_TYPES,
+} from "./artifact-composer";
+import { parsePersistedScreenMap } from "./design-draft-bridge";
 
 export class DesignGenerationError extends Error {
   constructor(
     public readonly task:
-      "design_architecture" | "prototype_generation" | "prototype_validation" | "quality_review" | "prototype_repair",
+      | "design_architecture"
+      | "draft_screen_map"
+      | "prototype_generation"
+      | "prototype_validation"
+      | "quality_review"
+      | "prototype_repair",
     public readonly cause: unknown,
   ) {
     super(`Design generation failed during ${task}.`);
@@ -51,7 +63,9 @@ export function logDesignGenerationFailure(error: unknown) {
     error instanceof DesignGenerationError
       ? error
       : new DesignGenerationError("prototype_generation", error);
-  const diagnostics = classifyDesignFailure(failure.cause, { task: failure.task });
+  const diagnostics = classifyDesignFailure(failure.cause, {
+    task: failure.task,
+  });
   console.error(
     `[design-generation] ${formatDesignFailureDiagnostics(diagnostics)}`,
   );
@@ -59,6 +73,11 @@ export function logDesignGenerationFailure(error: unknown) {
 }
 
 export function designGenerationUserMessage(error: unknown) {
+  if (
+    error instanceof DesignGenerationError &&
+    error.task === "draft_screen_map"
+  )
+    return "Screen Map dari Product Draft saat ini tidak dapat digunakan. Generate ulang Product Draft sebelum membuat prototype.";
   return safeDesignFailureMessage(classifyDesignGenerationFailure(error));
 }
 
@@ -77,6 +96,7 @@ async function persistDesignArtifacts(
   version: number,
   generated: DesignGenerationResult,
   status: string,
+  canonicalVersion?: number,
 ) {
   const files = Object.fromEntries(
     generated.files.map((file) => [file.path, file.content]),
@@ -90,6 +110,7 @@ async function persistDesignArtifacts(
     PROTOTYPE_JS: files["app.js"] || "",
     DESIGN_MANIFEST: JSON.stringify({
       version,
+      canonicalVersion: canonicalVersion ?? null,
       status,
       screens: generated.screenMap.map((screen) => screen.id),
     }),
@@ -102,15 +123,20 @@ async function persistDesignArtifacts(
           projectId,
           type,
           version,
+          canonicalVersion: canonicalVersion ?? null,
           status,
           content: payloads[type],
         },
-        update: { status, content: payloads[type], generatedAt: new Date() },
+        update: {
+          status,
+          canonicalVersion: canonicalVersion ?? null,
+          content: payloads[type],
+          generatedAt: new Date(),
+        },
       }),
     ),
   );
 }
-
 export function designSnapshot(state: ProjectState) {
   const pack = state.generationMetadata.designPackage as
     | { files?: Array<{ path: string; content: string }>; spec?: unknown }
@@ -123,24 +149,184 @@ export function designSnapshot(state: ProjectState) {
   };
 }
 
-function designProductContext(state: ProjectState) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function hasExplicitUserProvenance(
+  state: ProjectState,
+  prefixes: string[],
+  value: string,
+) {
+  return prefixes.some((prefix) => {
+    const provenance = state.provenance[`${prefix}.${value}`];
+    return (
+      provenance?.source === "USER" && provenance.confidence === "EXPLICIT"
+    );
+  });
+}
+
+function explicitValues(
+  state: ProjectState,
+  values: string[],
+  prefixes: string[],
+) {
+  return values.filter((value) =>
+    hasExplicitUserProvenance(state, prefixes, value),
+  );
+}
+
+function explicitAcceptedDecisions(state: ProjectState) {
+  return state.decisions.filter(
+    (decision) =>
+      decision.status === "ACCEPTED" &&
+      decision.source === "USER" &&
+      decision.confidence === "EXPLICIT" &&
+      hasExplicitUserProvenance(state, ["decision"], decision.topic),
+  );
+}
+
+function explicitDesignState(state: ProjectState) {
+  return {
+    productType:
+      state.productType &&
+      hasExplicitUserProvenance(state, ["productType"], state.productType)
+        ? state.productType
+        : null,
+    targetUsers: explicitValues(state, state.targetUsers, [
+      "targetUsers",
+      "user",
+    ]),
+    roles: explicitValues(state, state.roles, ["roles", "role"]),
+    entities: explicitValues(state, state.entities, ["entities", "entity"]),
+    workflows: explicitValues(state, state.workflows, [
+      "workflows",
+      "workflow",
+    ]),
+    features: explicitValues(state, state.features, ["features", "feature"]),
+    constraints: explicitValues(state, state.constraints, [
+      "constraints",
+      "constraint",
+    ]),
+    decisions: explicitAcceptedDecisions(state),
+  };
+}
+
+function designInputSnapshot(state: ProjectState) {
+  const explicit = explicitDesignState(state);
+  const acceptedDecisions = explicit.decisions.map(
+    ({ topic, decision, affects }) => ({
+      topic,
+      decision,
+      affects,
+    }),
+  );
+  const actors = [...explicit.targetUsers, ...explicit.roles];
+  const rawProposals = state.generationMetadata.conversationProposals;
+  const proposals = Array.isArray(rawProposals)
+    ? rawProposals
+        .filter(isRecord)
+        .map((proposal) => ({
+          topic: typeof proposal.topic === "string" ? proposal.topic : null,
+          statement:
+            typeof proposal.statement === "string" ? proposal.statement : null,
+          status:
+            typeof proposal.status === "string" ? proposal.status : "PROPOSED",
+        }))
+        .filter((proposal) => proposal.topic || proposal.statement)
+    : [];
+  const rawDesignSignals = state.generationMetadata.designSignals;
+  const designSignals = [
+    ...state.design,
+    ...(Array.isArray(rawDesignSignals) ? rawDesignSignals : []),
+  ]
+    .map((signal) => {
+      if (typeof signal === "string") return signal;
+      if (isRecord(signal) && typeof signal.value === "string")
+        return signal.value;
+      return null;
+    })
+    .filter((signal): signal is string => Boolean(signal));
+
+  return {
+    confirmedTruth: {
+      actors: [...new Set(actors)],
+      workflows: explicit.workflows,
+      scope: explicit.features,
+      constraints: explicit.constraints,
+      acceptedDecisions,
+    },
+    draftSpec: {
+      productName: state.name,
+      summary: state.normalizedSummary || state.rawIdea,
+    },
+    labeled: {
+      assumptions: state.assumptions
+        .filter((assumption) => !assumption.resolved)
+        .map((assumption) => assumption.statement),
+      proposals,
+      openQuestions: [...state.openQuestions],
+    },
+    designSignals: [...new Set(designSignals)],
+  };
+}
+
+export type PersistedDraftArtifacts = Partial<
+  Record<"PRD" | "USER_FLOWS" | "SCREEN_MAP" | "DESIGN_BRIEF", string>
+>;
+
+export function designProductContext(
+  state: ProjectState,
+  persistedDraft?: PersistedDraftArtifacts,
+) {
+  const explicit = explicitDesignState(state);
+  const fallback = renderDraftArtifacts(state);
+  const draftArtifacts = {
+    PRD: persistedDraft?.PRD || fallback.PRD,
+    USER_FLOWS: persistedDraft?.USER_FLOWS || fallback.USER_FLOWS,
+    SCREEN_MAP: persistedDraft?.SCREEN_MAP || fallback.SCREEN_MAP,
+    DESIGN_BRIEF: persistedDraft?.DESIGN_BRIEF || fallback.DESIGN_BRIEF,
+  };
   return {
     name: state.name,
     summary: state.normalizedSummary || state.rawIdea,
-    productType: state.productType || null,
-    targetUsers: state.targetUsers,
-    roles: state.roles,
-    entities: state.entities,
-    workflows: state.workflows,
-    features: state.features,
-    decisions: state.decisions
-      .filter((decision) => decision.status === "ACCEPTED")
-      .map(({ topic, decision, affects }) => ({ topic, decision, affects })),
+    productType: explicit.productType,
+    targetUsers: explicit.targetUsers,
+    roles: explicit.roles,
+    entities: explicit.entities,
+    workflows: explicit.workflows,
+    features: explicit.features,
+    decisions: explicit.decisions.map(({ topic, decision, affects }) => ({
+      topic,
+      decision,
+      affects,
+    })),
     assumptions: state.assumptions
       .filter((assumption) => !assumption.resolved)
       .map((assumption) => assumption.statement),
+    draftArtifacts,
+    designInputSnapshot: designInputSnapshot(state),
   };
 }
+
+function initialPrototypeProductContext(
+  state: ProjectState,
+): Record<string, unknown> {
+  const explicit = explicitDesignState(state);
+  return {
+    name: state.name,
+    summary: state.normalizedSummary || state.rawIdea,
+    confirmedActors: [...new Set([...explicit.targetUsers, ...explicit.roles])],
+    confirmedWorkflows: explicit.workflows,
+    confirmedFeatures: explicit.features,
+  };
+}
+
+type DesignGenerationStage =
+  | "DESIGN_ARCHITECTURE"
+  | "PROTOTYPE_GENERATION"
+  | "QUALITY_REVIEW"
+  | "PROTOTYPE_REPAIR";
 
 type ArchitectureResolution = {
   designSpec: DesignSpec;
@@ -151,47 +337,71 @@ type ArchitectureResolution = {
   failure?: ReturnType<typeof classifyDesignGenerationFailure>;
 };
 
-export type DesignGenerationStage =
-  | "DESIGN_ARCHITECTURE"
-  | "PROTOTYPE_GENERATION"
-  | "QUALITY_REVIEW"
-  | "PROTOTYPE_REPAIR";
-
 async function generateWithRealProvider(
   state: ProjectState,
-  input: { request?: string; existing?: DesignGenerationResult } = {},
+  input: {
+    request?: string;
+    existing?: DesignGenerationResult;
+    initialPreview?: boolean;
+  } = {},
   gateway = getAiGateway(),
   onStage?: (stage: DesignGenerationStage) => void | Promise<void>,
-): Promise<DesignGenerationResult & { architectureResolution: ArchitectureResolution; prototypeMs: number }> {
-  const product = designProductContext(state);
-  const screenMap = state.studio.screenMap.length
-    ? state.studio.screenMap
-    : deriveScreenMap(state);
+  persistedDraft?: PersistedDraftArtifacts,
+  persistedScreenMap?: DesignScreen[],
+): Promise<
+  DesignGenerationResult & {
+    architectureResolution: ArchitectureResolution;
+    prototypeMs: number;
+  }
+> {
+  const product = input.initialPreview
+    ? initialPrototypeProductContext(state)
+    : designProductContext(state, persistedDraft);
+  const screenMap = persistedScreenMap?.length
+    ? persistedScreenMap
+    : state.studio.screenMap.length
+      ? state.studio.screenMap
+      : deriveScreenMap(state);
   const baseline = buildDesignSpec(state, screenMap);
   const architectureStarted = Date.now();
   let architecture: ArchitectureResolution;
-  try {
-    await onStage?.("DESIGN_ARCHITECTURE");
-    const response = await gateway.runDesignArchitecture({ product, screenMap });
-    architecture = {
-      designSpec: response.architecture.designSpec,
-      summary: response.architecture.summary,
-      assumptions: response.architecture.assumptions,
-      source: "AI",
-      attemptMs: Date.now() - architectureStarted,
-    };
-  } catch (error) {
-    const failure = classifyDesignGenerationFailure(
-      new DesignGenerationError("design_architecture", error),
-    );
+  if (input.initialPreview) {
     architecture = {
       designSpec: baseline,
-      summary: "Deterministic baseline design direction derived from Product Truth and Screen Map.",
+      summary:
+        "Deterministic baseline design direction derived from Product Truth and Screen Map.",
       assumptions: [],
       source: "BASELINE_FALLBACK",
-      attemptMs: Date.now() - architectureStarted,
-      failure,
+      attemptMs: 0,
     };
+  } else {
+    try {
+      await onStage?.("DESIGN_ARCHITECTURE");
+      const response = await gateway.runDesignArchitecture({
+        product,
+        screenMap,
+      });
+      architecture = {
+        designSpec: response.architecture.designSpec,
+        summary: response.architecture.summary,
+        assumptions: response.architecture.assumptions,
+        source: "AI",
+        attemptMs: Date.now() - architectureStarted,
+      };
+    } catch (error) {
+      const failure = classifyDesignGenerationFailure(
+        new DesignGenerationError("design_architecture", error),
+      );
+      architecture = {
+        designSpec: baseline,
+        summary:
+          "Deterministic baseline design direction derived from Product Truth and Screen Map.",
+        assumptions: [],
+        source: "BASELINE_FALLBACK",
+        attemptMs: Date.now() - architectureStarted,
+        failure,
+      };
+    }
   }
   let prototype;
   const prototypeStarted = Date.now();
@@ -207,6 +417,7 @@ async function generateWithRealProvider(
       screenMap,
       revisionRequest: input.request,
       existingFiles: input.existing?.files,
+      reasoningEffort: input.initialPreview ? "low" : undefined,
     });
   } catch (error) {
     throw new DesignGenerationError("prototype_generation", error);
@@ -242,22 +453,47 @@ export async function generateProjectDesign(
     save?: typeof saveProjectState;
     persist?: typeof persistDesignArtifacts;
     onStage?: (stage: DesignGenerationStage) => void | Promise<void>;
+    persistedDraft?: PersistedDraftArtifacts;
   } = {},
 ) {
   const totalStarted = Date.now();
-  const readiness = evaluateDesignReadiness(state);
-  if (readiness.level === "BLOCKED") throw new Error("DESIGN_BLOCKED");
+  if (!state.rawIdea.trim() && !state.normalizedSummary?.trim())
+    throw new Error("DESIGN_BLOCKED");
+  const hasCurrentPersistedScreenMap = Object.prototype.hasOwnProperty.call(
+    deps.persistedDraft || {},
+    "SCREEN_MAP",
+  );
+  const persistedScreenMap = hasCurrentPersistedScreenMap
+    ? parsePersistedScreenMap(deps.persistedDraft?.SCREEN_MAP || "")
+    : [];
+  if (hasCurrentPersistedScreenMap && persistedScreenMap.length === 0)
+    throw new DesignGenerationError(
+      "draft_screen_map",
+      new Error("CURRENT_DRAFT_SCREEN_MAP_UNUSABLE"),
+    );
+  const effectiveScreenMap = persistedScreenMap.length
+    ? persistedScreenMap
+    : state.studio.screenMap.length
+      ? state.studio.screenMap
+      : deriveScreenMap(state);
+  const product = designProductContext(state, deps.persistedDraft);
   const settings = deps.providerSettings || resolveProviderSettings();
+  const initialPreview = request === undefined;
   const generated =
     settings.mode === "openai-compatible"
       ? await generateWithRealProvider(
           state,
-          { request },
+          { request, initialPreview },
           deps.gateway,
           deps.onStage,
+          deps.persistedDraft,
+          effectiveScreenMap,
         )
       : (await deps.onStage?.("PROTOTYPE_GENERATION"),
-        generateMockPrototype(state, { request }));
+        generateMockPrototype(state, {
+          request,
+          screenMap: effectiveScreenMap,
+        }));
   const architectureResolution: ArchitectureResolution =
     "architectureResolution" in generated
       ? (generated.architectureResolution as ArchitectureResolution)
@@ -275,72 +511,140 @@ export async function generateProjectDesign(
   let reviewed = generated;
   const validation = validatePrototypeFiles(reviewed.files, reviewed.screenMap);
   if (!validation.accepted)
-    throw new DesignGenerationError("prototype_validation", new Error(validation.reasons.join(" ")));
-  let quality = validatePrototypeQuality(reviewed.files, reviewed.screenMap, reviewed.designSpec);
+    throw new DesignGenerationError(
+      "prototype_validation",
+      new Error(validation.reasons.join(" ")),
+    );
+  let quality = validatePrototypeQuality(
+    reviewed.files,
+    reviewed.screenMap,
+    reviewed.designSpec,
+  );
   let designStatus: "IN_REVIEW" | "NEEDS_REVIEW" = "IN_REVIEW";
-  let qualityReview: { verdict: "PASS" | "REPAIR"; score?: number; summary?: string; blockingProblems?: string[] } | null = null;
+  let qualityReview: {
+    verdict?: "PASS" | "REPAIR";
+    score?: number;
+    summary?: string;
+    blockingProblems?: string[];
+    failure?: ReturnType<typeof classifyDesignGenerationFailure>;
+    source?: "AI" | "DETERMINISTIC";
+  } | null = null;
   let repairAttempted = false;
   let qualityReviewMs = 0;
   let repairMs = 0;
-  if (settings.mode === "openai-compatible") {
+  if (settings.mode === "openai-compatible" && !initialPreview) {
     const gateway = deps.gateway || getAiGateway();
-    const files = Object.fromEntries(reviewed.files.map((file) => [file.path, file.content]));
+    const files = Object.fromEntries(
+      reviewed.files.map((file) => [file.path, file.content]),
+    );
     let review;
     const qualityStarted = Date.now();
     try {
       await deps.onStage?.("QUALITY_REVIEW");
       review = await gateway.runDesignQualityReview({
-        productSummary: JSON.stringify({ name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows }),
+        productSummary: JSON.stringify({
+          name: product.name,
+          productType: product.productType,
+          targetUsers: product.targetUsers,
+          roles: product.roles,
+          entities: product.entities,
+          workflows: product.workflows,
+          features: product.features,
+          decisions: product.decisions,
+          designInputSnapshot: product.designInputSnapshot,
+        }),
         screenMap: reviewed.screenMap,
         designSpec: reviewed.designSpec,
-        prototype: { html: files["index.html"] || "", css: files["styles.css"] || "", js: files["app.js"] || "" },
+        prototype: {
+          html: files["index.html"] || "",
+          css: files["styles.css"] || "",
+          js: files["app.js"] || "",
+        },
         quality,
       });
     } catch (error) {
-      throw new DesignGenerationError("quality_review", error);
+      qualityReview = {
+        summary:
+          "AI quality review was unavailable. The safety-valid prototype needs manual review.",
+        blockingProblems: [],
+        failure: classifyDesignGenerationFailure(
+          new DesignGenerationError("quality_review", error),
+        ),
+      };
+      designStatus = "NEEDS_REVIEW";
     } finally {
       qualityReviewMs = Date.now() - qualityStarted;
     }
-    qualityReview = {
-      verdict: review.verdict,
-      score: review.score,
-      summary: review.improvements[0] || review.assessments[0]?.assessment,
-      blockingProblems: review.blockingProblems,
-    };
-    if (review.verdict === "REPAIR") {
+    if (review) {
+      qualityReview = {
+        verdict: review.verdict,
+        score: review.score,
+        summary: review.improvements[0] || review.assessments[0]?.assessment,
+        blockingProblems: review.blockingProblems,
+        source: "AI",
+      };
+    } else if (!qualityReview) {
+      qualityReview = {
+        summary:
+          "AI quality review did not return a result. The safety-valid prototype needs manual review.",
+        blockingProblems: [],
+      };
+      designStatus = "NEEDS_REVIEW";
+    }
+    if (review?.verdict === "REPAIR") {
       repairAttempted = true;
       const repairStarted = Date.now();
       try {
         await deps.onStage?.("PROTOTYPE_REPAIR");
         const repaired = await gateway.runPrototypeRepair({
-          product: { name: state.name, targetUsers: state.targetUsers, entities: state.entities, workflows: state.workflows },
+          product,
           screenMap: reviewed.screenMap,
           designSpec: reviewed.designSpec,
           existingFiles: reviewed.files,
           blockingProblems: review.blockingProblems,
         });
-        reviewed = DesignGenerationResultSchema.parse({ ...reviewed, files: repaired.prototype.files });
-        const repairedSafety = validatePrototypeFiles(reviewed.files, reviewed.screenMap);
-        quality = validatePrototypeQuality(reviewed.files, reviewed.screenMap, reviewed.designSpec);
+        reviewed = DesignGenerationResultSchema.parse({
+          ...reviewed,
+          files: repaired.prototype.files,
+        });
+        const repairedSafety = validatePrototypeFiles(
+          reviewed.files,
+          reviewed.screenMap,
+        );
+        quality = validatePrototypeQuality(
+          reviewed.files,
+          reviewed.screenMap,
+          reviewed.designSpec,
+        );
         qualityReview = {
           ...qualityReview!,
-          summary: quality.accepted ? "Repaired prototype passed deterministic safety and quality checks." : quality.reasons.join(" "),
+          summary: quality.accepted
+            ? "Repaired prototype passed deterministic safety and quality checks."
+            : quality.reasons.join(" "),
           blockingProblems: quality.reasons,
         };
-        if (!repairedSafety.accepted || !quality.accepted) designStatus = "NEEDS_REVIEW";
+        if (!repairedSafety.accepted || !quality.accepted)
+          designStatus = "NEEDS_REVIEW";
       } catch {
         designStatus = "NEEDS_REVIEW";
       } finally {
         repairMs = Date.now() - repairStarted;
       }
     }
-  } else if (!quality.accepted) {
-    throw new DesignGenerationError("prototype_validation", new Error(quality.reasons.join(" ")));
+  } else {
+    qualityReview = {
+      summary: quality.accepted
+        ? "Deterministic prototype quality checks passed."
+        : quality.reasons.join(" "),
+      blockingProblems: quality.reasons,
+      source: "DETERMINISTIC",
+    };
+    designStatus = quality.accepted ? "IN_REVIEW" : "NEEDS_REVIEW";
   }
   const next = applyGeneratedDesign(state, reviewed, {
     summary: reviewed.summary,
-        source: "SYSTEM",
-        status: designStatus,
+    source: "SYSTEM",
+    status: designStatus,
     request,
   });
   let saved = await (deps.save || saveProjectState)(projectId, next, version);
@@ -349,29 +653,38 @@ export async function generateProjectDesign(
     saved.state.studio.currentVersion,
     reviewed,
     saved.state.studio.status,
+    version,
   );
-  saved = await (deps.save || saveProjectState)(projectId, {
-    ...saved.state,
-    generationMetadata: {
-      ...saved.state.generationMetadata,
-      designArchitecture: {
-        source: architectureResolution.source,
-        ...(architectureResolution.failure
-          ? { failureCategory: architectureResolution.failure.category }
-          : {}),
-      },
-    },
-  }, saved.version);
-  if (qualityReview || repairAttempted) {
-    saved = await (deps.save || saveProjectState)(projectId, {
+  saved = await (deps.save || saveProjectState)(
+    projectId,
+    {
       ...saved.state,
       generationMetadata: {
         ...saved.state.generationMetadata,
-        designQualityReview: qualityReview,
-        repairAttempted,
-        finalDesignStatus: designStatus,
+        designArchitecture: {
+          source: architectureResolution.source,
+          ...(architectureResolution.failure
+            ? { failureCategory: architectureResolution.failure.category }
+            : {}),
+        },
       },
-    }, saved.version);
+    },
+    saved.version,
+  );
+  if (qualityReview || repairAttempted) {
+    saved = await (deps.save || saveProjectState)(
+      projectId,
+      {
+        ...saved.state,
+        generationMetadata: {
+          ...saved.state.generationMetadata,
+          designQualityReview: qualityReview,
+          repairAttempted,
+          finalDesignStatus: designStatus,
+        },
+      },
+      saved.version,
+    );
   }
   return {
     ...saved,
@@ -388,6 +701,22 @@ export async function generateProjectDesign(
   };
 }
 
+export function reviseMockDesign(
+  state: ProjectState,
+  current: DesignGenerationResult,
+  request: string,
+  persistedScreenMap: DesignScreen[] = [],
+) {
+  const screenMap = persistedScreenMap.length
+    ? persistedScreenMap
+    : current.screenMap.length
+      ? current.screenMap
+      : state.studio.screenMap.length
+        ? state.studio.screenMap
+        : deriveScreenMap(state);
+  if (/compact/i.test(request)) return applyVisualRevision(current, request);
+  return generateMockPrototype(state, { request, screenMap });
+}
 export async function reviseProjectDesign(
   projectId: string,
   state: ProjectState,
@@ -412,9 +741,24 @@ export async function reviseProjectDesign(
       }
     | undefined;
   if (!pack?.files) throw new Error("NO_DESIGN");
+  const persistedDraft = await latestDraftArtifacts(projectId, version);
+  const persistedScreenMap = persistedDraft
+    ? parsePersistedScreenMap(
+        persistedDraft.artifacts.find(
+          (artifact) => artifact.type === "SCREEN_MAP",
+        )?.content || "",
+      )
+    : [];
   const current: DesignGenerationResult = {
-    designSpec: pack.spec || generateMockPrototype(state).designSpec,
-    screenMap: state.studio.screenMap,
+    designSpec:
+      pack.spec ||
+      generateMockPrototype(state, { screenMap: persistedScreenMap })
+        .designSpec,
+    screenMap: persistedScreenMap.length
+      ? persistedScreenMap
+      : state.studio.screenMap.length
+        ? state.studio.screenMap
+        : deriveScreenMap(state),
     files: pack.files,
     summary: pack.summary || "",
     assumptions: state.studio.assumptions,
@@ -422,18 +766,24 @@ export async function reviseProjectDesign(
   const settings = resolveProviderSettings();
   const generated =
     settings.mode === "openai-compatible"
-      ? await generateWithRealProvider(state, {
-          request: text,
-          existing: current,
-        })
-      : impact === "VISUAL_ONLY" || /compact/i.test(text)
-        ? applyVisualRevision(current, text)
-        : generateMockPrototype(state, { request: text });
+      ? await generateWithRealProvider(
+          state,
+          { request: text, existing: current },
+          undefined,
+          undefined,
+          undefined,
+          current.screenMap,
+        )
+      : reviseMockDesign(state, current, text, current.screenMap);
   const validation = validatePrototypeFiles(
     generated.files,
     generated.screenMap,
   );
-  const quality = validatePrototypeQuality(generated.files, generated.screenMap, generated.designSpec);
+  const quality = validatePrototypeQuality(
+    generated.files,
+    generated.screenMap,
+    generated.designSpec,
+  );
   if (!validation.accepted || !quality.accepted)
     throw new DesignGenerationError(
       "prototype_validation",
@@ -450,6 +800,7 @@ export async function reviseProjectDesign(
     saved.state.studio.currentVersion,
     generated,
     saved.state.studio.status,
+    version,
   );
   return { impact, ...saved, generated };
 }

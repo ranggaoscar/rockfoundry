@@ -1,7 +1,21 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
-import { runInitialDiscovery } from "@/lib/discovery";
+import {
+  getInitialConversationState,
+  runInitialConversation,
+} from "@/lib/discovery";
 import { getLocalProject, jsonError } from "@/lib/local-project";
+import { conversationAiErrorMessage } from "@/lib/ai-error";
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const status = await getInitialConversationState(id);
+  if (!status) return jsonError("Project not found", 404);
+  return Response.json(status);
+}
 
 export async function POST(
   req: NextRequest,
@@ -22,13 +36,20 @@ export async function POST(
     );
 
   try {
-    const result = await runInitialDiscovery(id, rawIdea, project.version);
+    const result = await runInitialConversation(id, rawIdea, project.version);
     return Response.json(result);
-  } catch {
-    return jsonError(
-      "RockFoundry couldn't reach the configured AI provider. Retry or open Provider Settings.",
-      422,
-      { retryable: true },
-    );
+  } catch (error) {
+    const typed = error as Error & {
+      retryable?: boolean;
+      state?: unknown;
+      version?: number;
+    };
+    return jsonError(conversationAiErrorMessage(error), 422, {
+      retryable: typed.retryable === true,
+      status: "FAILED",
+      ...(typed.state && typeof typed.version === "number"
+        ? { state: typed.state, version: typed.version }
+        : {}),
+    });
   }
 }

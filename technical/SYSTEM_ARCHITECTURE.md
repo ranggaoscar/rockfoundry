@@ -29,7 +29,7 @@ Next.js App Router
         │     ├── contradictions
         │     ├── readiness
         │     ├── tool registry
-        │     └── BRD/PRD/ERD renderers
+        │     └── Product Draft and handoff renderers
         │
         ├── packages/ai
         │     ├── OpenAI-compatible adapter (current runtime)
@@ -142,7 +142,7 @@ Provider secrets belong in the local configuration boundary, not the Prisma proj
 
 ### Artifact boundary
 
-`BRD.md`, `PRD.md`, and `ERD.md` are the only default user-facing artifacts. Internal state, tool activity, revisions, and provider metadata remain supporting implementation state.
+The early default user-facing draft artifacts are `BRD.md`, `PRD.md`, `ERD.md`, `USER_FLOWS.md`, `SCREEN_MAP.md`, and `DESIGN_BRIEF.md`. `AGENT_HANDOFF.md` is produced only by an explicit final handoff action. Internal state, tool activity, revisions, and provider metadata remain supporting implementation state.
 
 ### Safety note
 

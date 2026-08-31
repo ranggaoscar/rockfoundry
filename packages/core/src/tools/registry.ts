@@ -130,7 +130,7 @@ export function createDefaultToolRegistry() {
     .register({
       name: "artifact_generate",
       description:
-        "Render the handoff package from canonical state, including anti-invention files.",
+        "Render the current Product Draft or final handoff package from canonical state, including anti-invention files.",
       inputSchema: z.object({
         types: z
           .array(
@@ -138,6 +138,9 @@ export function createDefaultToolRegistry() {
               "BRD",
               "PRD",
               "ERD",
+              "USER_FLOWS",
+              "SCREEN_MAP",
+              "DESIGN_BRIEF",
               "DO_NOT_INVENT",
               "DECISIONS",
               "INVARIANTS",

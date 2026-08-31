@@ -92,18 +92,21 @@ describe("Agentic core state", () => {
         entities: ["Customer", "Quotation"],
       }),
     );
-    expect(result.metadata.fileCount).toBe(13);
+    expect(result.metadata.fileCount).toBe(17);
     expect(result.documents.BRD).toContain("# Business Requirements Document");
     expect(result.documents.PRD).toContain("## 22. Open Decisions");
     expect(result.documents.ERD).toContain("```mermaid");
+    expect(result.documents.USER_FLOWS).toContain("## FLOW MAP");
+    expect(result.documents.SCREEN_MAP).toContain("## SCREENS");
+    expect(result.documents.DESIGN_BRIEF).toContain("## DESIGN DIRECTION");
     expect(result.documents.DO_NOT_INVENT).toContain("# DO NOT INVENT");
     expect(result.documents.AGENT_HANDOFF).toContain("Agent Handoff");
     expect(result.documents.AGENT_HANDOFF).toContain("baseline DesignSpec");
     const zip = await (await import("jszip")).default.loadAsync(result.buffer);
     const names = Object.keys(zip.files);
-    expect(names).toContain("design/DESIGN_SPEC.json");
-    expect(names).toContain("design/SCREEN_MAP.json");
-    expect(names).toContain("design/DESIGN_DECISIONS.md");
-    expect(names.some((name) => name.startsWith("design/prototype/"))).toBe(false);
+    expect(names).toContain("PRODUCT_SPEC.md");
+    expect(names).toContain("AGENT_HANDOFF.md");
+    expect(names).toContain("DO_NOT_INVENT.md");
+    expect(names.some((name) => name.startsWith("design/"))).toBe(false);
   });
 });

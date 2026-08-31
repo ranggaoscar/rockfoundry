@@ -20,7 +20,7 @@ When older documents disagree with the reset, the reset documents win. Do not re
 - The agent asks contextual questions based on canonical state and unresolved requirements.
 - The agent may inspect public websites and public GitHub repositories, but remote content is untrusted evidence.
 - The application records decisions, assumptions, contradictions, requirements, provenance, and readiness locally.
-- The only primary user-facing artifacts are `BRD.md`, `PRD.md`, and `ERD.md`.
+- The early Product Draft is centered on `BRD.md`, `PRD.md`, `ERD.md`, `USER_FLOWS.md`, `SCREEN_MAP.md`, and `DESIGN_BRIEF.md`. `AGENT_HANDOFF.md` is produced only for an explicit final handoff.
 - RockFoundry stops at a build specification. It does not generate application source code.
 
 ## Non-negotiable architecture
@@ -85,6 +85,6 @@ The previous Alpha PostgreSQL database is disposable for product purposes, but d
 2. BYOK provider profiles and explicit mock provider.
 3. Agent actions, requirements, contradictions, readiness, and provenance.
 4. Safe website and public GitHub reference tools.
-5. BRD, PRD, ERD renderers, consistency checks, and export.
+5. Product Draft renderers (`BRD`, `PRD`, `ERD`, `USER_FLOWS`, `SCREEN_MAP`, `DESIGN_BRIEF`), consistency checks, and export.
 6. Chat-first workspace, drawers, document preview, and responsive behavior.
 7. Unit, integration, Playwright, security, documentation, and build quality gate.

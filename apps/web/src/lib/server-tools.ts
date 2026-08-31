@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   createDefaultToolRegistry,
-  renderArtifacts,
   safeExtractFromUrl,
   analyzeGitHubRepo,
   parseGitHubUrl,

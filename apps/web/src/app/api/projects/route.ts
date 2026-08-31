@@ -6,7 +6,6 @@ import {
   createInitialProjectState,
   deriveProjectTitle,
 } from "@rockfoundry/core";
-import { runInitialDiscovery } from "@/lib/discovery";
 import { jsonError, publicProject } from "@/lib/local-project";
 import { z } from "zod";
 
@@ -81,11 +80,6 @@ export async function POST(req: NextRequest) {
         updatedAt: true,
       },
     });
-    try {
-      await runInitialDiscovery(id, description, project.version);
-    } catch {
-      // The raw idea remains available for a contextual fallback question.
-    }
     const updated = await prisma.project.findUnique({
       where: { id },
       select: {

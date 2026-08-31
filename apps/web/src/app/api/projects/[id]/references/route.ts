@@ -1,22 +1,23 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
+import { safeExtractFromUrl } from "@rockfoundry/core";
 import { z } from "zod";
+import { prisma } from "@rockfoundry/db";
 import {
   getLocalProject,
   jsonError,
   parseProjectState,
   saveProjectState,
 } from "@/lib/local-project";
-import { persistQuestionMessage } from "@/lib/discovery";
-import { runConversationTurn } from "@/lib/conversation";
-import { prisma } from "@rockfoundry/db";
+import { persistConversationMessage, persistUserMessage } from "@/lib/conversation";
+import { runConversationAgent } from "@/lib/conversation-agent";
+import { getPackageEligibility } from "@/lib/package-readiness";
+import { evaluateReadinessDirectly } from "@rockfoundry/core";
 
 const ReferenceInput = z.object({ url: z.string().url() });
 
-function publicReference(
-  reference: { metadata: string | null } & Record<string, unknown>,
-) {
+function publicReference(reference: { metadata: string | null } & Record<string, unknown>) {
   return {
     ...reference,
     metadata: reference.metadata ? JSON.parse(reference.metadata) : undefined,
@@ -38,7 +39,6 @@ export async function GET(
   });
 }
 
-/** Compatibility adapter: reference inspection executes only through AgentRunner + ToolRegistry. */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -48,29 +48,55 @@ export async function POST(
     const project = await getLocalProject(id);
     if (!project) return jsonError("Project not found", 404);
     const { url } = ReferenceInput.parse(await req.json());
+    const type = /github\.com\//i.test(url) ? "GITHUB_REPO" : "URL";
+    const extracted = await safeExtractFromUrl(url);
+    const reference = await prisma.reference.create({
+      data: {
+        projectId: id,
+        type,
+        url,
+        status: extracted.success ? "ANALYZED" : "FAILED",
+        untrusted: true,
+        metadata: JSON.stringify({
+          provenance: type === "GITHUB_REPO" ? "REFERENCE_GITHUB" : "REFERENCE_WEBSITE",
+          title: extracted.success ? extracted.title : undefined,
+          summary: extracted.success ? extracted.text?.slice(0, 1200) : extracted.error,
+          untrusted: true,
+        }),
+      },
+    });
     const state = parseProjectState(project);
-    const turn = await runConversationTurn({
+    await persistUserMessage(id, url, { intent: "REFERENCE" });
+    const turn = await runConversationAgent({
       projectId: id,
-      text: url,
-      intent: "REFERENCE_URL",
+      text: `I added this public reference: ${url}`,
+      mode: "REFERENCE",
       state,
     });
-    const question =
-      turn.result.finalAction.type === "ASK_USER"
-        ? (turn.questionForAction as
-            import("@rockfoundry/core").Question | null)
-        : null;
-    state.discovery.activeQuestionId = question?.id;
-    await saveProjectState(id, state, project.version);
-    if (question) await persistQuestionMessage(id, question);
-    const reference = await prisma.reference.findFirst({
-      where: { projectId: id, url },
-      orderBy: { createdAt: "desc" },
+    turn.state.references.push({
+      id: reference.id,
+      type,
+      url,
+      status: reference.status as "PENDING" | "ANALYZED" | "FAILED",
+      source: type === "GITHUB_REPO" ? "REFERENCE_GITHUB" : "REFERENCE_WEBSITE",
+      untrusted: true,
+      metadata: JSON.parse(reference.metadata || "{}"),
+    });
+    const saved = await saveProjectState(id, turn.state, project.version);
+    const readiness = evaluateReadinessDirectly(saved.state);
+    await persistConversationMessage(id, "assistant", turn.response.message, {
+      mode: turn.response.mode,
+      quickReplies: turn.response.quickReplies,
     });
     return Response.json({
-      reference: reference ? publicReference(reference) : null,
-      question,
-      activities: turn.result.activities,
+      reference: publicReference(reference),
+      message: turn.response.message,
+      response: turn.response,
+      state: saved.state,
+      version: saved.version,
+      question: null,
+      activities: [],
+      ...getPackageEligibility(readiness),
     });
   } catch (error) {
     if (error instanceof z.ZodError)

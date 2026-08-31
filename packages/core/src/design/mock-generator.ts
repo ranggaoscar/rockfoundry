@@ -96,9 +96,9 @@ export function buildDesignSpec(
 
 export function generateMockPrototype(
   state: ProjectState,
-  input: { request?: string } = {},
+  input: { request?: string; screenMap?: DesignScreen[] } = {},
 ): DesignGenerationResult {
-  const screens = deriveScreenMap(state);
+  const screens = input.screenMap?.length ? input.screenMap : deriveScreenMap(state);
   const spec = buildDesignSpec(state, screens);
   const compact = compactClass(input.request);
   const hidePostJob = !screens.some((screen) => screen.id === "employer-jobs");

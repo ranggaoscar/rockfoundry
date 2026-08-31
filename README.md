@@ -6,6 +6,49 @@ RockFoundry is an open-source, local-first product intelligence system that help
 
 RockFoundry does **not** primarily write the production application. It works before implementation, so your coding agent starts with confirmed product truth instead of filling important gaps with guesses.
 
+## See the product
+
+<p align="center">
+  <img src="public/readme/home-rock-foundry.png" alt="RockFoundry home — product intelligence before code" width="900">
+</p>
+
+<p align="center"><em>Turn an early idea into decisions your coding agent can trust.</em></p>
+
+| Product workspace | Design generation |
+| --- | --- |
+| ![RockFoundry project workspace](public/readme/dashboard.png) | ![RockFoundry design generation](public/readme/dashboard-generate.png) |
+
+## WebMCP Challenge submission
+
+### Pre-existing RockFoundry
+
+RockFoundry existed before this challenge as a local-first product intelligence workspace: it turns a rough idea into product context, a Product Draft, an interactive Design Preview, and coding-agent-ready handoff material.
+
+- Baseline tag: [`webmcp-baseline-2026-08-27`](https://github.com/ranggaoscar/rockfoundry/tree/webmcp-baseline-2026-08-27)
+- Live demo: [foundry.rockbase.web.id](https://foundry.rockbase.web.id)
+
+### Added for WebMCP Challenge
+
+WebMCP was meaningfully added during the challenge using the native imperative API, `document.modelContext.registerTool()`. Tools are registered only for the relevant page and cleaned up with `AbortController` when that page unmounts:
+
+- Homepage (`/`)
+  - `rockfoundry_start_product`
+- Open project page (`/project/{id}`)
+  - `rockfoundry_inspect_project`
+  - `rockfoundry_generate_product_draft`
+  - `rockfoundry_refine_product`
+  - `rockfoundry_generate_design_preview`
+
+The tools reuse RockFoundry's existing APIs and client flows. Product Draft and Design Preview calls open the normal workbench and retain its existing progress UI; WebMCP adds agent access rather than a parallel product pipeline.
+
+### Judge test flow
+
+1. Open [the live demo](https://foundry.rockbase.web.id).
+2. Call `rockfoundry_start_product` with a short product idea.
+3. On the new project page, call `rockfoundry_generate_product_draft` and inspect progress with `rockfoundry_inspect_project`.
+4. Once the draft is current, call `rockfoundry_generate_design_preview`.
+5. Inspect the project again to see design job status, stage, review status, and prototype availability.
+
 ```text
 Idea
   ↓
