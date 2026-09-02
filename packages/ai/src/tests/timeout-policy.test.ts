@@ -62,6 +62,32 @@ describe("initial discovery timeout policy", () => {
     vi.unstubAllGlobals();
   });
 
+  it("routes cheap, default, and strong requests to configured model tiers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(completion("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new OpenAICompatibleGateway(
+      "https://provider.example/v1",
+      "test-key",
+      {
+        default: "default-model",
+        cheap: "cheap-model",
+        strong: "strong-model",
+      },
+    );
+
+    for (const modelTier of ["cheap", "default", "strong"] as const) {
+      await gateway.complete({
+        ...initialExtractionRequest(),
+        modelTier,
+      });
+    }
+
+    expect(
+      fetchMock.mock.calls.map((call) => JSON.parse(call[1].body).model),
+    ).toEqual(["cheap-model", "default-model", "strong-model"]);
+    vi.unstubAllGlobals();
+  });
+
   it("still aborts an initial extraction beyond 120 seconds without a fallback", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn(

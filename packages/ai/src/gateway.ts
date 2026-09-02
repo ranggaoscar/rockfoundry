@@ -15,7 +15,6 @@ function parseProviderJson(content: string): unknown {
   return JSON.parse(fenced?.[1] || trimmed);
 }
 
-
 /** Keep OpenAI-compatible roots canonical so callers can safely supply either
  * `https://host` or `https://host/v1` without producing `/v1/v1/...`. */
 export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string) {
@@ -197,7 +196,10 @@ export class NineRouterGateway implements AiGatewayProvider {
         try {
           parsed = parseProviderJson(content) as T;
         } catch {
-          if (taskType === "prototype_generation" || taskType === "prototype_repair")
+          if (
+            taskType === "prototype_generation" ||
+            taskType === "prototype_repair"
+          )
             throw new MalformedJsonResponseError(content);
           throw new Error("Failed to parse JSON response from AI provider");
         }
@@ -222,7 +224,9 @@ export class NineRouterGateway implements AiGatewayProvider {
       if (error instanceof ApiError) throw error;
       if (error instanceof z.ZodError) throw error;
       if (error instanceof DOMException && error.name === "AbortError") {
-        const timeoutError = new Error(`AI request timed out after ${timeout}ms`);
+        const timeoutError = new Error(
+          `AI request timed out after ${timeout}ms`,
+        );
         timeoutError.name = "TimeoutError";
         Object.assign(timeoutError, { timeoutMs: timeout });
         throw timeoutError;
@@ -238,16 +242,18 @@ export class OpenAICompatibleGateway extends NineRouterGateway {
   constructor(
     baseUrl: string,
     apiKey: string,
-    model: string,
+    models: string | { default: string; cheap?: string; strong?: string },
     reasoningEffort?: string,
   ) {
-    super(
-      baseUrl,
-      apiKey,
-      { default: model, cheap: model, strong: model },
-      reasoningEffort,
-      "openai-compatible",
-    );
+    const configured =
+      typeof models === "string"
+        ? { default: models, cheap: models, strong: models }
+        : {
+            default: models.default,
+            cheap: models.cheap || models.default,
+            strong: models.strong || models.default,
+          };
+    super(baseUrl, apiKey, configured, reasoningEffort, "openai-compatible");
   }
 }
 

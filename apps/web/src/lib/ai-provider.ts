@@ -16,11 +16,16 @@ export function getAiGateway() {
         "The configured AI provider needs a base URL and API key.",
       );
     }
+    const defaultModel = settings.model || "gpt-4o-mini";
     return new AiGateway(
       new OpenAICompatibleGateway(
         settings.baseUrl,
         settings.apiKey || "",
-        settings.model || "gpt-4o-mini",
+        {
+          default: process.env.OPENAI_COMPATIBLE_DEFAULT_MODEL || defaultModel,
+          cheap: process.env.OPENAI_COMPATIBLE_CHEAP_MODEL || defaultModel,
+          strong: process.env.OPENAI_COMPATIBLE_STRONG_MODEL || defaultModel,
+        },
         settings.reasoningEffort || undefined,
       ),
     );

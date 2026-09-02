@@ -50,6 +50,10 @@ AI_PROVIDER_MODE="openai-compatible"
 OPENAI_COMPATIBLE_BASE_URL="https://api.openai.com/v1"
 OPENAI_COMPATIBLE_API_KEY="your-key"
 OPENAI_COMPATIBLE_MODEL="gpt-4o-mini"
+# Optional truthful routing. If omitted, all tiers use OPENAI_COMPATIBLE_MODEL.
+OPENAI_COMPATIBLE_CHEAP_MODEL="gpt-4o-mini"
+OPENAI_COMPATIBLE_DEFAULT_MODEL="gpt-4o-mini"
+OPENAI_COMPATIBLE_STRONG_MODEL="gpt-4.1"
 ```
 
 ## Prototype safety

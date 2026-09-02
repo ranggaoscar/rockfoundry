@@ -349,18 +349,26 @@ describe("generateProjectDesign executable review cases", () => {
       },
       reasoningEffort: "low",
     });
-    expect(gateway.runPrototypeGeneration.mock.calls[0]?.[0].product).not.toHaveProperty(
-      "draftArtifacts",
-    );
     expect(
-      Object.keys(gateway.runPrototypeGeneration.mock.calls[0]?.[0].product || {}).sort(),
+      gateway.runPrototypeGeneration.mock.calls[0]?.[0].product,
+    ).not.toHaveProperty("draftArtifacts");
+    expect(
+      Object.keys(
+        gateway.runPrototypeGeneration.mock.calls[0]?.[0].product || {},
+      ).sort(),
     ).toEqual([
       "confirmedActors",
       "confirmedFeatures",
       "confirmedWorkflows",
+      "designDigest",
       "name",
       "summary",
     ]);
+    expect(
+      gateway.runPrototypeGeneration.mock.calls[0]?.[0].product,
+    ).toMatchObject({
+      designDigest: null,
+    });
     expect(onStage).toHaveBeenCalledWith("PROTOTYPE_GENERATION");
     expect(onStage).not.toHaveBeenCalledWith("QUALITY_REVIEW");
   });
@@ -390,7 +398,9 @@ describe("generateProjectDesign executable review cases", () => {
       name: "Mobile Tailor",
       summary: "At-home mobile tailoring service",
       confirmedActors: ["customer", "verified tailor partner"],
-      confirmedWorkflows: ["customer chooses a schedule and uploads clothing photos"],
+      confirmedWorkflows: [
+        "customer chooses a schedule and uploads clothing photos",
+      ],
       confirmedFeatures: ["schedule selection", "clothing photo upload"],
     });
     expect(prototypeInput.product).not.toHaveProperty("draftArtifacts");
@@ -503,6 +513,14 @@ describe("generateProjectDesign executable review cases", () => {
         confirmedActors: ["cashiers"],
         confirmedWorkflows: ["create order"],
         confirmedFeatures: [],
+        designDigest: {
+          businessDirection: "",
+          productRequirements: "# Current PRD Current product requirements.",
+          dataModel: "",
+          userFlows: "# Current flows Current transaction flow.",
+          screenMap: expect.stringContaining("# Screen Map"),
+          visualDirection: "# Current Design Brief Keep balances prominent.",
+        },
       },
     });
   });
@@ -691,26 +709,75 @@ describe("generateProjectDesign executable review cases", () => {
   it("preserves every Menu, Cart, and Seller Orders Screen Map route", async () => {
     const state = readyState();
     state.studio.screenMap = [
-      { id: "menu", name: "Menu", actorIds: [], purpose: "Browse the menu", route: "#/menu", status: "DRAFT", source: "SYSTEM" },
-      { id: "cart", name: "Cart", actorIds: [], purpose: "Review selected items", route: "#/cart", status: "DRAFT", source: "SYSTEM" },
-      { id: "seller-orders", name: "Seller Orders", actorIds: [], purpose: "Manage seller orders", route: "#/seller/orders", status: "DRAFT", source: "SYSTEM" },
+      {
+        id: "menu",
+        name: "Menu",
+        actorIds: [],
+        purpose: "Browse the menu",
+        route: "#/menu",
+        status: "DRAFT",
+        source: "SYSTEM",
+      },
+      {
+        id: "cart",
+        name: "Cart",
+        actorIds: [],
+        purpose: "Review selected items",
+        route: "#/cart",
+        status: "DRAFT",
+        source: "SYSTEM",
+      },
+      {
+        id: "seller-orders",
+        name: "Seller Orders",
+        actorIds: [],
+        purpose: "Manage seller orders",
+        route: "#/seller/orders",
+        status: "DRAFT",
+        source: "SYSTEM",
+      },
     ];
     const menuCartSellerFiles = [
       {
         path: "index.html",
-        content: '<nav><a href="#/menu">Menu</a><a href="#/cart">Cart</a><a href="#/seller/orders">Seller Orders</a></nav><main data-route="#/menu"><h1>Menu</h1></main><main data-route="#/cart"><h1>Cart</h1></main><main data-route="#/seller/orders"><h1>Seller Orders</h1></main>',
+        content:
+          '<nav><a href="#/menu">Menu</a><a href="#/cart">Cart</a><a href="#/seller/orders">Seller Orders</a></nav><main data-route="#/menu"><h1>Menu</h1></main><main data-route="#/cart"><h1>Cart</h1></main><main data-route="#/seller/orders"><h1>Seller Orders</h1></main>',
       },
-      { path: "styles.css", content: "main { color: #111; } @media (max-width: 600px) { main { display: block; } }" },
-      { path: "app.js", content: "window.addEventListener('hashchange', () => {});" },
+      {
+        path: "styles.css",
+        content:
+          "main { color: #111; } @media (max-width: 600px) { main { display: block; } }",
+      },
+      {
+        path: "app.js",
+        content: "window.addEventListener('hashchange', () => {});",
+      },
     ];
     const gateway = realGateway("PASS");
     gateway.runPrototypeGeneration.mockResolvedValueOnce({
-      prototype: { summary: "Marketplace prototype", assumptions: [], files: menuCartSellerFiles },
+      prototype: {
+        summary: "Marketplace prototype",
+        assumptions: [],
+        files: menuCartSellerFiles,
+      },
     });
-    const result = await generateProjectDesign("design-test", state, 1, undefined, realDeps(state, gateway));
-    const html = result.generated.files.find((file) => file.path === "index.html")?.content || "";
-    expect(result.generated.files.map((file) => file.path)).toEqual(["index.html", "styles.css", "app.js"]);
-    for (const screen of state.studio.screenMap) expect(html).toContain(screen.route);
+    const result = await generateProjectDesign(
+      "design-test",
+      state,
+      1,
+      undefined,
+      realDeps(state, gateway),
+    );
+    const html =
+      result.generated.files.find((file) => file.path === "index.html")
+        ?.content || "";
+    expect(result.generated.files.map((file) => file.path)).toEqual([
+      "index.html",
+      "styles.css",
+      "app.js",
+    ]);
+    for (const screen of state.studio.screenMap)
+      expect(html).toContain(screen.route);
   });
 
   it("preserves a safety-valid prototype when the provider quality reviewer times out", async () => {

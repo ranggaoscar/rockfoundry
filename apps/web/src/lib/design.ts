@@ -9,7 +9,6 @@ import {
   evaluateDesignReadiness,
   generateMockPrototype,
   markDesignStale,
-  renderDraftArtifacts,
   validatePrototypeFiles,
   validatePrototypeQuality,
   DesignGenerationResultSchema,
@@ -28,10 +27,7 @@ import {
   formatDesignFailureDiagnostics,
   safeDesignFailureMessage,
 } from "@rockfoundry/ai";
-import {
-  latestDraftArtifacts,
-  DRAFT_ARTIFACT_TYPES,
-} from "./artifact-composer";
+import { latestDraftArtifacts } from "./artifact-composer";
 import { parsePersistedScreenMap } from "./design-draft-bridge";
 
 export class DesignGenerationError extends Error {
@@ -272,21 +268,36 @@ function designInputSnapshot(state: ProjectState) {
 }
 
 export type PersistedDraftArtifacts = Partial<
-  Record<"PRD" | "USER_FLOWS" | "SCREEN_MAP" | "DESIGN_BRIEF", string>
+  Record<
+    "BRD" | "PRD" | "ERD" | "USER_FLOWS" | "SCREEN_MAP" | "DESIGN_BRIEF",
+    string
+  >
 >;
+
+function compactDraftSection(content: string | undefined, limit = 1_400) {
+  if (!content) return "";
+  return content.replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+export function compactDesignDigest(
+  persistedDraft: PersistedDraftArtifacts | undefined,
+) {
+  if (!persistedDraft) return null;
+  return {
+    businessDirection: compactDraftSection(persistedDraft.BRD),
+    productRequirements: compactDraftSection(persistedDraft.PRD),
+    dataModel: compactDraftSection(persistedDraft.ERD),
+    userFlows: compactDraftSection(persistedDraft.USER_FLOWS),
+    screenMap: compactDraftSection(persistedDraft.SCREEN_MAP),
+    visualDirection: compactDraftSection(persistedDraft.DESIGN_BRIEF),
+  };
+}
 
 export function designProductContext(
   state: ProjectState,
   persistedDraft?: PersistedDraftArtifacts,
 ) {
   const explicit = explicitDesignState(state);
-  const fallback = renderDraftArtifacts(state);
-  const draftArtifacts = {
-    PRD: persistedDraft?.PRD || fallback.PRD,
-    USER_FLOWS: persistedDraft?.USER_FLOWS || fallback.USER_FLOWS,
-    SCREEN_MAP: persistedDraft?.SCREEN_MAP || fallback.SCREEN_MAP,
-    DESIGN_BRIEF: persistedDraft?.DESIGN_BRIEF || fallback.DESIGN_BRIEF,
-  };
   return {
     name: state.name,
     summary: state.normalizedSummary || state.rawIdea,
@@ -304,13 +315,14 @@ export function designProductContext(
     assumptions: state.assumptions
       .filter((assumption) => !assumption.resolved)
       .map((assumption) => assumption.statement),
-    draftArtifacts,
+    designDigest: compactDesignDigest(persistedDraft),
     designInputSnapshot: designInputSnapshot(state),
   };
 }
 
 function initialPrototypeProductContext(
   state: ProjectState,
+  persistedDraft?: PersistedDraftArtifacts,
 ): Record<string, unknown> {
   const explicit = explicitDesignState(state);
   return {
@@ -319,6 +331,7 @@ function initialPrototypeProductContext(
     confirmedActors: [...new Set([...explicit.targetUsers, ...explicit.roles])],
     confirmedWorkflows: explicit.workflows,
     confirmedFeatures: explicit.features,
+    designDigest: compactDesignDigest(persistedDraft),
   };
 }
 
@@ -355,7 +368,7 @@ async function generateWithRealProvider(
   }
 > {
   const product = input.initialPreview
-    ? initialPrototypeProductContext(state)
+    ? initialPrototypeProductContext(state, persistedDraft)
     : designProductContext(state, persistedDraft);
   const screenMap = persistedScreenMap?.length
     ? persistedScreenMap
