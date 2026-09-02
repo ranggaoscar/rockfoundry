@@ -1,8 +1,6 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { ProjectStateSchema } from "@rockfoundry/core";
-import { prisma } from "@rockfoundry/db";
 import {
   artifactComposerErrorPayload,
   composeDraftArtifacts,
@@ -19,28 +17,7 @@ import {
   jsonError,
   parseProjectState,
 } from "@/lib/local-project";
-import { isProductDraftCurrent } from "@/lib/project-truth";
-
-async function draftIsCurrent(
-  projectId: string,
-  projectVersion: number,
-  draftCanonicalVersion: number | null | undefined,
-  currentState: ReturnType<typeof parseProjectState>,
-) {
-  if (draftCanonicalVersion === null || draftCanonicalVersion === undefined)
-    return false;
-  const revision = await prisma.projectStateRevision.findUnique({
-    where: { projectId_version: { projectId, version: draftCanonicalVersion } },
-    select: { state: true },
-  });
-  if (!revision) return draftCanonicalVersion === projectVersion;
-  try {
-    const draftState = ProjectStateSchema.parse(JSON.parse(revision.state));
-    return isProductDraftCurrent(draftState, currentState);
-  } catch {
-    return draftCanonicalVersion === projectVersion;
-  }
-}
+import { getCurrentProductDraft } from "@/lib/current-product-draft";
 
 export async function GET(
   _req: NextRequest,
@@ -49,15 +26,15 @@ export async function GET(
   const { id } = await params;
   const project = await getLocalProject(id);
   if (!project) return jsonError("Project not found", 404);
+  const state = parseProjectState(project);
   const latest = await latestDraftArtifacts(id, project.version);
   const current = await currentDraftGeneration(id);
   const artifacts = latest?.artifacts || [];
-  const isCurrentDraft = await draftIsCurrent(
-    id,
-    project.version,
-    latest?.generation?.canonicalVersion ?? artifacts[0]?.canonicalVersion,
-    parseProjectState(project),
-  );
+  const { isCurrent: isCurrentDraft } = await getCurrentProductDraft({
+    projectId: id,
+    currentVersion: project.version,
+    currentState: state,
+  });
   const generationStates = documentGenerationStates(
     latest?.generation || null,
     current,
@@ -94,14 +71,18 @@ export async function POST(
       generationNumber: generated.generation.generationNumber,
       canonicalVersion: generated.generation.canonicalVersion,
       status: generated.generation.status,
-      batches: parseDraftGenerationBatches(generated.generation.composerMetadata),
+      batches: parseDraftGenerationBatches(
+        generated.generation.composerMetadata,
+      ),
     };
     return Response.json({
       currentVersion: project.version,
       generation,
       currentDraft: generation,
       latestAttempt: null,
-      documents: generated.artifacts.map((artifact) => publicDraftArtifact(artifact, project.version)),
+      documents: generated.artifacts.map((artifact) =>
+        publicDraftArtifact(artifact, project.version),
+      ),
       generated: DRAFT_ARTIFACT_TYPES.map((type) => DRAFT_ARTIFACT_FILES[type]),
     });
   } catch (error) {

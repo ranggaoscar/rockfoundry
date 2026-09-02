@@ -11,6 +11,10 @@ import {
   latestDesignGenerationJob,
 } from "@/lib/design-job-claims";
 import { prisma } from "@rockfoundry/db";
+import {
+  assertCurrentProductDraft,
+  CURRENT_PRODUCT_DRAFT_ERROR,
+} from "@/lib/current-product-draft";
 
 export async function POST(
   _req: NextRequest,
@@ -23,11 +27,16 @@ export async function POST(
     const state = parseProjectState(project);
     if (!state.rawIdea.trim() && !state.normalizedSummary?.trim()) {
       return jsonError(
-        "A product idea or draft artifact is required before creating a design preview.",
+        "Add a product idea before creating a design preview.",
         422,
         { code: "DESIGN_BLOCKED" },
       );
     }
+    await assertCurrentProductDraft({
+      projectId: id,
+      currentVersion: project.version,
+      currentState: state,
+    });
     const enqueued = await enqueueDesignGenerationJob(
       prisma,
       id,
@@ -41,6 +50,12 @@ export async function POST(
       { status: 202 },
     );
   } catch (error) {
+    if (error instanceof Error && error.message === CURRENT_PRODUCT_DRAFT_ERROR)
+      return jsonError(
+        "Generate the current Product Draft before creating a Design Preview.",
+        422,
+        { code: "CURRENT_PRODUCT_DRAFT_REQUIRED" },
+      );
     if (
       error instanceof Error &&
       error.message.includes("active prototype job")

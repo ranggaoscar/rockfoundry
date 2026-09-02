@@ -388,9 +388,10 @@ export default function ProjectWorkspace({
   } | null>(null);
   const conversationGenerationRef = useRef(0);
   const projectRef = useRef<ProjectData | null>(null);
-  const draftStartRef = useRef<() =>
-    | { status: "running" | "already_running" | "failed"; message: string }
-    | undefined
+  const draftStartRef = useRef<
+    () =>
+      | { status: "running" | "already_running" | "failed"; message: string }
+      | undefined
   >(() => undefined);
   const refineProductRef = useRef<
     (input: Record<string, unknown>, signal: AbortSignal) => Promise<string>
@@ -401,13 +402,12 @@ export default function ProjectWorkspace({
       draftMayNeedRefresh: false,
     }),
   );
-  const designPreviewRef = useRef<
-    (signal: AbortSignal) => Promise<string>
-  >(async () =>
-    JSON.stringify({
-      status: "failed",
-      message: "Project context is not available yet.",
-    }),
+  const designPreviewRef = useRef<(signal: AbortSignal) => Promise<string>>(
+    async () =>
+      JSON.stringify({
+        status: "failed",
+        message: "Project context is not available yet.",
+      }),
   );
   const provider = useProviderStatus();
 
@@ -935,7 +935,10 @@ export default function ProjectWorkspace({
 
   function buildProductDraft() {
     if (!projectId || !project || project.id !== projectId)
-      return { status: "failed" as const, message: "Project context is not available yet." };
+      return {
+        status: "failed" as const,
+        message: "Project context is not available yet.",
+      };
     if (
       !project.canonicalState?.rawIdea?.trim() &&
       !project.canonicalState?.normalizedSummary?.trim()
@@ -945,14 +948,26 @@ export default function ProjectWorkspace({
         message: "Add a product idea before generating a Product Draft.",
       };
     if (working)
-      return { status: "failed" as const, message: "RockFoundry is processing a conversation update. Try again when it finishes." };
+      return {
+        status: "failed" as const,
+        message:
+          "RockFoundry is processing a conversation update. Try again when it finishes.",
+      };
     if (draftGenerationInFlight)
-      return { status: "already_running" as const, message: "Product Draft generation is already running in the Documents workbench." };
+      return {
+        status: "already_running" as const,
+        message:
+          "Product Draft generation is already running in the Documents workbench.",
+      };
     setPageError("");
     setDraftGenerationInFlight(true);
     setWorkbench("documents");
     setDraftGenerationRequestId((current) => current + 1);
-    return { status: "running" as const, message: "Product Draft generation started. The Documents workbench is showing its normal progress." };
+    return {
+      status: "running" as const,
+      message:
+        "Product Draft generation started. The Documents workbench is showing its normal progress.",
+    };
   }
 
   useEffect(() => {
@@ -1023,7 +1038,8 @@ export default function ProjectWorkspace({
                   context: buildProjectWebMcpContext({
                     project: {
                       ...currentProject,
-                      canonicalState: design.state || currentProject.canonicalState,
+                      canonicalState:
+                        design.state || currentProject.canonicalState,
                       version:
                         typeof design.version === "number"
                           ? design.version
@@ -1716,6 +1732,10 @@ export default function ProjectWorkspace({
           ) : null}
         </div>
       </section>
+      <SettingsPanel
+        open={drawer === "settings"}
+        onClose={() => setDrawer(null)}
+      />
       {drawer && drawer !== "settings" ? (
         <DrawerPanel
           drawer={drawer}

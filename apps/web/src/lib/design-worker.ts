@@ -7,13 +7,17 @@ import {
   startDesignGenerationJobHeartbeat,
   type DesignJobStage,
 } from "./design-job-claims";
-import { latestDraftArtifacts } from "./artifact-composer";
+import { assertCurrentProductDraft } from "./current-product-draft";
 
 let started = false;
 let interval: ReturnType<typeof setInterval> | undefined;
 type DesignModule = typeof import("./design");
 
-function advanceDesignJob(jobId: string, stage: DesignJobStage, timings: Record<string, number | null> = {}) {
+function advanceDesignJob(
+  jobId: string,
+  stage: DesignJobStage,
+  timings: Record<string, number | null> = {},
+) {
   return prisma.designGenerationJob.update({
     where: { id: jobId },
     data: {
@@ -24,15 +28,24 @@ function advanceDesignJob(jobId: string, stage: DesignJobStage, timings: Record<
   });
 }
 
-export async function runDesignGenerationJob(jobId: string, alreadyClaimed = false) {
+export async function runDesignGenerationJob(
+  jobId: string,
+  alreadyClaimed = false,
+) {
   if (!alreadyClaimed) {
     const claimed = await prisma.designGenerationJob.updateMany({
       where: { id: jobId, status: "QUEUED" },
-      data: { status: "RUNNING", startedAt: new Date(), heartbeatAt: new Date() },
+      data: {
+        status: "RUNNING",
+        startedAt: new Date(),
+        heartbeatAt: new Date(),
+      },
     });
     if (claimed.count !== 1) return;
   }
-  const job = await prisma.designGenerationJob.findUnique({ where: { id: jobId } });
+  const job = await prisma.designGenerationJob.findUnique({
+    where: { id: jobId },
+  });
   if (!job) return;
   const stopHeartbeat = startDesignGenerationJobHeartbeat(prisma, jobId);
   let designModule: DesignModule | undefined;
@@ -42,12 +55,14 @@ export async function runDesignGenerationJob(jobId: string, alreadyClaimed = fal
     if (!project || project.version !== job.projectVersion)
       throw new Error("PROJECT_VERSION_CONFLICT");
     const state = parseProjectState(project);
-    const draft = await latestDraftArtifacts(job.projectId, job.projectVersion);
-    const persistedDraft = draft
-      ? Object.fromEntries(
-          draft.artifacts.map((artifact) => [artifact.type, artifact.content]),
-        )
-      : undefined;
+    const draft = await assertCurrentProductDraft({
+      projectId: job.projectId,
+      currentVersion: job.projectVersion,
+      currentState: state,
+    });
+    const persistedDraft = Object.fromEntries(
+      draft.artifacts.map((artifact) => [artifact.type, artifact.content]),
+    );
     const result = await designModule.generateProjectDesign(
       job.projectId,
       state,
@@ -89,9 +104,11 @@ export async function runDesignGenerationJob(jobId: string, alreadyClaimed = fal
         errorSummary:
           error instanceof Error && error.message === "PACKAGE_NOT_READY"
             ? "Selesaikan Product Package sebelum membuat prototype."
-            : error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT"
+            : error instanceof Error &&
+                error.message === "PROJECT_VERSION_CONFLICT"
               ? "Project berubah sebelum prototype selesai disiapkan. Muat ulang lalu coba lagi."
-              : designModule?.designGenerationUserMessage(error) || "Prototype belum berhasil dibuat. Coba lagi.",
+              : designModule?.designGenerationUserMessage(error) ||
+                "Prototype belum berhasil dibuat. Coba lagi.",
         progress: JSON.stringify({
           stageLabel: stageLabel("FAILED"),
           failure: diagnostics,
@@ -116,7 +133,9 @@ export async function runDesignGenerationWorkerOnce() {
 export function startDesignWorker() {
   if (started) return;
   started = true;
-  const tick = () => { void runDesignGenerationWorkerOnce().catch(() => undefined); };
+  const tick = () => {
+    void runDesignGenerationWorkerOnce().catch(() => undefined);
+  };
   interval = setInterval(tick, 1000);
   interval.unref();
 }
