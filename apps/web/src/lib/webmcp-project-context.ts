@@ -54,6 +54,11 @@ type DesignJob = {
   errorSummary?: string | null;
 };
 
+type PackageJob = {
+  status?: string;
+  stage?: string;
+};
+
 export type ProjectWebMcpContextInput = {
   project: {
     id: string;
@@ -71,6 +76,7 @@ export type ProjectWebMcpContextInput = {
   };
   screenMap?: ScreenMapEntry[];
   designJob?: DesignJob | null;
+  packageJob?: PackageJob | null;
 };
 
 export function buildProjectWebMcpContext({
@@ -78,9 +84,11 @@ export function buildProjectWebMcpContext({
   draft,
   screenMap,
   designJob,
+  packageJob,
 }: ProjectWebMcpContextInput) {
-  const screens =
-    screenMap?.length ? screenMap : project.canonicalState.studio?.screenMap || [];
+  const screens = screenMap?.length
+    ? screenMap
+    : project.canonicalState.studio?.screenMap || [];
   const assumptions = (project.canonicalState.assumptions || [])
     .filter((assumption) => !assumption.resolved && assumption.statement)
     .map((assumption) => ({
@@ -146,10 +154,14 @@ export function buildProjectWebMcpContext({
       jobStage: designJob?.stage || null,
       jobError: designJob?.errorSummary || null,
     },
-    openQuestions:
-      project.canonicalState.openQuestions?.length
-        ? project.canonicalState.openQuestions
-        : project.canonicalState.discovery?.unresolvedTopics || [],
+    handoff: {
+      status: packageJob?.status || "NOT_STARTED",
+      stage: packageJob?.stage || null,
+      ready: packageJob?.status === "COMPLETED",
+    },
+    openQuestions: project.canonicalState.openQuestions?.length
+      ? project.canonicalState.openQuestions
+      : project.canonicalState.discovery?.unresolvedTopics || [],
     assumptions,
   };
 }

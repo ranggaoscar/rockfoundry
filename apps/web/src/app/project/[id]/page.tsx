@@ -27,6 +27,7 @@ import { humanTopicLabel } from "@/lib/topic-label";
 import { safeConversationFailureMessage } from "@/lib/ai-error-messages";
 import { buildProjectWebMcpContext } from "@/lib/webmcp-project-context";
 import { generateDesignPreviewThroughWebMcp } from "@/lib/webmcp-design-preview";
+import { prepareHandoffThroughWebMcp } from "@/lib/webmcp-prepare-handoff";
 import { refineProductThroughConversation } from "@/lib/webmcp-refine-product";
 import type { ProjectStage } from "@/components/workspace-sidebar";
 type ProjectData = {
@@ -409,6 +410,16 @@ export default function ProjectWorkspace({
         message: "Project context is not available yet.",
       }),
   );
+  const prepareHandoffRef = useRef<(signal: AbortSignal) => Promise<string>>(
+    async () =>
+      JSON.stringify({
+        status: "failed",
+        jobId: null,
+        jobStatus: null,
+        stage: null,
+        message: "Project context is not available yet.",
+      }),
+  );
   const provider = useProviderStatus();
 
   const fetchProject = useCallback(async (id: string) => {
@@ -475,6 +486,44 @@ export default function ProjectWorkspace({
     },
     [projectId],
   );
+
+  const prepareHandoff = useCallback(
+    async (signal: AbortSignal) => {
+      const currentProject = projectRef.current;
+      if (!currentProject || currentProject.id !== projectId)
+        return JSON.stringify({
+          status: "failed",
+          jobId: null,
+          jobStatus: null,
+          stage: null,
+          message: "Project context is not available yet.",
+        });
+      const result = await prepareHandoffThroughWebMcp({
+        projectId: currentProject.id,
+        signal,
+      });
+      const jobId = result.jobId;
+      if (jobId) {
+        setPackageJob((current) => ({
+          ...(current || {
+            id: jobId,
+            completedStages: [],
+            errorSummary: null,
+          }),
+          id: jobId,
+          status: result.jobStatus || "QUEUED",
+          stage: result.stage || "PREPARING_PRODUCT",
+          stageLabel: result.stage || "PREPARING_PRODUCT",
+        }));
+      }
+      return JSON.stringify(result);
+    },
+    [projectId],
+  );
+
+  useEffect(() => {
+    prepareHandoffRef.current = prepareHandoff;
+  }, [prepareHandoff]);
 
   const runInitialTurn = useCallback(
     async (id: string, rawIdea: string, retry = false) => {
@@ -1013,21 +1062,28 @@ export default function ProjectWorkspace({
                   message: "Project context is not available yet.",
                 });
               try {
-                const [draftResponse, designResponse] = await Promise.all([
-                  fetch(`/api/projects/${currentProject.id}/documents`, {
-                    signal,
-                  }),
-                  fetch(`/api/projects/${currentProject.id}/design`, {
-                    signal,
-                  }),
-                ]);
+                const [draftResponse, designResponse, packageResponse] =
+                  await Promise.all([
+                    fetch(`/api/projects/${currentProject.id}/documents`, {
+                      signal,
+                    }),
+                    fetch(`/api/projects/${currentProject.id}/design`, {
+                      signal,
+                    }),
+                    fetch(`/api/projects/${currentProject.id}/package`, {
+                      signal,
+                    }),
+                  ]);
                 if (!draftResponse.ok)
                   throw new Error("Could not load the current Product Draft.");
                 if (!designResponse.ok)
                   throw new Error("Could not load the current design status.");
-                const [draft, design] = await Promise.all([
+                if (!packageResponse.ok)
+                  throw new Error("Could not load the final handoff status.");
+                const [draft, design, handoff] = await Promise.all([
                   draftResponse.json(),
                   designResponse.json(),
+                  packageResponse.json(),
                 ]);
                 return JSON.stringify({
                   status: "success",
@@ -1054,6 +1110,7 @@ export default function ProjectWorkspace({
                       ? design.draftScreenMap
                       : undefined,
                     designJob: design.designJob || null,
+                    packageJob: handoff.job || null,
                   }),
                 });
               } catch (cause) {
@@ -1094,6 +1151,17 @@ export default function ProjectWorkspace({
             inputSchema,
             annotations: { readOnlyHint: false },
             execute: (_input, { signal }) => designPreviewRef.current(signal),
+          },
+          { signal: controller.signal },
+        );
+        await modelContext.registerTool(
+          {
+            name: "rockfoundry_prepare_handoff",
+            description:
+              "Start or reuse the current project's existing final Product Package job. A prototype is optional and is not required for handoff.",
+            inputSchema,
+            annotations: { readOnlyHint: false },
+            execute: (_input, { signal }) => prepareHandoffRef.current(signal),
           },
           { signal: controller.signal },
         );

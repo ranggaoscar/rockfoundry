@@ -14,8 +14,8 @@ RockFoundry does **not** primarily write the production application. It works be
 
 <p align="center"><em>Turn an early idea into decisions your coding agent can trust.</em></p>
 
-| Product workspace | Design generation |
-| --- | --- |
+| Product workspace                                             | Design generation                                                      |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | ![RockFoundry project workspace](public/readme/dashboard.png) | ![RockFoundry design generation](public/readme/dashboard-generate.png) |
 
 ## WebMCP Challenge submission
@@ -38,16 +38,19 @@ WebMCP was meaningfully added during the challenge using the native imperative A
   - `rockfoundry_generate_product_draft`
   - `rockfoundry_refine_product`
   - `rockfoundry_generate_design_preview`
+  - `rockfoundry_prepare_handoff`
 
-The tools reuse RockFoundry's existing APIs and client flows. Product Draft and Design Preview calls open the normal workbench and retain its existing progress UI; WebMCP adds agent access rather than a parallel product pipeline.
+The tools reuse RockFoundry's existing APIs and client flows. Product Draft, Design Preview, and final handoff calls retain their existing progress UI and PackageJob behavior; WebMCP adds agent access rather than a parallel product pipeline. Product Package / handoff is independent of the optional AI prototype.
 
 ### Judge test flow
 
 1. Open [the live demo](https://foundry.rockbase.web.id).
 2. Call `rockfoundry_start_product` with a short product idea.
-3. On the new project page, call `rockfoundry_generate_product_draft` and inspect progress with `rockfoundry_inspect_project`.
-4. Once the draft is current, call `rockfoundry_generate_design_preview`.
-5. Inspect the project again to see design job status, stage, review status, and prototype availability.
+3. On the project page, call `rockfoundry_inspect_project`; refine with `rockfoundry_refine_product` if important product truth is missing.
+4. Call `rockfoundry_generate_product_draft`, then inspect until the Product Draft is current.
+5. Call `rockfoundry_generate_design_preview` when the current draft permits it; this optional visual reference is not a handoff requirement.
+6. Call `rockfoundry_prepare_handoff` to start or reuse the existing Product Package job.
+7. Call `rockfoundry_inspect_project` again and verify `handoff.status`, `handoff.stage`, and `handoff.ready`.
 
 ```text
 Idea
@@ -81,7 +84,7 @@ A coding agent still needs to guess:
 
 Those guesses become product behavior. RockFoundry discovers and records the missing decisions before implementation.
 
-Once enough product truth exists, RockFoundry generates the product package and an interactive prototype. You can revise the design conversationally, approve the result, and download one handoff for your coding agent.
+Once enough product truth exists, RockFoundry generates the Product Package and coding-agent handoff. An interactive prototype is optional: you can generate, revise, and approve it as a visual reference without making it a handoff prerequisite.
 
 ## How it works
 
@@ -89,11 +92,10 @@ Once enough product truth exists, RockFoundry generates the product package and 
 2. Brainstorm with RockFoundry.
 3. Confirm important product decisions.
 4. Click **Build product package**.
-5. Review the BRD, PRD, ERD, and interactive design.
-6. Revise the prototype conversationally.
-7. Approve the design.
-8. Download the handoff.
-9. Give the folder to your coding agent.
+5. Review the BRD, PRD, ERD, and handoff material.
+6. Optionally generate and revise an interactive prototype.
+7. Download the handoff.
+8. Give the folder to your coding agent.
 
 ## What your coding agent receives
 
@@ -118,7 +120,7 @@ my-product/
     ├── DESIGN_SPEC.json
     ├── SCREEN_MAP.json
     ├── DESIGN_DECISIONS.md
-    └── prototype/
+    └── prototype/                 # optional AI visual reference
         ├── index.html
         ├── styles.css
         └── app.js

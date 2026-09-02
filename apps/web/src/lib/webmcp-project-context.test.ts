@@ -57,7 +57,7 @@ describe("buildProjectWebMcpContext", () => {
             current: true,
             version: 4,
             content:
-              "# Screen Map\n\n```rockfoundry-screen-map\n[{\"id\":\"orders\",\"name\":\"Orders\",\"actorIds\":[],\"purpose\":\"Review orders\",\"route\":\"#/orders\",\"status\":\"DRAFT\",\"source\":\"INFERRED\"}]\n```\n",
+              '# Screen Map\n\n```rockfoundry-screen-map\n[{"id":"orders","name":"Orders","actorIds":[],"purpose":"Review orders","route":"#/orders","status":"DRAFT","source":"INFERRED"}]\n```\n',
           },
         ],
       },
@@ -74,10 +74,14 @@ describe("buildProjectWebMcpContext", () => {
         stage: "FAILED",
         errorSummary: "Prototype provider timed out.",
       },
+      packageJob: { status: "COMPLETED", stage: "COMPLETED" },
     });
 
     expect(context).toMatchObject({
-      project: { name: "Laundry Flow", summary: "Manage laundry pickup and delivery." },
+      project: {
+        name: "Laundry Flow",
+        summary: "Manage laundry pickup and delivery.",
+      },
       productDraft: {
         status: "COMPLETE",
         hasCurrentDraft: true,
@@ -91,6 +95,7 @@ describe("buildProjectWebMcpContext", () => {
         jobStage: "FAILED",
         jobError: "Prototype provider timed out.",
       },
+      handoff: { status: "COMPLETED", stage: "COMPLETED", ready: true },
       openQuestions: ["Who confirms delivery?"],
       assumptions: [{ statement: "Drivers use a mobile workflow." }],
     });
