@@ -58,22 +58,14 @@ const DESIGN_PROGRESS = [
 ] as const;
 
 export function designGenerationReady(input: {
-  packageReady: boolean;
-  draftSpecReady: boolean;
-  packageDesignReady?: boolean;
+  currentProductDraftReady: boolean;
 }) {
-  return (
-    input.packageReady ||
-    input.draftSpecReady ||
-    Boolean(input.packageDesignReady)
-  );
+  return input.currentProductDraftReady;
 }
 
 export function DesignStudio({
   projectId,
   studio,
-  packageReady = false,
-  draftSpecReady = false,
   packageDesign,
   language = "en",
   onState,
@@ -85,8 +77,6 @@ export function DesignStudio({
 }: {
   projectId: string;
   studio?: Studio;
-  packageReady?: boolean;
-  draftSpecReady?: boolean;
   packageDesign?: PackageDesign | null;
   language?: "id" | "en";
   onState: (state: unknown, version: number) => void;
@@ -107,6 +97,8 @@ export function DesignStudio({
     useState<PackageDesign | null>(null);
   const [draftScreenMap, setDraftScreenMap] = useState<Screen[]>([]);
   const [designJob, setDesignJob] = useState<DesignJob | null>(null);
+  const [currentProductDraftReady, setCurrentProductDraftReady] =
+    useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const onStateRef = useRef(onState);
   useEffect(() => {
@@ -116,17 +108,22 @@ export function DesignStudio({
   const baseline = remotePackageDesign || packageDesign || null;
   const hasDesign = Boolean(studio && studio.currentVersion > 0);
   const effectivePackageReady = designGenerationReady({
-    packageReady,
-    draftSpecReady,
-    packageDesignReady: Boolean(baseline) || hasDesign,
+    currentProductDraftReady,
   });
   const designBusy =
     working || ["QUEUED", "RUNNING"].includes(designJob?.status || "");
 
   const refreshSnapshot = useCallback(async () => {
-    const response = await fetch(`/api/projects/${projectId}/design`);
+    const [response, documentsResponse] = await Promise.all([
+      fetch(`/api/projects/${projectId}/design`),
+      fetch(`/api/projects/${projectId}/documents`),
+    ]);
     if (!response.ok) return null;
     const next = await response.json();
+    if (documentsResponse.ok) {
+      const documents = await documentsResponse.json();
+      setCurrentProductDraftReady(documents.hasCurrentDraft === true);
+    }
     if (next.packageDesign) setRemotePackageDesign(next.packageDesign);
     if (Array.isArray(next.draftScreenMap))
       setDraftScreenMap(next.draftScreenMap);
@@ -188,6 +185,20 @@ export function DesignStudio({
         : "Preparing AI prototype...",
     );
     try {
+      const documentsResponse = await fetch(
+        `/api/projects/${projectId}/documents`,
+      );
+      const documents = documentsResponse.ok
+        ? await documentsResponse.json()
+        : null;
+      const hasCurrentDraft = documents?.hasCurrentDraft === true;
+      setCurrentProductDraftReady(hasCurrentDraft);
+      if (!hasCurrentDraft)
+        throw new Error(
+          language === "id"
+            ? "Buat atau perbarui Product Draft saat ini sebelum membuat Design Preview."
+            : "Generate the current Product Draft before creating a Design Preview.",
+        );
       const response = await fetch(
         `/api/projects/${projectId}/design/generate`,
         {

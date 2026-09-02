@@ -726,13 +726,9 @@ export default function ProjectWorkspace({
   const indo = isIndonesianProject(state);
   const thinkingStatus = thinkingCopy(thinkingElapsedSec, indo);
   const initialTurnWorking = initialTurnStatus === "RUNNING";
-  const packageReady = Boolean(
-    exportReady || packageJob?.status === "COMPLETED",
-  );
   const draftAvailable = Boolean(
     state.rawIdea?.trim() || state.normalizedSummary?.trim(),
   );
-  const designReady = packageReady || draftAvailable;
 
   const visibleMessages = useMemo(() => {
     if (
@@ -1701,8 +1697,6 @@ export default function ProjectWorkspace({
                 <DesignStudio
                   projectId={project.id}
                   studio={state.studio}
-                  packageReady={designReady}
-                  draftSpecReady={draftAvailable}
                   showDownloadHandoff={false}
                   showPrototypeAction
                   autoGenerate={prototypeLaunchRequested}

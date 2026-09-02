@@ -230,6 +230,18 @@ test.describe("V2 Conversation Agent product flow", () => {
     ).toBeVisible({
       timeout: 15_000,
     });
+    await expect
+      .poll(
+        async () => {
+          const currentDraft = await request.get(
+            `/api/projects/${projectId}/documents`,
+          );
+          if (!currentDraft.ok) return false;
+          return (await currentDraft.json()).hasCurrentDraft;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
     await page
       .getByRole("complementary", { name: "Product workbench" })
       .getByRole("button", {

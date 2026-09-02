@@ -2,30 +2,15 @@ import { describe, expect, it } from "vitest";
 import { designGenerationReady } from "./design-studio";
 
 describe("DesignStudio generation readiness", () => {
-  it("does not enqueue generation for an idea without a package or draft spec", () => {
-    expect(
-      designGenerationReady({
-        packageReady: false,
-        draftSpecReady: false,
-        packageDesignReady: false,
-      }),
-    ).toBe(false);
+  it("blocks raw idea, package state, and stale drafts unless server reports a current Product Draft", () => {
+    expect(designGenerationReady({ currentProductDraftReady: false })).toBe(
+      false,
+    );
   });
 
-  it("enables generation for a draft-ready spec or final package", () => {
-    expect(
-      designGenerationReady({
-        packageReady: false,
-        draftSpecReady: true,
-        packageDesignReady: false,
-      }),
-    ).toBe(true);
-    expect(
-      designGenerationReady({
-        packageReady: true,
-        draftSpecReady: false,
-        packageDesignReady: false,
-      }),
-    ).toBe(true);
+  it("enables generation only for a complete current Product Draft", () => {
+    expect(designGenerationReady({ currentProductDraftReady: true })).toBe(
+      true,
+    );
   });
 });

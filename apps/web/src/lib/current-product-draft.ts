@@ -34,9 +34,11 @@ export function hasCompleteCurrentProductDraft(
     draft &&
     isCurrent &&
     draft.generation?.canonicalVersion === currentVersion &&
-    DRAFT_ARTIFACT_TYPES.every((type) =>
-      draft.artifacts.some((artifact) => artifact.type === type),
-    ),
+    draft.artifacts.length === DRAFT_ARTIFACT_TYPES.length &&
+    DRAFT_ARTIFACT_TYPES.every((type) => {
+      const artifact = draft.artifacts.find((entry) => entry.type === type);
+      return Boolean(artifact?.content.trim());
+    }),
   );
 }
 
