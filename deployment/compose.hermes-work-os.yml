@@ -1,0 +1,16 @@
+# Confirmed by rockfoundry-inspect: base Compose service key is web.
+# Operator must merge this delta into the fixed base Compose used by rockfoundry-deploy.
+# No networks, ports, volumes, command or restart override: preserve the base deployment.
+services:
+  web:
+    build:
+      context: /opt/rockfoundry/repo
+      dockerfile: deployment/Dockerfile.work-os
+    image: ${ROCKFOUNDRY_WORK_OS_IMAGE:?Set a NEW approved RF-001+RF-002C candidate image tag}
+    env_file:
+      - path: /opt/hermes-agent/home/profiles/rockfoundry/client.env
+        required: true
+    environment:
+      ROCKFOUNDRY_WORK_ORIGIN: "https://foundry.rockbase.web.id"
+      HERMES_EXECUTOR_ENABLED: "true"
+      HERMES_EXECUTOR_PRIVATE_HTTP_ORIGIN: "http://192.168.16.1:8643"

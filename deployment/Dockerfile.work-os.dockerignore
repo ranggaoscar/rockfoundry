@@ -1,0 +1,17 @@
+**/node_modules
+**/.next
+**/dist
+.git
+**/.env
+**/.env.*
+**/*.env
+**/auth.json
+**/*.db
+**/*.db-*
+**/*.log
+**/test-results
+**/playwright-report
+backups
+working
+archive
+IDEA.md

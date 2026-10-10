@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { PanelLeftClose, PanelLeftOpen, Plus, Settings2, X } from "lucide-react";
 import { formatRelativeTime } from "@/lib/topic-label";
 import type { ProviderStatus } from "@/lib/provider";
@@ -81,6 +82,10 @@ export function WorkspaceSidebar({
         <Plus className="size-4 shrink-0" />
         {collapsed ? null : <span>New project</span>}
       </button>
+      <Link href="/today" className="rf-sidebar-link mt-2" title="Today" aria-label="Today · Work OS">
+        <span className="size-4 shrink-0 text-center" aria-hidden="true">◷</span>
+        {collapsed ? null : <span>Today · Work OS</span>}
+      </Link>
       {collapsed ? null : (
         <div className="mt-6 px-1 text-[0.68rem] font-medium tracking-[0.08em] text-muted-foreground">
           Recent

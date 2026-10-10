@@ -2,6 +2,13 @@
 
 RockFoundry is an open-source, local-first product intelligence system. It helps users turn rough ideas into confirmed product decisions, product documents, interactive prototypes, and coding-agent-ready handoffs.
 
+## RF-001 Work OS foundation
+
+The additive personal Work OS is available at `/today`, `/projects`, and `/runs`.
+The existing Product Studio remains at `/` and `/project/:id`.
+See [RF-001 architecture, workflow, safety and integration status](docs/RF-001-WORK-OS.md).
+Mock execution is explicit and development-only. The authenticated Hermes adapter supports the provisioned private VPS endpoint; production activation is gated by [RF-002C release requirements](docs/RF-002C-RELEASE.md).
+
 ## Product loop
 
 ```text

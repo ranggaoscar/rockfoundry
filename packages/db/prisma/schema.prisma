@@ -31,6 +31,10 @@ model Project {
   designGenerationJobs DesignGenerationJob[]
   revisions            ProjectStateRevision[]
   draftGenerations     DraftGeneration[]
+  work                 ProjectWork?
+  goals                Goal[]
+  milestones           Milestone[]
+  tasks                Task[]
   @@index([updatedAt])
 }
 
@@ -306,4 +310,150 @@ model ProviderProfile {
   updatedAt   DateTime @updatedAt
 
   @@index([isActive, updatedAt])
+}
+
+// Work OS is additive: discovery Project columns and AgentRun semantics stay unchanged.
+model Workspace {
+  id        String @id
+  name      String
+  ownerId   String
+  createdAt DateTime @default(now())
+  projects  ProjectWork[]
+  activity  ActivityEvent[]
+}
+
+model ProjectWork {
+  projectId   String @id
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  status      String @default("ACTIVE")
+  targetDate  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([workspaceId, status])
+}
+
+model Goal {
+  id        String @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  title     String
+  status    String @default("ACTIVE")
+  createdAt DateTime @default(now())
+  milestones Milestone[]
+  tasks      Task[]
+  @@index([projectId, status])
+}
+
+model Milestone {
+  id        String @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  goalId    String?
+  goal      Goal? @relation(fields: [goalId], references: [id], onDelete: Restrict)
+  title     String
+  status    String @default("OPEN")
+  dueAt     DateTime?
+  createdAt DateTime @default(now())
+  tasks     Task[]
+  @@index([projectId, dueAt])
+}
+
+model Task {
+  id                 String @id @default(cuid())
+  projectId          String
+  project            Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  goalId             String?
+  goal               Goal? @relation(fields: [goalId], references: [id], onDelete: Restrict)
+  milestoneId        String?
+  milestone          Milestone? @relation(fields: [milestoneId], references: [id], onDelete: Restrict)
+  title              String
+  description        String?
+  acceptanceCriteria String
+  status             String @default("TODO")
+  priority           String @default("NORMAL")
+  dueAt              DateTime?
+  plannedDate        DateTime?
+  activeExecutionId  String? @unique
+  acceptedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  assignment         TaskAssignment?
+  executions         AgentExecution[]
+  @@index([projectId, status])
+  @@index([status, dueAt])
+  @@index([plannedDate, priority])
+}
+
+model TaskAssignment {
+  id         String @id @default(cuid())
+  taskId     String @unique
+  task       Task @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  kind       String
+  humanId    String?
+  executorId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model AgentExecution {
+  id             String @id
+  taskId         String
+  task           Task @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  executorId     String
+  requestId      String
+  input          String
+  status         String @default("QUEUED")
+  externalId     String?
+  output         String?
+  errorSummary   String?
+  retryCount     Int @default(0)
+  leaseUntil     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  startedAt      DateTime?
+  completedAt    DateTime?
+  evidence       Evidence[]
+  approval       Approval?
+  @@unique([taskId, requestId])
+  @@unique([executorId, externalId])
+  @@index([status, createdAt])
+}
+
+model Approval {
+  id          String @id @default(cuid())
+  executionId String @unique
+  execution   AgentExecution @relation(fields: [executionId], references: [id], onDelete: Restrict)
+  decision    String
+  reviewerId  String
+  comment     String?
+  createdAt   DateTime @default(now())
+}
+
+model Evidence {
+  id          String @id @default(cuid())
+  executionId String
+  execution   AgentExecution @relation(fields: [executionId], references: [id], onDelete: Restrict)
+  key         String
+  kind        String
+  title       String
+  content     String
+  uri         String?
+  createdAt   DateTime @default(now())
+  @@unique([executionId, key])
+}
+
+model ActivityEvent {
+  id          String @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  projectId   String?
+  taskId      String?
+  executionId String?
+  actorId     String
+  type        String
+  detail      String
+  createdAt   DateTime @default(now())
+  @@index([workspaceId, createdAt])
 }
