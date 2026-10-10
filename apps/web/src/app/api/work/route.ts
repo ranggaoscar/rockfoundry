@@ -1,10 +1,10 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import { applyWorkAction, workSnapshot, WorkError } from "@/lib/work-os";
 import { isWorkOriginAllowed } from "@/lib/work-origin";
-import { workAccessResponse } from "@/lib/work-access";
 
 function errorResponse(cause: unknown) {
   if (cause instanceof WorkError)
@@ -17,9 +17,9 @@ function errorResponse(cause: unknown) {
     { status: 500 },
   );
 }
-export async function GET(req: NextRequest) {
-  const denied = workAccessResponse(req);
-  if (denied) return denied;
+async function GETHandler(req: NextRequest) {
+  // Request is consumed by withOwner (owner session + origin checks) before this runs.
+  void req;
   try {
     return Response.json(await workSnapshot(prisma), {
       headers: { "Cache-Control": "no-store" },
@@ -28,9 +28,7 @@ export async function GET(req: NextRequest) {
     return errorResponse(cause);
   }
 }
-export async function POST(req: NextRequest) {
-  const denied = workAccessResponse(req);
-  if (denied) return denied;
+async function POSTHandler(req: NextRequest) {
   if (!isWorkOriginAllowed(req))
     return Response.json(
       { error: "Cross-origin work mutations are not allowed." },
@@ -56,3 +54,5 @@ export async function POST(req: NextRequest) {
     return errorResponse(cause);
   }
 }
+export const GET = withOwner(GETHandler);
+export const POST = withOwner(POSTHandler);

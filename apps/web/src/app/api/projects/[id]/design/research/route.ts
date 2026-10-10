@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -11,7 +12,7 @@ import { researchDesignReferences } from "@/lib/design";
 
 const Input = z.object({ query: z.string().trim().min(3).max(300) });
 
-export async function POST(
+async function POSTHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -38,6 +39,10 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError)
       return jsonError("Enter a short design research query.", 400);
-    return jsonError("RockFoundry couldn't research that design reference.", 502);
+    return jsonError(
+      "RockFoundry couldn't research that design reference.",
+      502,
+    );
   }
 }
+export const POST = withOwner(POSTHandler);

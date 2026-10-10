@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -10,21 +11,26 @@ import {
   parseProjectState,
   saveProjectState,
 } from "@/lib/local-project";
-import { persistConversationMessage, persistUserMessage } from "@/lib/conversation";
+import {
+  persistConversationMessage,
+  persistUserMessage,
+} from "@/lib/conversation";
 import { runConversationAgent } from "@/lib/conversation-agent";
 import { getPackageEligibility } from "@/lib/package-readiness";
 import { evaluateReadinessDirectly } from "@rockfoundry/core";
 
 const ReferenceInput = z.object({ url: z.string().url() });
 
-function publicReference(reference: { metadata: string | null } & Record<string, unknown>) {
+function publicReference(
+  reference: { metadata: string | null } & Record<string, unknown>,
+) {
   return {
     ...reference,
     metadata: reference.metadata ? JSON.parse(reference.metadata) : undefined,
   };
 }
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -39,7 +45,7 @@ export async function GET(
   });
 }
 
-export async function POST(
+async function POSTHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -58,9 +64,12 @@ export async function POST(
         status: extracted.success ? "ANALYZED" : "FAILED",
         untrusted: true,
         metadata: JSON.stringify({
-          provenance: type === "GITHUB_REPO" ? "REFERENCE_GITHUB" : "REFERENCE_WEBSITE",
+          provenance:
+            type === "GITHUB_REPO" ? "REFERENCE_GITHUB" : "REFERENCE_WEBSITE",
           title: extracted.success ? extracted.title : undefined,
-          summary: extracted.success ? extracted.text?.slice(0, 1200) : extracted.error,
+          summary: extracted.success
+            ? extracted.text?.slice(0, 1200)
+            : extracted.error,
           untrusted: true,
         }),
       },
@@ -104,3 +113,5 @@ export async function POST(
     return jsonError("RockFoundry couldn't inspect that reference.", 422);
   }
 }
+export const GET = withOwner(GETHandler);
+export const POST = withOwner(POSTHandler);

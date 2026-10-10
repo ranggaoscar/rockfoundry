@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { z } from "zod";
@@ -9,7 +10,7 @@ const TestProviderSchema = z.object({
   apiKey: z.string().trim().min(1).max(2000).optional(),
 });
 
-export async function POST(request: Request) {
+async function POSTHandler(request: Request) {
   if (isPublicDemo()) {
     return Response.json(
       { error: "Provider settings are managed by this public demo." },
@@ -45,3 +46,4 @@ export async function POST(request: Request) {
     );
   }
 }
+export const POST = withOwner(POSTHandler);

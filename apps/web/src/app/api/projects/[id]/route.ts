@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { ProjectStateSchema } from "@rockfoundry/core";
@@ -11,7 +12,7 @@ import {
   getProjectActivity,
 } from "@/lib/local-project";
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -33,7 +34,7 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+async function PATCHHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -90,7 +91,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
+async function DELETEHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -106,3 +107,6 @@ export async function DELETE(
     return jsonError("RockFoundry couldn't archive this project.", 500);
   }
 }
+export const GET = withOwner(GETHandler);
+export const PATCH = withOwner(PATCHHandler);
+export const DELETE = withOwner(DELETEHandler);

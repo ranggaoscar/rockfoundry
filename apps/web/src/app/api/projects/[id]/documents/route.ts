@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -19,7 +20,7 @@ import {
 } from "@/lib/local-project";
 import { getCurrentProductDraft } from "@/lib/current-product-draft";
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -50,7 +51,7 @@ export async function GET(
   });
 }
 
-export async function POST(
+async function POSTHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -104,3 +105,5 @@ export async function POST(
     });
   }
 }
+export const GET = withOwner(GETHandler);
+export const POST = withOwner(POSTHandler);

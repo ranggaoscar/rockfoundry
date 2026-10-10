@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -13,7 +14,7 @@ import {
   selectCoherentPrototypeSet,
 } from "@/lib/design-preview";
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -46,8 +47,7 @@ export async function GET(
     );
   }
   const pack = parseProjectState(project).generationMetadata.designPackage as
-    | { files?: Array<{ path: string; content: string }> }
-    | undefined;
+    { files?: Array<{ path: string; content: string }> } | undefined;
   if (!pack?.files?.length) return jsonError("No prototype yet.", 404);
   return new Response(renderPrototypePreviewDocument(pack.files), {
     headers: {
@@ -58,3 +58,4 @@ export async function GET(
     },
   });
 }
+export const GET = withOwner(GETHandler);

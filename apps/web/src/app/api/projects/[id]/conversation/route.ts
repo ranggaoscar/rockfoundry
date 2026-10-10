@@ -1,8 +1,13 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { getLocalProject, jsonError, parseProjectState } from "@/lib/local-project";
+import {
+  getLocalProject,
+  jsonError,
+  parseProjectState,
+} from "@/lib/local-project";
 import {
   claimConversationTurn,
   conversationModeAndIntent,
@@ -37,7 +42,8 @@ function existingTurnResponse(
   }
   if (turn.status === CONVERSATION_TURN_STATUS.FAILED) {
     const userMessage = turn.messages.find(
-      (message) => message.role === "user" && message.conversationTurnId === turn.id,
+      (message) =>
+        message.role === "user" && message.conversationTurnId === turn.id,
     );
     return Response.json(
       {
@@ -50,7 +56,7 @@ function existingTurnResponse(
   return Response.json(response);
 }
 
-export async function POST(
+async function POSTHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -74,7 +80,8 @@ export async function POST(
 
     const state = parseProjectState(project);
     const requestId =
-      req.headers.get("x-conversation-request-id")?.trim() || crypto.randomUUID();
+      req.headers.get("x-conversation-request-id")?.trim() ||
+      crypto.randomUUID();
     claimedRequestId = requestId;
     const { intent, mode } = conversationModeAndIntent(body.text);
     const claim = await claimConversationTurn(prisma, {
@@ -124,8 +131,7 @@ export async function POST(
         if (turn) {
           const userMessage = turn.messages.find(
             (message) =>
-              message.role === "user" &&
-              message.conversationTurnId === turn.id,
+              message.role === "user" && message.conversationTurnId === turn.id,
           );
           const status =
             error instanceof Error &&
@@ -151,18 +157,19 @@ export async function POST(
       }
     }
 
-    if (error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT") {
+    if (
+      error instanceof Error &&
+      error.message === "PROJECT_VERSION_CONFLICT"
+    ) {
       return jsonError(
         "The project changed while this conversation turn was running. Retry the turn.",
         409,
         { retryable: true },
       );
     }
-    return jsonError(
-      conversationAiErrorMessage(error),
-      422,
-    );
+    return jsonError(conversationAiErrorMessage(error), 422);
   }
 }
 
 export type ConversationResponseQuestion = null;
+export const POST = withOwner(POSTHandler);

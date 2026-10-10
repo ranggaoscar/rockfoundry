@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "pnpm exec tsx --test --test-concurrency=1 src/lib/package-job-claims.test.ts src/lib/design-job-claims.test.ts src/lib/package-worker.test.ts src/lib/package-first-contract.test.ts src/lib/work-os.test.ts src/lib/hermes-executor.test.ts src/lib/work-origin.test.ts src/lib/work-access.test.ts src/lib/work-access-route.test.ts && pnpm exec vitest run src/lib/package-failure-diagnostics.test.ts src/lib/artifact-composer.test.ts src/lib/design-draft-bridge.test.ts src/lib/design-preview.test.ts src/lib/webmcp-project-context.test.ts src/lib/webmcp-refine-product.test.ts"
+    "test": "pnpm exec tsx --test --test-concurrency=1 src/lib/package-job-claims.test.ts src/lib/design-job-claims.test.ts src/lib/package-worker.test.ts src/lib/package-first-contract.test.ts src/lib/work-os.test.ts src/lib/hermes-executor.test.ts src/lib/work-origin.test.ts src/lib/owner-access.test.ts && pnpm exec vitest run src/lib/package-failure-diagnostics.test.ts src/lib/artifact-composer.test.ts src/lib/design-draft-bridge.test.ts src/lib/design-preview.test.ts src/lib/webmcp-project-context.test.ts src/lib/webmcp-refine-product.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -18,6 +18,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.25.0",
     "next": "16.2.10",
+    "next-auth": "4.24.15",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "shadcn": "^4.13.1",

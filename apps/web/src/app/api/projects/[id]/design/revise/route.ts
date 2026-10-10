@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -15,7 +16,7 @@ import {
 
 const Input = z.object({ text: z.string().trim().min(2).max(2000) });
 
-export async function POST(
+async function POSTHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -45,3 +46,4 @@ export async function POST(
     return jsonError(designGenerationUserMessage(error), 422);
   }
 }
+export const POST = withOwner(POSTHandler);

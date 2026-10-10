@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -16,7 +17,7 @@ import {
   CURRENT_PRODUCT_DRAFT_ERROR,
 } from "@/lib/current-product-draft";
 
-export async function POST(
+async function POSTHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -68,7 +69,7 @@ export async function POST(
   }
 }
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -77,3 +78,5 @@ export async function GET(
   if (!project) return jsonError("Project not found", 404);
   return Response.json({ job: await latestDesignGenerationJob(prisma, id) });
 }
+export const POST = withOwner(POSTHandler);
+export const GET = withOwner(GETHandler);

@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import {
@@ -7,7 +8,7 @@ import {
 import { getLocalProject, jsonError } from "@/lib/local-project";
 import { conversationAiErrorMessage } from "@/lib/ai-error";
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -17,7 +18,7 @@ export async function GET(
   return Response.json(status);
 }
 
-export async function POST(
+async function POSTHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -53,3 +54,5 @@ export async function POST(
     });
   }
 }
+export const GET = withOwner(GETHandler);
+export const POST = withOwner(POSTHandler);

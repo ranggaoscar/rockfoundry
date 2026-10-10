@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -8,7 +9,7 @@ import {
 } from "@/lib/local-project";
 import { approveProjectDesign } from "@/lib/design";
 
-export async function POST(
+async function POSTHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -30,3 +31,4 @@ export async function POST(
     return jsonError("RockFoundry couldn't approve that design.", 422);
   }
 }
+export const POST = withOwner(POSTHandler);

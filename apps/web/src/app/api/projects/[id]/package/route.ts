@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -10,7 +11,7 @@ import { latestPackageJob } from "@/lib/package-jobs";
 import { enqueuePackageJob } from "@/lib/package-job-claims";
 import { prisma } from "@rockfoundry/db";
 
-export async function POST(
+async function POSTHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -39,7 +40,7 @@ export async function POST(
   }
 }
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -49,3 +50,5 @@ export async function GET(
   const job = await latestPackageJob(id, prisma, project.version);
   return Response.json({ job });
 }
+export const POST = withOwner(POSTHandler);
+export const GET = withOwner(GETHandler);

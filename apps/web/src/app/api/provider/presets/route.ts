@@ -1,7 +1,9 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { PROVIDER_PRESETS } from "@/lib/provider-config";
 
-export async function GET() {
+async function GETHandler() {
   return Response.json({ presets: PROVIDER_PRESETS });
 }
+export const GET = withOwner(GETHandler);

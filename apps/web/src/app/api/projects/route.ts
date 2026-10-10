@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 import { randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
@@ -14,7 +15,7 @@ const CreateProjectSchema = z.object({
   description: z.string().max(5000).optional(),
 });
 
-export async function GET() {
+async function GETHandler() {
   try {
     const projects = await prisma.project.findMany({
       where: { deletedAt: null },
@@ -35,7 +36,7 @@ export async function GET() {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function POSTHandler(req: NextRequest) {
   try {
     const parsed = CreateProjectSchema.safeParse(await req.json());
     if (!parsed.success) return jsonError("A project idea is required.", 400);
@@ -101,3 +102,5 @@ export async function POST(req: NextRequest) {
     return jsonError("RockFoundry couldn't create the local project.", 500);
   }
 }
+export const GET = withOwner(GETHandler);
+export const POST = withOwner(POSTHandler);

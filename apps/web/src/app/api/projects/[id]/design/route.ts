@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -20,7 +21,7 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -93,3 +94,4 @@ export async function GET(
     designJob,
   });
 }
+export const GET = withOwner(GETHandler);

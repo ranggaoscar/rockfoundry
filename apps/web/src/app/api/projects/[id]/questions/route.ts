@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import {
@@ -57,7 +58,7 @@ function mergeDetectedContradictions(
   state.contradictions = [...byId.values()];
 }
 
-export async function GET(
+async function GETHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -96,7 +97,7 @@ export async function GET(
   }
 }
 
-export async function POST(
+async function POSTHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -257,3 +258,5 @@ export async function POST(
     return jsonError("RockFoundry couldn't record that decision.", 422);
   }
 }
+export const GET = withOwner(GETHandler);
+export const POST = withOwner(POSTHandler);

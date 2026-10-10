@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -9,13 +10,16 @@ import {
   parseProjectState,
   saveProjectState,
 } from "@/lib/local-project";
-import { persistConversationMessage, persistUserMessage } from "@/lib/conversation";
+import {
+  persistConversationMessage,
+  persistUserMessage,
+} from "@/lib/conversation";
 import { runConversationAgent } from "@/lib/conversation-agent";
 import { getPackageEligibility } from "@/lib/package-readiness";
 
 const SearchInput = z.object({ query: z.string().trim().min(3).max(300) });
 
-export async function POST(
+async function POSTHandler(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -58,3 +62,4 @@ export async function POST(
     );
   }
 }
+export const POST = withOwner(POSTHandler);

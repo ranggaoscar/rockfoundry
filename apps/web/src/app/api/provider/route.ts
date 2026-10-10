@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { z } from "zod";
@@ -20,7 +21,7 @@ const ProviderSettingsSchema = z.discriminatedUnion("mode", [
   }),
 ]);
 
-export async function GET() {
+async function GETHandler() {
   return Response.json(publicProviderStatus());
 }
 
@@ -31,7 +32,7 @@ function demoProviderLocked() {
   );
 }
 
-export async function PUT(request: Request) {
+async function PUTHandler(request: Request) {
   if (isPublicDemo()) return demoProviderLocked();
   const parsed = ProviderSettingsSchema.safeParse(await request.json());
   if (!parsed.success) {
@@ -65,8 +66,11 @@ export async function PUT(request: Request) {
   return Response.json(publicProviderStatus());
 }
 
-export async function DELETE() {
+async function DELETEHandler() {
   if (isPublicDemo()) return demoProviderLocked();
   clearProviderSettings();
   return Response.json(publicProviderStatus());
 }
+export const GET = withOwner(GETHandler);
+export const PUT = withOwner(PUTHandler);
+export const DELETE = withOwner(DELETEHandler);

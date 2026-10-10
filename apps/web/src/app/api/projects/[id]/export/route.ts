@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import {
@@ -13,7 +14,7 @@ import {
   parseProjectState,
 } from "@/lib/local-project";
 
-export async function POST(
+async function POSTHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -78,7 +79,7 @@ export async function POST(
   }
 }
 
-export async function GET(
+async function GETHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -107,3 +108,5 @@ export async function GET(
     return jsonError("RockFoundry couldn't prepare the download.", 422);
   }
 }
+export const POST = withOwner(POSTHandler);
+export const GET = withOwner(GETHandler);

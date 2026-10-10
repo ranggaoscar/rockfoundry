@@ -1,9 +1,10 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { prisma } from "@rockfoundry/db";
 import { getLocalProject, jsonError } from "@/lib/local-project";
 
-export async function GET(
+async function GETHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -22,3 +23,4 @@ export async function GET(
     return jsonError("RockFoundry couldn't load state history.");
   }
 }
+export const GET = withOwner(GETHandler);

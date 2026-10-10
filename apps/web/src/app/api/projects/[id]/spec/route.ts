@@ -1,3 +1,4 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
@@ -13,7 +14,7 @@ import {
   parseProjectState,
 } from "@/lib/local-project";
 
-export async function POST(
+async function POSTHandler(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -23,16 +24,22 @@ export async function POST(
     if (!project) return jsonError("Project not found", 404);
     const state = parseProjectState(project);
     if (!state.rawIdea.trim() && !state.normalizedSummary?.trim())
-      return jsonError("Add a product idea before generating a Product Draft.", 422, {
-        code: "DRAFT_INPUT_REQUIRED",
-      });
+      return jsonError(
+        "Add a product idea before generating a Product Draft.",
+        422,
+        {
+          code: "DRAFT_INPUT_REQUIRED",
+        },
+      );
     const generated = await composeDraftArtifacts(id, project.version, state);
     return Response.json({
       spec: {
         status: generated.consistency.status,
         unresolvedQuestions: state.openQuestions,
         assumptions: state.assumptions,
-        documents: DRAFT_ARTIFACT_TYPES.map((type) => DRAFT_ARTIFACT_FILES[type]),
+        documents: DRAFT_ARTIFACT_TYPES.map(
+          (type) => DRAFT_ARTIFACT_FILES[type],
+        ),
       },
       version: project.version,
       consistency: generated.consistency,
@@ -46,3 +53,4 @@ export async function POST(
     });
   }
 }
+export const POST = withOwner(POSTHandler);

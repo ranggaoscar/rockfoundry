@@ -1,9 +1,14 @@
+import { withOwner } from "@/lib/owner-access";
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@rockfoundry/db";
-import { getLocalProject, jsonError, parseProjectState } from "@/lib/local-project";
+import {
+  getLocalProject,
+  jsonError,
+  parseProjectState,
+} from "@/lib/local-project";
 import {
   claimFailedConversationTurn,
   conversationModeAndIntent,
@@ -31,17 +36,25 @@ function existingTurnResponse(turn: {
   startedAt: Date;
   completedAt: Date | null;
   responsePayload: string | null;
-  messages?: Array<{ id: string; role: string; conversationTurnId: string | null }>;
+  messages?: Array<{
+    id: string;
+    role: string;
+    conversationTurnId: string | null;
+  }>;
 }) {
   const payload = parseStoredConversationResponse(turn);
   if (payload) return Response.json({ ...payload, replayed: true });
   const publicTurn = publicConversationTurn(turn);
   if (turn.status === CONVERSATION_TURN_STATUS.RUNNING) {
-    return Response.json({ turn: publicTurn, recoverable: true }, { status: 202 });
+    return Response.json(
+      { turn: publicTurn, recoverable: true },
+      { status: 202 },
+    );
   }
   if (turn.status === CONVERSATION_TURN_STATUS.FAILED) {
     const userMessage = turn.messages?.find(
-      (message) => message.role === "user" && message.conversationTurnId === turn.id,
+      (message) =>
+        message.role === "user" && message.conversationTurnId === turn.id,
     );
     return Response.json(
       retryableConversationTurnPayload(turn, userMessage?.id),
@@ -51,7 +64,7 @@ function existingTurnResponse(turn: {
   return Response.json({ turn: publicTurn });
 }
 
-export async function POST(
+async function POSTHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -73,7 +86,9 @@ export async function POST(
       return jsonError("A durable user conversation message is required.", 404);
     }
     const turn = userMessage.conversationTurn;
-    const assistant = turn.messages.find((message) => message.role === "assistant");
+    const assistant = turn.messages.find(
+      (message) => message.role === "assistant",
+    );
     if (assistant || turn.status === CONVERSATION_TURN_STATUS.COMPLETED) {
       return existingTurnResponse(turn);
     }
@@ -103,16 +118,17 @@ export async function POST(
     if (error instanceof z.ZodError) {
       return jsonError("A userMessageId is required.", 400);
     }
-    if (error instanceof Error && error.message === "PROJECT_VERSION_CONFLICT") {
+    if (
+      error instanceof Error &&
+      error.message === "PROJECT_VERSION_CONFLICT"
+    ) {
       return jsonError(
         "The project changed while this conversation turn was running. Retry the turn.",
         409,
         { retryable: true },
       );
     }
-    return jsonError(
-      conversationAiErrorMessage(error),
-      422,
-    );
+    return jsonError(conversationAiErrorMessage(error), 422);
   }
 }
+export const POST = withOwner(POSTHandler);
