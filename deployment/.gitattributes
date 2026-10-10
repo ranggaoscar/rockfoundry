@@ -1,0 +1,2 @@
+# Operator entrypoints must remain executable POSIX text on every checkout.
+*.sh text eol=lf

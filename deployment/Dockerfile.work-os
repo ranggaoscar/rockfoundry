@@ -1,9 +1,14 @@
 # Candidate build only. No Hermes credentials or live database enters the image.
-FROM node:22-bookworm-slim AS application
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS application
 WORKDIR /app
+# Prisma's SQLite engine needs OpenSSL; release rehearsal also requires Python and sqlite3.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 sqlite3 openssl ca-certificates libssl3 \
+    && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm db:generate && pnpm build
+# Windows working copies can be CRLF; all Linux entrypoints must be POSIX text.
+RUN python3 -c "from pathlib import Path; [p.write_bytes(p.read_bytes().replace(bytes([13,10]),bytes([10]))) for p in Path('deployment').glob('*.sh')]"
 ENV NODE_ENV=production
 WORKDIR /app/apps/web
 # Migrations are an explicit pre-deployment step, not an automatic startup side effect.

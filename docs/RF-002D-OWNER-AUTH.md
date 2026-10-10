@@ -1,5 +1,7 @@
 # RF-002D — Owner Authentication + Production Release Preflight
 
+> Historical RF-002D report, NOT a current release approval. Linux/migration-profile/GO instructions below are superseded by `deployment/RELEASE-FIXES.md`. Current-production DB preflight and real OAuth provisioning remain mandatory operator gates.
+
 Owner-only authentication for the Rock Foundry Work OS, plus the verified preparation
 needed for the first production deployment. **Nothing was deployed, merged or pushed.**
 

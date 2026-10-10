@@ -1,45 +1,23 @@
 # RF-002D operator delta for the FIXED base Compose used by rockfoundry-deploy.
-# Confirmed by rockfoundry-inspect: base Compose service key is `web`, project `rockfoundry`,
-# compose file /opt/rockfoundry/ops/compose.yaml, env_file already ../config/runtime.env.
-#
-# Merge ONLY the keys below. Do not change networks, ports, volumes, restart or the base command.
+# Merge only into service `web`; keep its single literal image: rockfoundry-web:<tag>
+# line intact for the fixed wrapper's exact-image pinning logic. This delta must not
+# declare another image or migration service/image.
+# Apply only behind the existing root-owned approval marker + origin/main SHA gate.
 services:
   web:
     build:
       context: /opt/rockfoundry/repo
       dockerfile: deployment/Dockerfile.work-os
-    image: ${ROCKFOUNDRY_WORK_OS_IMAGE:?Approved immutable candidate image tag required}
     env_file:
-      # Existing owner-protected runtime file (already referenced by the base Compose).
+      # Owner-protected OAuth/runtime values and provisioned private Hermes API values.
       - path: ../config/runtime.env
         required: true
-      # Hermes private runs API credentials; already provisioned by the VPS operator.
       - path: /opt/hermes-agent/home/profiles/rockfoundry/client.env
         required: true
     environment:
-      # Non-secret values only. Secrets come exclusively from the env_file entries above.
       NODE_ENV: "production"
       NEXTAUTH_URL: "https://foundry.rockbase.web.id"
       ROCKFOUNDRY_OWNER_EMAILS: "ranggaoscar@gmail.com"
       ROCKFOUNDRY_WORK_ORIGIN: "https://foundry.rockbase.web.id"
       HERMES_EXECUTOR_ENABLED: "true"
       HERMES_EXECUTOR_PRIVATE_HTTP_ORIGIN: "http://192.168.16.1:8643"
-
-  # Explicit, opt-in migration runner. Never starts with `up`: profile-gated.
-  # Run BEFORE recreating `web`:
-  #   docker compose --project-directory /opt/rockfoundry/ops -f /opt/rockfoundry/ops/compose.yaml \
-  #     --profile migrate run --rm migrate
-  migrate:
-    profiles: ["migrate"]
-    build:
-      context: /opt/rockfoundry/repo
-      dockerfile: deployment/Dockerfile.work-os
-    image: ${ROCKFOUNDRY_WORK_OS_IMAGE:?Approved immutable candidate image tag required}
-    env_file:
-      - path: ../config/runtime.env
-        required: true
-    environment:
-      NODE_ENV: "production"
-    volumes:
-      - /opt/rockfoundry/data:/opt/rockfoundry/data
-    entrypoint: ["/bin/sh", "/app/deployment/migrate-entrypoint.sh"]
