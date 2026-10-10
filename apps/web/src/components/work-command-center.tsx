@@ -322,7 +322,7 @@ export function WorkCommandCenter({ view }: { view: View }) {
           </Link>
         ))}
         <Link href="/" className="work-product-link">
-          Product Studio <ArrowUpRight size={14} />
+          Legacy Projects · Product Studio <ArrowUpRight size={14} />
         </Link>
       </nav>
       {error && (
@@ -346,6 +346,21 @@ export function WorkCommandCenter({ view }: { view: View }) {
         <>
           {view === "today" && (
             <>
+              {!projects.length && (
+                <section className="work-panel">
+                  <h2>Your Work OS starts here</h2>
+                  <p className="work-empty">
+                    No active work yet. Historical Product Studio projects stay
+                    separate; create your first operational project when ready.
+                  </p>
+                  <Link className="work-button work-primary" href="/projects">
+                    Create Project
+                  </Link>
+                  <Link className="work-button work-secondary" href="/projects">
+                    Create Task · choose a project first
+                  </Link>
+                </section>
+              )}
               <details className="work-panel">
                 <summary className="work-text-link">Quick add task</summary>
                 {selectedProject ? (

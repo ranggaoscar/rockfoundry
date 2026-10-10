@@ -20,7 +20,7 @@ import {
 const require = createRequire(import.meta.url);
 const dbRequire = createRequire(require.resolve("@rockfoundry/db"));
 const { PrismaLibSql } = dbRequire("@prisma/adapter-libsql");
-async function fixture() {
+async function fixture(legacyCount = 0, startWork = true) {
   const dir = await fs.mkdtemp(
     path.join(
       process.env.ROCKFOUNDRY_TEST_TMP_DIR || os.tmpdir(),
@@ -45,6 +45,17 @@ async function fixture() {
   );
   for (const name of (await fs.readdir(migrations)).sort()) {
     if (!/^\d/.test(name)) continue;
+    if (name === "20261010070000_work_os") {
+      for (let index = 0; index < legacyCount; index++) {
+        await db.project.create({
+          data: {
+            id: `legacy-${index}`,
+            name: `Legacy experiment ${index}`,
+            canonicalState: JSON.stringify({ preserved: index }),
+          },
+        });
+      }
+    }
     const sql = await fs.readFile(
       new URL(`${name}/migration.sql`, migrations),
       "utf8",
@@ -55,18 +66,26 @@ async function fixture() {
       .filter(Boolean))
       await db.$executeRawUnsafe(statement);
   }
-  const result = (await applyWorkAction(db, {
-    action: "create_project",
-    name: "Daily work",
-  })) as { project: { id: string } };
-  const taskResult = (await applyWorkAction(db, {
-    action: "create_task",
-    projectId: result.project.id,
-    title: "Prepare brief",
-    acceptanceCriteria: "A reviewable brief",
-    priority: "HIGH",
-    dueAt: "2026-10-10T12:00:00Z",
-  })) as { task: { id: string } };
+  const result = (
+    startWork
+      ? await applyWorkAction(db, {
+          action: "create_project",
+          name: "Daily work",
+        })
+      : { project: { id: "" } }
+  ) as { project: { id: string } };
+  const taskResult = (
+    startWork
+      ? await applyWorkAction(db, {
+          action: "create_task",
+          projectId: result.project.id,
+          title: "Prepare brief",
+          acceptanceCriteria: "A reviewable brief",
+          priority: "HIGH",
+          dueAt: "2026-10-10T12:00:00Z",
+        })
+      : { task: { id: "" } }
+  ) as { task: { id: string } };
   return {
     db,
     projectId: result.project.id,
@@ -348,3 +367,108 @@ test("RF-001: scope/acceptance/ownership validation and unavailable Hermes do no
     await f.close();
   }
 });
+
+for (const count of [49, 144]) {
+  test(`RF-002G: ${count} legacy projects survive backfill without activating Work OS`, async () => {
+    const f = await fixture(count, false);
+    try {
+      const legacyBefore = await f.db.project.findMany({
+        orderBy: { id: "asc" },
+      });
+      assert.equal(await f.db.projectWork.count(), count); // Old migration remains checksum-compatible.
+      // Even historical operational experiments must not leak into Today/goals/runs.
+      await f.db.goal.create({
+        data: { projectId: "legacy-0", title: "Pilot goal" },
+      });
+      const pilotTask = await f.db.task.create({
+        data: {
+          projectId: "legacy-0",
+          title: "Overdue pilot task",
+          acceptanceCriteria: "Historical test",
+          dueAt: new Date("2020-01-01"),
+        },
+      });
+      await f.db.agentExecution.create({
+        data: {
+          id: crypto.randomUUID(),
+          taskId: pilotTask.id,
+          executorId: "mock",
+          requestId: crypto.randomUUID(),
+          input: "{}",
+          status: "REVIEW_REQUIRED",
+        },
+      });
+      await f.db.activityEvent.create({
+        data: {
+          workspaceId: "personal",
+          projectId: "legacy-0",
+          actorId: "local-owner",
+          type: "TASK_CREATED",
+          detail: "Historical pilot task",
+        },
+      });
+      const empty = await workSnapshot(f.db);
+      assert.equal(empty.projects.length, 0);
+      assert.equal(empty.runs.length, 0);
+      assert.equal(empty.activity.length, 0);
+      assert.ok(empty.executors.some((executor) => executor.id === "hermes"));
+      await assert.rejects(
+        applyWorkAction(f.db, {
+          action: "create_task",
+          projectId: "legacy-0",
+          title: "Not activated",
+          acceptanceCriteria: "Must not be created",
+        }),
+        WorkError,
+      );
+      const created = (await applyWorkAction(f.db, {
+        action: "create_project",
+        name: "Owner operational project",
+      })) as { project: { id: string } };
+      const task = (await applyWorkAction(f.db, {
+        action: "create_task",
+        projectId: created.project.id,
+        title: "Real work",
+        acceptanceCriteria: "Owner reviewed",
+        priority: "HIGH",
+      })) as { task: { id: string } };
+      await applyWorkAction(f.db, {
+        action: "update_task",
+        taskId: task.task.id,
+        title: "Updated real work",
+      });
+      await applyWorkAction(f.db, {
+        action: "create_goal",
+        projectId: created.project.id,
+        title: "Operational goal",
+      });
+      await f.db.$disconnect();
+      const refreshed = await workSnapshot(f.db);
+      assert.equal(refreshed.projects.length, 1);
+      assert.equal(refreshed.projects[0].id, created.project.id);
+      assert.equal(refreshed.projects[0].tasks[0].title, "Updated real work");
+      assert.equal(refreshed.projects[0].goals.length, 1);
+      assert.deepEqual(
+        await f.db.project.findMany({
+          where: { id: { startsWith: "legacy-" } },
+          orderBy: { id: "asc" },
+        }),
+        legacyBefore,
+      );
+      // Existing Product Studio uses the unchanged Project records, not Work OS membership.
+      assert.equal(
+        (await f.db.project.findUniqueOrThrow({ where: { id: "legacy-0" } }))
+          .canonicalState,
+        legacyBefore.find((project) => project.id === "legacy-0")!
+          .canonicalState,
+      );
+      // A newly created Product Studio project without the explicit activation event stays legacy.
+      await f.db.project.create({
+        data: { id: "studio-new", name: "New prototype", canonicalState: "{}" },
+      });
+      assert.equal((await workSnapshot(f.db)).projects.length, 1);
+    } finally {
+      await f.close();
+    }
+  });
+}

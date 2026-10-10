@@ -108,9 +108,26 @@ export class WorkError extends Error {
   }
 }
 type Tx = Prisma.TransactionClient;
+// ProjectWork was backfilled for legacy projects by RF-001. Membership alone
+// is not activation: only an explicit server-recorded Work OS creation opts in.
+async function workProjectIds(tx: Tx | PrismaClient) {
+  const events = await tx.activityEvent.findMany({
+    where: {
+      workspaceId: WORKSPACE,
+      type: "PROJECT_CREATED",
+      projectId: { not: null },
+    },
+    select: { projectId: true },
+  });
+  return [...new Set(events.map((entry) => entry.projectId!))];
+}
 async function scopedProject(tx: Tx, projectId: string) {
   const project = await tx.project.findFirst({
-    where: { id: projectId, deletedAt: null, work: { workspaceId: WORKSPACE } },
+    where: {
+      id: { equals: projectId, in: await workProjectIds(tx) },
+      deletedAt: null,
+      work: { workspaceId: WORKSPACE },
+    },
   });
   if (!project)
     throw new WorkError("Project not found in personal workspace.", 404);
@@ -172,13 +189,18 @@ export async function workSnapshot(
   db: PrismaClient,
   adapters = executorAdapters(),
 ) {
+  const activeIds = await workProjectIds(db);
   const [workspace, projects, runs, activity] = await Promise.all([
     db.workspace.findUniqueOrThrow({
       where: { id: WORKSPACE },
       select: { id: true, name: true },
     }),
     db.project.findMany({
-      where: { deletedAt: null, work: { workspaceId: WORKSPACE } },
+      where: {
+        id: { in: activeIds },
+        deletedAt: null,
+        work: { workspaceId: WORKSPACE },
+      },
       orderBy: { updatedAt: "desc" },
       select: {
         id: true,
@@ -196,7 +218,11 @@ export async function workSnapshot(
     db.agentExecution.findMany({
       where: {
         task: {
-          project: { deletedAt: null, work: { workspaceId: WORKSPACE } },
+          project: {
+            id: { in: activeIds },
+            deletedAt: null,
+            work: { workspaceId: WORKSPACE },
+          },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -207,7 +233,7 @@ export async function workSnapshot(
       },
     }),
     db.activityEvent.findMany({
-      where: { workspaceId: WORKSPACE },
+      where: { workspaceId: WORKSPACE, projectId: { in: activeIds } },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),

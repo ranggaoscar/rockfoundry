@@ -54,7 +54,6 @@ async function POSTHandler(req: NextRequest) {
         name,
         description: description || null,
         canonicalState: JSON.stringify(state),
-        work: { create: { workspaceId: "personal" } },
         revisions: {
           create: {
             version: 1,
