@@ -265,6 +265,31 @@ export async function applyWorkAction(
   body: unknown,
   adapters = executorAdapters(),
 ) {
+  return applyWorkActionImpl(db, body, adapters);
+}
+
+/** Apply a work mutation inside an existing Prisma transaction (used for atomic approvals). */
+export async function applyWorkActionInTransaction(
+  tx: Tx,
+  body: unknown,
+  adapters = executorAdapters(),
+) {
+  // Reuse the established validator/action logic while making its transaction
+  // callback execute against this already-open transaction (never nest commits).
+  const db = new Proxy(tx, {
+    get(target, property, receiver) {
+      if (property === "$transaction")
+        return (callback: (client: Tx) => unknown) => callback(tx);
+      return Reflect.get(target, property, receiver);
+    },
+  }) as unknown as PrismaClient;
+  return applyWorkActionImpl(db, body, adapters);
+}
+async function applyWorkActionImpl(
+  db: PrismaClient,
+  body: unknown,
+  adapters = executorAdapters(),
+) {
   const parsed = WorkActionSchema.safeParse(body);
   if (!parsed.success)
     throw new WorkError(

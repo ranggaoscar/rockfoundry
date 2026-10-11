@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import "./work-command-center.css";
+import { LivingWorkspace } from "./living-workspace";
 
 type Status = "TODO" | "IN_PROGRESS" | "REVIEW_REQUIRED" | "DONE";
 type Assignment = {
@@ -92,6 +93,8 @@ type WorkData = {
     id?: string;
     title?: string;
     description?: string;
+    type?: string;
+    detail?: string;
     createdAt?: string;
   }>;
   executors: Array<{
@@ -243,6 +246,8 @@ export function WorkCommandCenter({ view }: { view: View }) {
     { id: "today", label: "Today", href: "/today" },
     { id: "projects", label: "Projects", href: "/projects" },
     { id: "runs", label: "Agent Runs", href: "/runs" },
+    { id: "inbox", label: "Idea Inbox", href: "/inbox" },
+    { id: "ask", label: "Ask Rock", href: "/ask" },
   ] as const;
 
   async function poll(run: Run) {
@@ -321,6 +326,13 @@ export function WorkCommandCenter({ view }: { view: View }) {
             {item.label}
           </Link>
         ))}
+        <div className="living-sidebar-projects" aria-label="Active projects">
+          {projects.slice(0, 8).map((project) => (
+            <Link key={project.id} href={`/projects?project=${project.id}`}>
+              {project.name}
+            </Link>
+          ))}
+        </div>
         <Link href="/" className="work-product-link">
           Legacy Projects · Product Studio <ArrowUpRight size={14} />
         </Link>
@@ -346,6 +358,7 @@ export function WorkCommandCenter({ view }: { view: View }) {
         <>
           {view === "today" && (
             <>
+              <LivingWorkspace mode="today" />
               {!projects.length && (
                 <section className="work-panel">
                   <h2>Your Work OS starts here</h2>
@@ -519,6 +532,30 @@ export function WorkCommandCenter({ view }: { view: View }) {
                     <div className="work-empty">No projects yet.</div>
                   )}
                 </div>
+              </section>
+              <section className="work-panel">
+                <h2>Recent project activity</h2>
+                {data.activity.length ? (
+                  <ol>
+                    {data.activity.slice(0, 8).map((entry, index) => (
+                      <li key={entry.id || index}>
+                        <strong>
+                          {entry.type?.replaceAll("_", " ") || entry.title}
+                        </strong>
+                        <p>{entry.detail || entry.description}</p>
+                        <small>
+                          {entry.createdAt
+                            ? new Date(entry.createdAt).toLocaleString()
+                            : ""}
+                        </small>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="work-empty">
+                    No activity yet. Confirmed changes appear here.
+                  </p>
+                )}
               </section>
             </>
           )}

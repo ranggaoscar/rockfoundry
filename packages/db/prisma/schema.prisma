@@ -35,6 +35,7 @@ model Project {
   goals                Goal[]
   milestones           Milestone[]
   tasks                Task[]
+  capturedIdeas        CapturedIdea[]
   @@index([updatedAt])
 }
 
@@ -312,6 +313,89 @@ model ProviderProfile {
   @@index([isActive, updatedAt])
 }
 
+// Living workspace captures immutable notes and keeps conversational approvals durable.
+model CapturedIdea {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerId        String
+  requestId      String
+  originalText   String
+  @@unique([workspaceId, ownerId, requestId])
+  createdAt      DateTime @default(now())
+  projectId      String?
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  status         String   @default("INBOX")
+  conversionType String?
+  conversionId   String?
+  @@index([workspaceId, status, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model RockThread {
+  id          String @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerId     String
+  title       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  messages    RockMessage[]
+  turns       RockTurn[]
+  @@index([workspaceId, ownerId, updatedAt])
+}
+
+model RockMessage {
+  id        String @id @default(cuid())
+  threadId  String
+  thread    RockThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+  turn      RockTurn? @relation("TurnUserMessage")
+  turnId    String? @unique
+  assistantTurn RockTurn? @relation("TurnAssistantMessage")
+  @@index([threadId, createdAt])
+}
+
+model RockTurn {
+  id                 String @id @default(cuid())
+  threadId           String
+  thread             RockThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userMessageId      String @unique
+  userMessage        RockMessage @relation("TurnUserMessage", fields: [userMessageId], references: [id], onDelete: Cascade)
+  requestId          String @unique
+  status             String @default("QUEUED")
+  executorId         String
+  input              String
+  externalId         String?
+  leaseUntil         DateTime?
+  errorSummary       String?
+  retryCount         Int @default(0)
+  assistantMessage   RockMessage? @relation("TurnAssistantMessage", fields: [assistantMessageId], references: [id], onDelete: SetNull)
+  assistantMessageId String? @unique
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  proposals          RockProposal[]
+  @@unique([threadId, requestId])
+  @@index([threadId, createdAt])
+  @@index([status, leaseUntil])
+}
+
+model RockProposal {
+  id         String @id @default(cuid())
+  turnId     String
+  turn       RockTurn @relation(fields: [turnId], references: [id], onDelete: Cascade)
+  position   Int
+  type       String
+  payload    String
+  status     String @default("PENDING")
+  result     String?
+  decisionAt DateTime?
+  @@unique([turnId, position])
+  @@index([turnId, status])
+}
+
 // Work OS is additive: discovery Project columns and AgentRun semantics stay unchanged.
 model Workspace {
   id        String @id
@@ -320,6 +404,8 @@ model Workspace {
   createdAt DateTime @default(now())
   projects  ProjectWork[]
   activity  ActivityEvent[]
+  ideas CapturedIdea[]
+  threads RockThread[]
 }
 
 model ProjectWork {

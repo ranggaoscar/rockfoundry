@@ -14,6 +14,8 @@ export async function middleware(req: NextRequest) {
   const isApi = path.startsWith("/api/") && !path.startsWith("/api/auth/");
   const isPrivatePage = [
     "/today",
+    "/ask",
+    "/inbox",
     "/projects",
     "/runs",
     "/project",

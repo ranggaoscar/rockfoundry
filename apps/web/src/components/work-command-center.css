@@ -1,6 +1,6 @@
 .work-shell {
-  width: min(1120px, 100%);
-  margin: 0 auto;
+  width: min(1120px, calc(100% - 204px));
+  margin-left: max(204px, calc((100% - 1120px + 204px) / 2));
   padding: 36px clamp(16px, 4vw, 48px) 64px;
   min-width: 0;
 }
@@ -33,30 +33,42 @@
   font-size: 0.9rem;
 }
 .work-tabs {
+  position: fixed;
+  z-index: 20;
+  inset: 0 auto 0 0;
+  width: 204px;
+  padding: 22px 14px;
+  margin: 0;
+  border: 0;
+  border-right: 1px solid var(--sidebar-border);
+  background: var(--sidebar);
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  flex-direction: column;
   gap: 8px;
-  border-bottom: 1px solid var(--border);
-  margin: 24px 0 22px;
-  flex-wrap: wrap;
-  white-space: nowrap;
+  flex-wrap: nowrap;
+  white-space: normal;
 }
 .work-tabs a {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 12px;
   text-decoration: none;
   color: var(--muted-foreground);
-  border-bottom: 2px solid transparent;
+  border-radius: 8px;
+  border: 0;
 }
 .work-tabs a[aria-current="page"] {
   color: var(--foreground);
-  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface));
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .work-tabs .work-product-link {
-  margin-left: auto;
+  margin: auto 0 0;
   gap: 4px;
+  width: 100%;
+  white-space: normal;
 }
 .work-button {
   display: inline-flex;
@@ -452,7 +464,25 @@
   }
 }
 @media (max-width: 720px) {
+  .work-tabs {
+    position: sticky;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    padding: 7px 12px;
+    margin: 0 0 16px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--background);
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .work-tabs a { flex: 0 0 auto; }
+  .work-tabs .work-product-link { margin: 0; width: auto; }
   .work-shell {
+    width: 100%;
+    margin: 0;
     padding: 24px 14px 40px;
   }
   .work-summary {
