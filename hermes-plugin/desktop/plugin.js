@@ -179,7 +179,52 @@ function prompts(project, detail) {
 
 // ---------- pieces ----------
 
-function Tile({ ctx, project, onOpen }) {
+// The Projects page is a bright workbench: a cutting mat with paper project folders on it.
+const DESK_CSS = `
+.rf-desk { min-height: 100%; color: #1f2a24;
+  background-color: #dde5d8;
+  background-image:
+    linear-gradient(rgba(255,255,255,.55) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.55) 1px, transparent 1px),
+    linear-gradient(rgba(80,105,88,.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(80,105,88,.10) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px; }
+.rf-head { display:flex; align-items:baseline; justify-content:space-between; padding: 26px 32px 6px; }
+.rf-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+.rf-sub { font-size: 13px; color: #5d6b62; }
+.rf-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 30px 26px; padding: 22px 32px 48px; }
+.rf-card { position:relative; text-align:left; padding:0; border:0; cursor:pointer; color:inherit; font:inherit;
+  background:#fffdf8; border-radius: 4px 14px 14px 14px;
+  transform: rotate(var(--tilt)); transition: transform .18s ease, box-shadow .18s ease;
+  box-shadow: 0 1px 1px rgba(31,42,36,.10), 0 3px 6px rgba(31,42,36,.08), 0 14px 28px -10px rgba(31,42,36,.30); }
+.rf-card::before { content:""; position:absolute; top:-11px; left:0; width:46%; height:12px;
+  background: var(--tab); border-radius: 6px 10px 0 0; }
+.rf-card:hover, .rf-card:focus-visible { transform: rotate(0deg) translateY(-4px);
+  box-shadow: 0 2px 2px rgba(31,42,36,.10), 0 8px 14px rgba(31,42,36,.10), 0 26px 40px -12px rgba(31,42,36,.38); outline: none; }
+.rf-card:focus-visible { box-shadow: 0 0 0 3px #2f7d57, 0 26px 40px -12px rgba(31,42,36,.38); }
+.rf-cover { height: 112px; margin: 10px 10px 0; border-radius: 9px; display:flex; align-items:center; justify-content:center; overflow:hidden; background: var(--cover); }
+.rf-cover img { max-width: 70%; max-height: 72%; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0,0,0,.18)); }
+.rf-mono { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); }
+.rf-body { padding: 12px 14px 14px; }
+.rf-name { font-size: 15px; font-weight: 700; line-height: 1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; min-height: 2.5em; word-break: break-word; }
+.rf-what { font-size: 12.5px; color:#5d6b62; margin-top: 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rf-meta { display:flex; align-items:center; gap:7px; margin-top: 10px; font-size: 12px; color:#4b5850; }
+.rf-dot { width:8px; height:8px; border-radius:8px; flex:none; }
+.rf-live { font-size: 11px; font-weight: 700; color:#1d6b43; background:#d7f0e1; padding: 1px 7px; border-radius: 20px; }
+.rf-note { position:absolute; top: 18px; right: -8px; transform: rotate(4deg);
+  background:#ffe16a; color:#4a3b00; font-size: 11.5px; font-weight: 700; padding: 5px 9px 6px;
+  box-shadow: 0 6px 10px -4px rgba(74,59,0,.45); }
+@media (prefers-reduced-motion: reduce) { .rf-card { transition:none; } }
+`
+const TILTS = ['-0.7deg', '0.5deg', '-0.25deg', '0.8deg', '-0.5deg', '0.3deg']
+
+function hueOf(name) {
+  let h = 0
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) % 360
+  return h
+}
+
+function Tile({ ctx, project, index, onOpen }) {
   const [image, setImage] = useState(null)
   useEffect(() => {
     if (!project.image_url) return
@@ -187,42 +232,48 @@ function Tile({ ctx, project, onOpen }) {
     ctx.rest(project.image_url).then(r => alive && setImage(r.data_url)).catch(() => {})
     return () => { alive = false }
   }, [project.image_url])
+  const hue = hueOf(project.name)
+  const status = `${ACTIVITY_LABEL[project.activity]} · ${ago(project.last_activity)}`
   return jsxs('button', {
     type: 'button',
+    className: 'rf-card',
     onClick: onOpen,
-    style: { ...card, textAlign: 'left', background: 'transparent', padding: 0, cursor: 'pointer', color: 'inherit' },
+    'aria-label': `${project.name}, ${status}`,
+    style: {
+      '--tilt': TILTS[index % TILTS.length],
+      '--tab': `hsl(${hue} 45% 62%)`,
+      '--cover': image ? `hsl(${hue} 30% 94%)` : `hsl(${hue} 55% 86%)`,
+      '--ink': `hsl(${hue} 45% 28%)`
+    },
     children: [
       jsx('div', {
-        style: { height: 110, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid var(--ui-stroke-secondary)', overflow: 'hidden' },
+        className: 'rf-cover',
         children: image
-          ? jsx('img', { src: image, alt: '', style: { maxWidth: '100%', maxHeight: '100%', objectFit: 'cover' } })
-          : jsx('span', { style: { fontSize: 26, fontWeight: 600, ...muted }, children: initials(project.name) })
+          ? jsx('img', { src: image, alt: '' })
+          : jsx('span', { className: 'rf-mono', children: initials(project.name) })
       }),
       jsxs('div', {
-        style: { padding: '10px 12px' },
+        className: 'rf-body',
         children: [
-          jsx('div', { style: { fontWeight: 600, fontSize: 14 }, children: project.name }),
-          jsx('div', {
-            style: { ...muted, fontSize: 12, marginTop: 2, minHeight: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-            children: project.what_is || `${project.workdirs} folder kerja`
-          }),
+          jsx('div', { className: 'rf-name', children: project.name }),
+          jsx('div', { className: 'rf-what', children: project.what_is || `${project.workdirs} folder kerja` }),
           jsxs('div', {
-            style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12 },
+            className: 'rf-meta',
             children: [
-              jsx('span', { style: { width: 7, height: 7, borderRadius: 7, background: DOT[project.activity] } }),
-              jsx('span', { style: muted, children: `${project.live ? 'Live · ' : ''}${ACTIVITY_LABEL[project.activity]} · ${ago(project.last_activity)}` })
+              jsx('span', { className: 'rf-dot', style: { background: DESK_DOT[project.activity] } }),
+              jsx('span', { children: status }),
+              project.live && jsx('span', { className: 'rf-live', children: 'Live' })
             ]
-          }),
-          project.badges.length > 0 &&
-            jsx('div', {
-              style: { marginTop: 8, fontSize: 11, color: 'var(--ui-accent)' },
-              children: `${project.badges.length} perlu diputusin`
-            })
+          })
         ]
-      })
+      }),
+      project.badges.length > 0 &&
+        jsx('div', { className: 'rf-note', children: `${project.badges.length} perlu diputusin` })
     ]
   })
 }
+
+const DESK_DOT = { active: '#2f9e62', slow: '#c9952e', sleeping: '#9aa39c' }
 
 function Stat({ label, value }) {
   return jsxs('div', {
@@ -332,14 +383,15 @@ function ProjectsPage({ ctx }) {
   if (open) return jsx(ProjectPage, { ctx, project: open, onBack: () => { setOpen(null); load() } })
   if (!state.projects.length)
     return jsx('div', { style: { padding: 24 }, children: 'Belum ada proyek. Buka Hermes di folder proyek lu, atau jalankan /proyek refresh.' })
-  return jsxs('div', { style: { padding: '20px 28px' }, children: [
-    jsxs('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }, children: [
-      jsx('div', { style: { fontSize: 20, fontWeight: 600 }, children: 'Proyek' }),
-      jsx('div', { style: { ...muted, fontSize: 12 }, children: `${state.projects.length} proyek · terbaru di atas` })
+  return jsxs('div', { className: 'rf-desk', children: [
+    jsx('style', { children: DESK_CSS }),
+    jsxs('div', { className: 'rf-head', children: [
+      jsx('h1', { className: 'rf-title', children: 'Meja proyek' }),
+      jsx('div', { className: 'rf-sub', children: `${state.projects.length} proyek, yang terakhir dikerjain di depan` })
     ] }),
     jsx('div', {
-      style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 },
-      children: state.projects.map(p => jsx(Tile, { ctx, project: p, onOpen: () => setOpen(p) }, p.slug))
+      className: 'rf-grid',
+      children: state.projects.map((p, i) => jsx(Tile, { ctx, project: p, index: i, onOpen: () => setOpen(p) }, p.slug))
     })
   ] })
 }
