@@ -204,7 +204,7 @@ function Tile({ ctx, project, onOpen }) {
           jsx('div', { style: { fontWeight: 600, fontSize: 14 }, children: project.name }),
           jsx('div', {
             style: { ...muted, fontSize: 12, marginTop: 2, minHeight: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-            children: project.what_is || '—'
+            children: project.what_is || `${project.workdirs} folder kerja`
           }),
           jsxs('div', {
             style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 12 },

@@ -26,7 +26,9 @@ def test_list_sorted_newest_first(scanned, client):
         "last_activity",
         "badges",
         "image_url",
+        "workdirs",
     } <= set(data[0])
+    assert data[0]["workdirs"] == 1
 
 
 def test_unknown_slug_404(scanned, client):

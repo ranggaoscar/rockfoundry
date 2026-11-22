@@ -72,6 +72,7 @@ async def list_projects():
                 "live": f.release.date.isoformat() if f.release else None,
                 "last_activity": f.last_activity.isoformat() if f.last_activity else None,
                 "badges": [b.text for b in decision_badges(f, today)],
+                "workdirs": len(f.workdirs),
                 "image_url": f"/projects/{slug}/image" if _image(store, slug) else None,
             }
         )
