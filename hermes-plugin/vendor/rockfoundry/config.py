@@ -78,20 +78,42 @@ def _toml_list(values: list[str]) -> str:
     return "[" + ", ".join(json.dumps(v) for v in values) + "]"
 
 
-def write_default_config(roots: list[Path], path: Path | None = None) -> Config:
+def save_config(cfg: Config, path: Path | None = None) -> Config:
+    """Write every setting, including per-project overrides, so nothing is lost on save."""
     path = path or default_config_path()
-    cfg = Config(roots=list(roots))
     lines = [
         f"roots = {_toml_list([r.as_posix() for r in cfg.roots])}",
         f"scan_depth = {cfg.scan_depth}",
         f"stale_days = {cfg.stale_days}",
         f"release_tags = {_toml_list(cfg.release_tags)}",
-        "use_github = true",
+        f"use_github = {'true' if cfg.use_github else 'false'}",
         "",
         "[safety]",
         f"deny = {_toml_list(cfg.deny)}",
         "",
     ]
+    for slug, o in sorted(cfg.projects.items()):
+        lines.append(f"[projects.{json.dumps(slug)}]")
+        if o.name is not None:
+            lines.append(f"name = {json.dumps(o.name)}")
+        if o.release_tags is not None:
+            lines.append(f"release_tags = {_toml_list(o.release_tags)}")
+        if o.homepage is not None:
+            lines.append(f"homepage = {json.dumps(o.homepage)}")
+        lines.append("")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
     return cfg
+
+
+def write_default_config(roots: list[Path], path: Path | None = None) -> Config:
+    return save_config(Config(roots=list(roots)), path)
+
+
+def set_roots(roots: list[Path], path: Path | None = None) -> Config:
+    """Change only the scanned folders, keeping every other setting."""
+    cfg = load_config(path)
+    if cfg is None:
+        return write_default_config(roots, path)
+    cfg.roots = list(roots)
+    return save_config(cfg, path)

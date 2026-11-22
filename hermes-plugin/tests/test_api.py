@@ -89,3 +89,21 @@ def test_setup_starts_first_scan_and_reports_progress(rf_home, tmp_path, sync_ap
 
 def test_rescan_needs_config(rf_home, sync_api):
     assert sync_api.post("/scan").status_code == 409
+
+
+def test_changing_folders_keeps_other_settings(rf_home, tmp_path, sync_api):
+    from rockfoundry.config import default_config_path, load_config
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    default_config_path().parent.mkdir(parents=True, exist_ok=True)
+    default_config_path().write_text(
+        f'roots = ["{(tmp_path / "a").as_posix()}"]\nuse_github = false\nstale_days = 14\n'
+        '[projects.bresciahub]\nname = "BresciaHub"\nrelease_tags = ["prod-*"]\n',
+        encoding="utf-8",
+    )
+    assert sync_api.post("/setup", json={"roots": [str(tmp_path / "b")]}).status_code == 200
+    cfg = load_config()
+    assert [r.name for r in cfg.roots] == ["b"]
+    assert cfg.use_github is False and cfg.stale_days == 14
+    assert cfg.projects["bresciahub"].release_tags == ["prod-*"]

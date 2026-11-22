@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vendor"))  # bundl
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from rockfoundry.classify import activity_bucket, decision_badges, summarize_folders
-from rockfoundry.config import load_config, rockfoundry_home, write_default_config
+from rockfoundry.config import load_config, rockfoundry_home, set_roots
 from rockfoundry.facts import facts_to_dict
 from rockfoundry.narrative import cached_narrative
 from rockfoundry.safety import redact
@@ -145,7 +145,7 @@ async def post_setup(body: SetupBody):
     missing = [str(r) for r in roots if not r.is_dir()]
     if not roots or missing:
         raise HTTPException(status_code=400, detail={"missing": missing})
-    cfg = write_default_config(roots)
+    cfg = set_roots(roots)
     _start_full_scan(cfg)  # the first scan starts right away so the gallery fills in
     return {"configured": True, "roots": [r.as_posix() for r in roots], "scanning": True}
 

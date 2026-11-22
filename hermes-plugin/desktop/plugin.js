@@ -266,6 +266,7 @@ const DESK_CSS = `
 .rf-bar-fill { height: 100%; background:#2f9e62; border-radius: 6px; transition: width .4s ease; }
 .rf-empty { margin: 30px 32px 0; padding: 18px 20px; background: rgba(255,255,255,.6); border-radius: 12px; font-size: 14px; color:#3d4b43; }
 .rf-error { color:#a3302a; font-size: 13px; margin-top: 8px; }
+.rf-notice { margin: 0; flex: 1; background:#fff6c4; color:#4a3b00; }
 @media (max-width: 640px) { .rf-head { flex-direction: column; gap: 8px; } .rf-search { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .rf-card, .rf-bar-fill { transition:none; } }
 `
@@ -409,8 +410,8 @@ function ProjectPage({ ctx, project, onBack }) {
   ] }))
 }
 
-function Setup({ ctx, onDone }) {
-  const [text, setText] = useState('')
+function Setup({ ctx, onDone, onCancel, initialRoots = [] }) {
+  const [text, setText] = useState(initialRoots.join('\n'))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const save = async () => {
@@ -429,7 +430,7 @@ function Setup({ ctx, onDone }) {
   return jsxs('div', { className: 'rf-desk rf-page', children: [
     jsx('style', { children: DESK_CSS }),
     jsx('div', { className: 'rf-page-inner', children: jsxs('div', { className: 'rf-sheet', style: { '--tab': '#6fc48f', maxWidth: 620 }, children: [
-      jsx('h1', { className: 'rf-title', children: 'Where are your projects?' }),
+      jsx('h1', { className: 'rf-title', children: onCancel ? 'Project folders' : 'Where are your projects?' }),
       jsx('p', { className: 'rf-sub', children: 'One folder per line. Rock Foundry only reads; it never changes your projects.' }),
       jsx('textarea', {
         className: 'rf-input',
@@ -440,10 +441,10 @@ function Setup({ ctx, onDone }) {
         'aria-label': 'Project folders, one per line'
       }),
       error && jsx('div', { className: 'rf-error', role: 'alert', children: error }),
-      jsx('div', { className: 'rf-actions', children: jsx('button', {
+      jsx('div', { className: 'rf-actions', children: [jsx('button', {
         type: 'button', className: 'rf-btn rf-btn-main', onClick: save, disabled: busy,
         children: busy ? 'Saving…' : 'Save and scan'
-      }) })
+      }), onCancel && jsx('button', { type: 'button', className: 'rf-btn', onClick: onCancel, children: 'Cancel' })] })
     ] }) })
   ] })
 }
@@ -472,6 +473,8 @@ function ProjectsPage({ ctx }) {
   const [open, setOpen] = useState(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
+  const [notice, setNotice] = useState('')
+  const [editing, setEditing] = useState(null)
 
   const loadProjects = useCallback(async () => {
     setState({ phase: 'ready', projects: await ctx.rest('/projects') })
@@ -504,13 +507,24 @@ function ProjectsPage({ ctx }) {
   useEffect(() => { load() }, [load])
 
   const rescan = async () => {
-    try { await ctx.rest('/scan', { method: 'POST' }) } finally { watchScan() }
+    setNotice('')
+    try {
+      await ctx.rest('/scan', { method: 'POST' })
+      watchScan()
+    } catch {
+      // An older gateway (not restarted since the update) has no /scan route.
+      setNotice('Rescan is not available yet. Restart the Hermes gateway (hermes gateway restart) to finish updating Rock Foundry, then open this page again.')
+    }
+  }
+  const editFolders = async () => {
+    try { setEditing((await ctx.rest('/setup')).roots || []) } catch { setEditing([]) }
   }
 
   const shell = children => jsxs('div', { className: 'rf-desk', children: [jsx('style', { children: DESK_CSS }), ...children] })
   if (state.phase === 'loading') return shell([jsx('div', { className: 'rf-sub', style: { padding: 32 }, children: 'Loading projects…' })])
   if (state.phase === 'error') return shell([jsx('div', { style: { padding: 32 }, children: 'Could not reach Rock Foundry. Restart the Hermes gateway, then open this page again.' })])
   if (state.phase === 'setup') return jsx(Setup, { ctx, onDone: load })
+  if (editing) return jsx(Setup, { ctx, initialRoots: editing, onCancel: () => setEditing(null), onDone: () => { setEditing(null); load() } })
   if (open) return jsx(ProjectPage, { ctx, project: open, onBack: () => { setOpen(null); loadProjects() } })
 
   const q = query.trim().toLowerCase()
@@ -522,9 +536,11 @@ function ProjectsPage({ ctx }) {
       jsx('h1', { className: 'rf-title', children: 'Project desk' }),
       jsxs('div', { className: 'rf-head-side', children: [
         jsx('span', { className: 'rf-sub', children: `${state.projects.length} projects, most recently worked on first` }),
+        jsx('button', { type: 'button', className: 'rf-btn', onClick: editFolders, children: 'Folders' }),
         jsx('button', { type: 'button', className: 'rf-btn', onClick: rescan, disabled: scan.running, children: scan.running ? 'Scanning…' : 'Rescan all' })
       ] })
     ] }, 'head'),
+    notice && jsx('div', { className: 'rf-tools', children: jsx('div', { className: 'rf-empty rf-notice', role: 'alert', children: notice }) }, 'notice'),
     scan.running && jsx('div', { className: 'rf-tools', children: jsx(ScanProgress, { scan }) }, 'progress'),
     state.projects.length > 0 && jsxs('div', { className: 'rf-tools', children: [
       jsx('input', {
