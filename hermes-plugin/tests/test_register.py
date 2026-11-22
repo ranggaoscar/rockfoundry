@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from conftest import PLUGIN, load
@@ -14,8 +15,12 @@ class FakeCtx:
     def register_command(self, name, fn, description=""):
         self.commands[name] = fn
 
-    def register_skill(self, name, text):
-        self.skills[name] = text
+    def register_skill(self, name, path, description=""):
+        # Mirrors Hermes v0.23: takes a path to SKILL.md and raises if it is not a file.
+        path = Path(path)
+        if not path.is_file():
+            raise FileNotFoundError(f"SKILL.md not found at {path}")
+        self.skills[name] = path.read_text(encoding="utf-8")
 
 
 def plugin():

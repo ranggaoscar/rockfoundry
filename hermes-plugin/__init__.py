@@ -149,10 +149,7 @@ def register(ctx) -> None:
 
     ctx.register_hook("post_tool_call", on_tool)
     ctx.register_hook("on_session_end", on_end)
-    ctx.register_skill(
-        "rockfoundry",
-        (HERE / "skills" / "rockfoundry" / "SKILL.md").read_text(encoding="utf-8"),
-    )
+    ctx.register_skill("rockfoundry", HERE / "skills" / "rockfoundry" / "SKILL.md")  # Hermes wants a path
     ctx.register_command("proyek", make_command(ctx), description="Kartu proyek Rock Foundry")
 
 
