@@ -6,6 +6,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote
 
 from rockfoundry.config import Config
 from rockfoundry.gitutil import try_git
@@ -50,7 +51,7 @@ def _raw_repo_name(url: str | None) -> str | None:
     if not url:
         return None
     parts = [s for s in re.split(r"[/:\\]", url.strip()) if s]
-    return re.sub(r"\.git$", "", parts[-1]) or None if parts else None
+    return unquote(re.sub(r"\.git$", "", parts[-1])) or None if parts else None
 
 
 def _raw_owner(url: str | None) -> str | None:
@@ -62,32 +63,96 @@ def _raw_owner(url: str | None) -> str | None:
 
 
 def _slugify(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "proyek"
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "project"
 
 
 def _key(path: Path) -> str:
     return os.path.normcase(str(path.resolve()))
 
 
+DRIVE_DEPTH = 6
+# Whole-drive scans: system and app-data folders are never entered or listed.
+DRIVE_SYSTEM = {
+    "windows",
+    "program files",
+    "program files (x86)",
+    "programdata",
+    "appdata",
+    "application data",
+    "$recycle.bin",
+    "system volume information",
+    "recovery",
+    "perflogs",
+    "msocache",
+    "intel",
+    "library",
+    "applications",
+    "system",
+    "private",
+    "usr",
+    "bin",
+    "sbin",
+    "etc",
+    "var",
+    "opt",
+    "proc",
+    "dev",
+    "snap",
+    "tmp",
+    "temp",
+}
+# Whole-drive scans: build output and dependency folders are not entered, but a project that
+# happens to be named like one (a repo called "build") is still found.
+DRIVE_NOISE = {
+    "site-packages",
+    "dist-packages",
+    "vendor",
+    "bower_components",
+    "target",
+    "dist",
+    "build",
+    "cache",
+    "caches",
+    "out",
+}
+
+
+def is_drive_root(path: Path) -> bool:
+    """True for a filesystem/drive root such as C:/ or /."""
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    return resolved.parent == resolved
+
+
+def _skip(name: str, drive_mode: bool) -> bool:
+    """Folders never entered or listed."""
+    if name in SKIP_DIRS:
+        return True
+    return drive_mode and (name.startswith((".", "$", "~")) or name.lower() in DRIVE_SYSTEM)
+
+
 def _candidates(cfg: Config) -> list[Path]:
     found: list[Path] = []
 
-    def walk(folder: Path, depth: int) -> None:
+    def walk(folder: Path, depth: int, max_depth: int, drive_mode: bool) -> None:
         try:
-            children = sorted(p for p in folder.iterdir() if p.is_dir())
+            children = sorted(p for p in folder.iterdir() if p.is_dir() and not p.is_symlink())
         except OSError:
             return
         for child in children:
-            if child.name in SKIP_DIRS:
+            if _skip(child.name, drive_mode):
                 continue
             if (child / ".git").exists():
                 found.append(child)
-            elif depth < cfg.scan_depth:
-                walk(child, depth + 1)
+            elif depth < max_depth and not (drive_mode and child.name.lower() in DRIVE_NOISE):
+                walk(child, depth + 1, max_depth, drive_mode)
 
     for root in cfg.roots:
         if root.is_dir():
-            walk(root, 1)
+            drive_mode = is_drive_root(root)
+            walk(root, 1, max(cfg.scan_depth, DRIVE_DEPTH) if drive_mode else cfg.scan_depth, drive_mode)
     return found
 
 

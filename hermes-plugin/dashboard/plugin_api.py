@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import contextvars
 import mimetypes
+import os
 import sys
 import threading
 from dataclasses import asdict
@@ -130,12 +131,24 @@ class SetupBody(BaseModel):
     roots: list[str]
 
 
+def _drives() -> list[str]:
+    """Drive roots offered as one-click choices (C:/, D:/ … on Windows, / elsewhere)."""
+    listdrives = getattr(os, "listdrives", None)  # Windows, Python 3.12+
+    if listdrives:
+        try:
+            return [Path(d).as_posix() for d in listdrives()]
+        except OSError:
+            pass
+    return ["/"]
+
+
 @router.get("/setup")
 async def get_setup():
     cfg = load_config()
     return {
         "configured": cfg is not None,
         "roots": [r.as_posix() for r in cfg.roots] if cfg else [],
+        "drives": _drives(),
     }
 
 

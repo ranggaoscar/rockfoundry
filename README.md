@@ -41,6 +41,8 @@ tidy, 11 need a check first, 9 PRs merged since the last release — are they li
 
 - Every project as a paper folder on a workbench, most recently worked on first.
 - **Search** by name or description, and **filters** with counts: All, Active, Slow, Asleep, To decide.
+- Choose folders or **a whole drive** (C:/, D:/ …); drives are searched deeper and skip system,
+  app-data and dependency folders. **Folders** changes this any time.
 - The first scan starts as soon as you choose your folders, with a progress bar
   ("Scanning 12 of 40 · BresciaHub"); **Rescan all** runs a full scan any time.
 - Each project page has **Continue**, **Brainstorm**, **Refresh** and **Summarize with AI**, which open

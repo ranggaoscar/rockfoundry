@@ -107,3 +107,8 @@ def test_changing_folders_keeps_other_settings(rf_home, tmp_path, sync_api):
     assert [r.name for r in cfg.roots] == ["b"]
     assert cfg.use_github is False and cfg.stale_days == 14
     assert cfg.projects["bresciahub"].release_tags == ["prod-*"]
+
+
+def test_setup_lists_drives(rf_home, client):
+    drives = client.get("/setup").json()["drives"]
+    assert drives and all(isinstance(d, str) for d in drives)

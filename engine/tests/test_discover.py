@@ -83,3 +83,53 @@ def test_duplicate_names_are_told_apart(tmp_path, rf_home):
         "hermes-agent (local-agent)",
         "hermes-agent (ranggaoscar)",
     ]
+
+
+def _drive(tmp_path, monkeypatch):
+    import rockfoundry.discover as d
+
+    drive = tmp_path / "drive"
+    monkeypatch.setattr(d, "is_drive_root", lambda p: p == drive)
+    return drive
+
+
+def test_drive_root_finds_deep_projects(tmp_path, rf_home, monkeypatch):
+    drive = _drive(tmp_path, monkeypatch)
+    make_repo(drive / "Users" / "me" / "Documents" / "work" / "deep-app")
+    slugs = [p.slug for p in discover_projects(Config(roots=[drive]))]
+    assert slugs == ["deep-app"]
+
+
+def test_drive_root_skips_system_and_tool_folders(tmp_path, rf_home, monkeypatch):
+    drive = _drive(tmp_path, monkeypatch)
+    make_repo(drive / "Users" / "me" / "AppData" / "Local" / "hermes" / "hermes-agent")
+    make_repo(drive / "Program Files" / "tool")
+    make_repo(drive / "Windows" / "thing")
+    make_repo(drive / "code" / "site" / "node_modules" / "dep")
+    make_repo(drive / "code" / ".hidden-clone")
+    make_repo(drive / "code" / "site")
+    slugs = [p.slug for p in discover_projects(Config(roots=[drive]))]
+    assert slugs == ["site"]
+
+
+def test_normal_folder_keeps_shallow_depth(tmp_path, rf_home):
+    make_repo(tmp_path / "r" / "a" / "b" / "too-deep")
+    assert discover_projects(Config(roots=[tmp_path / "r"])) == []
+
+
+def test_drive_root_keeps_a_repo_named_like_a_noise_folder(tmp_path, rf_home, monkeypatch):
+    drive = _drive(tmp_path, monkeypatch)
+    make_repo(drive / "work" / "build")
+    make_repo(drive / "work" / "dist" / "inner-tool")
+    assert [p.slug for p in discover_projects(Config(roots=[drive]))] == ["build"]
+
+
+def test_url_encoded_remote_name_is_decoded(tmp_path, rf_home):
+    make_repo(tmp_path / "r" / "x", remote="https://github.com/o/IDEA%20CUT.git")
+    p = discover_projects(Config(roots=[tmp_path / "r"]))[0]
+    assert p.name == "IDEA CUT" and p.slug == "idea-cut"
+
+
+def test_repo_name_ending_in_git_letters_is_kept(tmp_path, rf_home):
+    make_repo(tmp_path / "r" / "x", remote="https://github.com/o/legit.git")
+    assert discover_projects(Config(roots=[tmp_path / "r"]))[0].name == "legit"

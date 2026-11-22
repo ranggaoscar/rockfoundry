@@ -1,6 +1,6 @@
 [project]
 name = "rockfoundry"
-version = "2.1.0"
+version = "2.2.0"
 description = "Project memory for builders who work with AI agents."
 readme = "README.md"
 license = "MIT"

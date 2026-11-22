@@ -267,6 +267,9 @@ const DESK_CSS = `
 .rf-empty { margin: 30px 32px 0; padding: 18px 20px; background: rgba(255,255,255,.6); border-radius: 12px; font-size: 14px; color:#3d4b43; }
 .rf-error { color:#a3302a; font-size: 13px; margin-top: 8px; }
 .rf-notice { margin: 0; flex: 1; background:#fff6c4; color:#4a3b00; }
+.rf-drives { display:flex; flex-wrap:wrap; align-items:center; gap: 6px; margin-top: 10px; }
+.rf-sheet .rf-chip { background:#eef3eb; }
+.rf-sheet .rf-chip.on { background:#1f5c41; color:#fff; }
 @media (max-width: 640px) { .rf-head { flex-direction: column; gap: 8px; } .rf-search { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .rf-card, .rf-bar-fill { transition:none; } }
 `
@@ -414,6 +417,10 @@ function Setup({ ctx, onDone, onCancel, initialRoots = [] }) {
   const [text, setText] = useState(initialRoots.join('\n'))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [drives, setDrives] = useState([])
+  useEffect(() => { ctx.rest('/setup').then(s => setDrives(s.drives || [])).catch(() => {}) }, [])
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean)
+  const addDrive = d => { if (!lines.includes(d)) { setText([...lines, d].join('\n')); setError('') } }
   const save = async () => {
     const roots = text.split('\n').map(s => s.trim()).filter(Boolean)
     if (!roots.length) return setError('Add at least one folder.')
@@ -431,7 +438,12 @@ function Setup({ ctx, onDone, onCancel, initialRoots = [] }) {
     jsx('style', { children: DESK_CSS }),
     jsx('div', { className: 'rf-page-inner', children: jsxs('div', { className: 'rf-sheet', style: { '--tab': '#6fc48f', maxWidth: 620 }, children: [
       jsx('h1', { className: 'rf-title', children: onCancel ? 'Project folders' : 'Where are your projects?' }),
-      jsx('p', { className: 'rf-sub', children: 'One folder per line. Rock Foundry only reads; it never changes your projects.' }),
+      jsx('p', { className: 'rf-sub', children: 'One folder per line, or a whole drive to find every project on it. Rock Foundry only reads; it never changes your projects.' }),
+      drives.length > 0 && jsxs('div', { className: 'rf-drives', children: [
+        jsx('span', { className: 'rf-sub', children: 'Whole drive:' }),
+        ...drives.map(d => jsx('button', { type: 'button', className: `rf-chip${lines.includes(d) ? ' on' : ''}`, 'aria-pressed': lines.includes(d), onClick: () => addDrive(d), children: d }, d))
+      ] }),
+      lines.some(l => drives.includes(l)) && jsx('p', { className: 'rf-sub', children: 'Drives are searched deeper and skip system, app and dependency folders. The first scan of a drive can take a few minutes.' }),
       jsx('textarea', {
         className: 'rf-input',
         value: text,

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0 — 2026-11-23
+
+- Scan a whole drive: choose C:/, D:/ … (one-click buttons on the setup screen) to find every
+  project on it. Drives are searched deeper and skip system, app-data, hidden and dependency
+  folders; a repo that happens to be named like build or dist is still found.
+- **Folders** button in the gallery to change what is scanned; other settings are kept.
+- **Rescan all** explains when the Hermes gateway still needs a restart instead of doing nothing.
+- Project names from URL-encoded remotes are decoded (IDEA%20CUT → IDEA CUT).
+
 ## 2.1.0 — 2026-11-23
 
 - The first scan starts as soon as you choose your project folders, with a progress bar

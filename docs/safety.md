@@ -22,6 +22,13 @@ nothing). Keys such as `filter.*.clean|smudge|process`, `core.hooksPath`, `core.
 status and fetch are skipped and the card says so. Only the exact canonical git-lfs filter commands
 and `core.fsmonitor=true|false` are accepted; values containing control characters never are.
 
+## Whole-drive scans
+
+When a scanned root is a drive (C:/, D:/, /), discovery goes up to 6 folders deep and never enters
+system and app folders (Windows, Program Files, ProgramData, AppData, Library, usr, …), hidden
+folders (names starting with `.`, `$` or `~`), or dependency/build folders (node_modules,
+site-packages, vendor, dist, build, target, cache). Discovery only looks for `.git`; it opens nothing.
+
 ## Files never opened
 
 Default deny list (any path segment, case-insensitive): `*.env`, `.env*`, `*credential*`,
