@@ -12,6 +12,12 @@ plus **galeri Projects** di Hermes Desktop.
 > Cari v1 (Product Studio, WebMCP, Work OS)? Diarsipkan di tag
 > [`legacy/product-studio`](https://github.com/ranggaoscar/rockfoundry/tree/legacy/product-studio).
 
+![Galeri Projects: tiap proyek jadi map kertas di meja kerja](docs/images/gallery.png)
+
+![Halaman proyek: posisi sekarang, yang menggantung, yang bisa diberesin](docs/images/project.png)
+
+<sub>Dirender dari kode plugin yang asli pakai data proyek beneran; jendela Hermes di sekitarnya disederhanakan.</sub>
+
 ## Isi kartu
 
 - **Apa ini** dan mulai kapan

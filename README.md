@@ -14,6 +14,12 @@ projects (read-only) and keeps one plain-language **project card** per project, 
 
 Bahasa Indonesia: [README.id.md](README.id.md)
 
+![The Projects gallery: every project as a paper folder on a workbench](docs/images/gallery.png)
+
+![A project page: where it stands, what is hanging, what to tidy](docs/images/project.png)
+
+<sub>Rendered from the plugin's real code with real project data; the Hermes window around it is simplified.</sub>
+
 ## What a card tells you
 
 - **What this is** and when it started
