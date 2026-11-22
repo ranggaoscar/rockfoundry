@@ -37,6 +37,15 @@ Bahasa Indonesia: [README.id.md](README.id.md)
 Example from a real project with 104 agent work folders across two drives: "62 live, 55 safe to
 tidy, 11 need a check first, 9 PRs merged since the last release — are they live?"
 
+## The Projects gallery
+
+- Every project as a paper folder on a workbench, most recently worked on first.
+- **Search** by name or description, and **filters** with counts: All, Active, Slow, Asleep, To decide.
+- The first scan starts as soon as you choose your folders, with a progress bar
+  ("Scanning 12 of 40 · BresciaHub"); **Rescan all** runs a full scan any time.
+- Each project page has **Continue**, **Brainstorm**, **Refresh** and **Summarize with AI**, which open
+  a Hermes chat with the project's context typed in (never sent for you).
+
 ## How it works
 
 1. **Facts without AI.** The engine runs read-only `git` (and optionally `gh`) commands over the

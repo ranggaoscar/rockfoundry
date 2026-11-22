@@ -8,6 +8,11 @@ where it started, what is live, what is hanging across many worktrees, what must
 gets a **Projects** page (gallery + project page); chat gets `/project`; the agent gets a
 `rockfoundry` skill that tells it to read the card before working in a project folder.
 
+## Gallery (2.1.0)
+
+- First scan starts right after the user picks folders, with a progress bar; **Rescan all** in the gallery.
+- Search plus All/Active/Slow/Asleep/To decide filters with counts.
+
 ## Capabilities (match `plugin.yaml` at the pinned sha)
 
 - Tool: `rockfoundry_refresh_projects` (starts a background refresh; summaries use `ctx.llm`)
