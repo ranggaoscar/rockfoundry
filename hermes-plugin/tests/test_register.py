@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -142,3 +143,26 @@ def test_repeated_turns_do_not_duplicate_history(scanned, rf_home):
         ctx.hooks["on_session_end"](session_id="s1", completed=True)
     sessions = [e for e in ProjectStore(rf_home).read_history("hub") if e.kind == "session"]
     assert len(sessions) == 1
+
+
+def test_background_worker_carries_contextvars():
+    """A multiplexing gateway keeps credentials in a context-local scope.
+
+    ``threading.Thread(target=fn)`` starts with an EMPTY context, so every model call in the
+    worker fails with UnscopedSecretError and summaries come back silently empty. The worker
+    must inherit the caller's context (``contextvars.copy_context()``).
+    """
+    import contextvars
+
+    mod = load("rockfoundry_plugin_ctx", PLUGIN / "__init__.py")
+    seen, release = {}, threading.Event()
+    marker = contextvars.ContextVar("rf_marker", default="missing")
+    marker.set("carried")
+
+    def work():
+        seen["value"] = marker.get()
+        release.set()
+
+    mod.run_in_background(work)
+    assert release.wait(5), "background worker never ran"
+    assert seen["value"] == "carried"

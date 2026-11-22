@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import importlib.util
 import json
 import logging
@@ -52,7 +53,11 @@ def _sibling(name: str):
 
 
 def run_in_background(fn) -> None:
-    threading.Thread(target=fn, daemon=True, name="rockfoundry-refresh").start()
+    # Carry the caller's contextvars into the worker: under a profile-multiplexing gateway the
+    # profile's credentials live in a context-local secret scope, so a bare ``Thread(target=fn)``
+    # would fail every model call with UnscopedSecretError (model summaries silently empty).
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(fn,), daemon=True, name="rockfoundry-refresh").start()
 
 
 def _store() -> ProjectStore:
