@@ -62,13 +62,13 @@ Requirements: Python 3.11+ and git. Optional: GitHub CLI (`gh`, logged in) and H
 
 ```bash
 git clone https://github.com/ranggaoscar/rockfoundry.git
-cp -r rockfoundry/hermes-plugin ~/.hermes/plugins/rockfoundry
+cp -r rockfoundry/hermes-plugin <HERMES_HOME>/plugins/rockfoundry   # find HERMES_HOME with: hermes config
 hermes plugins enable rockfoundry
 ```
 
 Open Hermes Desktop, pick **Projects** in the sidebar and choose your project folders.
-In any Hermes chat: `/proyek`, `/proyek <name>`, `/proyek refresh`, `/proyek jadwal`.
-The weekly schedule from `/proyek jadwal` calls the `rockfoundry` CLI, so install it too (below).
+In any Hermes chat: `/project`, `/project <name>`, `/project refresh`, `/project schedule`.
+The weekly schedule from `/project schedule` calls the `rockfoundry` CLI, so install it too (below).
 
 **CLI only**:
 

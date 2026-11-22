@@ -51,12 +51,12 @@ Butuh Python 3.11+ dan git. Opsional: GitHub CLI (`gh`) yang udah login, dan Her
 
 ```bash
 git clone https://github.com/ranggaoscar/rockfoundry.git
-cp -r rockfoundry/hermes-plugin ~/.hermes/plugins/rockfoundry
+cp -r rockfoundry/hermes-plugin <HERMES_HOME>/plugins/rockfoundry   # find HERMES_HOME with: hermes config
 hermes plugins enable rockfoundry
 ```
 
 Buka Hermes Desktop, pilih **Projects** di sidebar, terus pilih folder proyek lu. Di chat Hermes:
-`/proyek`, `/proyek <nama>`, `/proyek refresh`, `/proyek jadwal`.
+`/project`, `/project <nama>`, `/project refresh`, `/project schedule`.
 
 Cuma CLI: lihat [README.md](README.md#install).
 

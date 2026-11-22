@@ -33,7 +33,7 @@ def test_register_wires_hooks_command_and_skill():
     ctx = FakeCtx()
     plugin().register(ctx)
     assert {"post_tool_call", "on_session_end"} <= set(ctx.hooks)
-    assert "proyek" in ctx.commands
+    assert "project" in ctx.commands
     assert "card.md" in ctx.skills["rockfoundry"]
 
 
@@ -61,13 +61,13 @@ def test_hooks_never_raise(rf_home):
     ctx.hooks["on_session_end"]()
 
 
-def test_proyek_command(scanned):
+def test_project_command(scanned):
     ctx = FakeCtx()
     plugin().register(ctx)
-    assert "hub" in ctx.commands["proyek"]("")
-    assert "Kartu Proyek" in ctx.commands["proyek"]("hub")
-    assert "gak ketemu" in ctx.commands["proyek"]("nope")
-    assert "hermes cron create" in ctx.commands["proyek"]("jadwal")
+    assert "hub" in ctx.commands["project"]("")
+    assert "Project card" in ctx.commands["project"]("hub")
+    assert "not found" in ctx.commands["project"]("nope")
+    assert "hermes cron create" in ctx.commands["project"]("schedule")
 
 
 def test_weekly_job_never_browses_repo_urls():
@@ -81,5 +81,5 @@ def test_full_refresh_runs_in_background(scanned):
     mod.run_in_background = queued.append
     ctx = FakeCtx()
     mod.register(ctx)
-    reply = ctx.commands["proyek"]("refresh")
-    assert queued and "Lagi memperbarui" in reply
+    reply = ctx.commands["project"]("refresh")
+    assert queued and "Refreshing" in reply

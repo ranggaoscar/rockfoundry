@@ -53,7 +53,7 @@ def test_badges():
     kinds = {b.kind for b in badges}
     assert kinds == {"merged_after_release", "hanging_work", "main_folder_behind", "docs_off_default"}
     merged = next(b for b in badges if b.kind == "merged_after_release")
-    assert merged.text == "8 PR baru sejak rilis 15 Nov — udah live belum?"
+    assert merged.text == "8 new PRs since the 15 Nov release — are they live?"
 
 
 def test_folder_summary_counts():

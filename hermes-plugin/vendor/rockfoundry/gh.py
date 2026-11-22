@@ -58,7 +58,7 @@ class GhClient:
             timeout=60,
         )
         if out is None:
-            raise RuntimeError("gh pr list gagal")
+            raise RuntimeError("gh pr list failed")
         return [
             PullRequest(
                 number=int(item["number"]),

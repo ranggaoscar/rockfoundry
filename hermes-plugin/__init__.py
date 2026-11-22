@@ -1,4 +1,4 @@
-"""Rock Foundry plugin for Hermes: keeps project cards fresh and exposes /proyek."""
+"""Rock Foundry plugin for Hermes: keeps project cards fresh and exposes /project."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ log = logging.getLogger("rockfoundry")
 HERE = Path(__file__).resolve().parent
 # The weekly job only rescans. It never browses URLs taken from scanned repos (untrusted).
 WEEKLY_CRON = (
-    'hermes cron create "0 8 * * 1" "Jalankan perintah terminal: rockfoundry scan --llm claude. '
-    'Laporkan proyek yang gagal saja." --name rockfoundry-weekly'
+    'hermes cron create "0 8 * * 1" "Run this terminal command: rockfoundry scan --llm claude. '
+    'Report only the projects that failed." --name rockfoundry-weekly'
 )
 
 
@@ -41,7 +41,7 @@ def _store() -> ProjectStore:
 
 
 def _session_summary(folders: set[str]) -> str:
-    return f"Sesi Hermes kerja di {', '.join(sorted(folders))}"
+    return f"Hermes session worked in {', '.join(sorted(folders))}"
 
 
 def _refresh_after_session(paths: set[Path]) -> None:
@@ -83,12 +83,12 @@ def _rerender(store: ProjectStore, slug: str) -> None:
 def _list_text(store: ProjectStore) -> str:
     slugs = store.list_slugs()
     if not slugs:
-        return "Belum ada proyek. Buka halaman Projects di Hermes Desktop atau jalankan: rockfoundry scan"
-    lines = ["Proyek lu:"]
+        return "No projects yet. Open the Projects page in Hermes Desktop to choose your project folders."
+    lines = ["Your projects:"]
     for slug in slugs:
         f = store.read_facts(slug)
         if f:
-            lines.append(f"- {f.name} (`/proyek {slug}`)")
+            lines.append(f"- {f.name} (`/project {slug}`)")
     return "\n".join(lines)
 
 
@@ -101,31 +101,28 @@ def make_command(ctx):
         arg = (raw or "").strip()
         if not arg:
             return _list_text(store)
-        if arg == "jadwal":
-            return (
-                "Biar semua kartu diperbarui tiap Senin jam 8 pagi, jalankan perintah ini "
-                f"(sekali saja):\n\n{WEEKLY_CRON}"
-            )
+        if arg == "schedule":
+            return f"To refresh every card each Monday at 08:00, run this command once:\n\n{WEEKLY_CRON}"
         if arg.split()[0] == "refresh":
             cfg = load_config()
             if cfg is None:
-                return "Belum ada config. Pilih folder proyek dulu di halaman Projects."
+                return "No config yet. Choose your project folders on the Projects page first."
             only = arg.split()[1] if len(arg.split()) > 1 else None
 
             def job() -> None:
                 results = scan(cfg, store, only=only, provider=provider, gh=GhClient())
                 failed = [r.name for r in results if not r.ok]
                 if failed:
-                    log.warning("rockfoundry refresh gagal: %s", ", ".join(failed))
+                    log.warning("rockfoundry refresh failed: %s", ", ".join(failed))
 
             run_in_background(lambda: _safe(job))
-            what = f"proyek {only}" if only else "semua proyek"
+            what = f"project {only}" if only else "every project"
             return (
-                f"Lagi memperbarui {what} di belakang. Kartu bakal ke-update dalam beberapa menit; "
-                "cek lagi pakai /proyek <nama> atau halaman Projects."
+                f"Refreshing {what} in the background. Cards update in a few minutes; "
+                "check again with /project <name> or the Projects page."
             )
         card = store.read_card(arg)
-        return card if card else f"Proyek '{arg}' gak ketemu. Ketik /proyek untuk daftar."
+        return card if card else f"Project '{arg}' not found. Type /project to list them."
 
     return handle
 
@@ -150,7 +147,7 @@ def register(ctx) -> None:
     ctx.register_hook("post_tool_call", on_tool)
     ctx.register_hook("on_session_end", on_end)
     ctx.register_skill("rockfoundry", HERE / "skills" / "rockfoundry" / "SKILL.md")  # Hermes wants a path
-    ctx.register_command("proyek", make_command(ctx), description="Kartu proyek Rock Foundry")
+    ctx.register_command("project", make_command(ctx), description="Rock Foundry project cards")
 
 
 def _safe(fn, *args) -> None:

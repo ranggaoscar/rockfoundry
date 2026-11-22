@@ -17,5 +17,5 @@ uv run --project engine ruff check . && uv run --project engine ruff format --ch
 - The engine stays **read-only** and **dependency-free** (stdlib only). See [docs/safety.md](docs/safety.md).
 - After changing `engine/src/rockfoundry`, run `python scripts/sync_engine.py` so the plugin's
   bundled copy matches (a test enforces this).
-- Human-facing card text is plain Indonesian; git terms only in the technical block.
+- Product text (cards, UI, CLI) is plain English; git terms only in the technical block.
 - Never put real hosts, IP addresses, keys or tokens in issues, tests or fixtures.

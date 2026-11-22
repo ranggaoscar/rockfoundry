@@ -71,3 +71,15 @@ def test_local_windows_path_remote_gives_clean_name(tmp_path, rf_home):
     make_repo(tmp_path / "r" / "hunter", remote=r"C:\AI PROJECTS\hermes-agent-hunter")
     p = discover_projects(Config(roots=[tmp_path / "r"]))[0]
     assert p.name == "hermes-agent-hunter" and p.slug == "hermes-agent-hunter"
+
+
+def test_duplicate_names_are_told_apart(tmp_path, rf_home):
+    make_repo(tmp_path / "r" / "agent-a", remote="https://github.com/NousResearch/hermes-agent.git")
+    make_repo(tmp_path / "r" / "agent-b", remote="https://github.com/ranggaoscar/hermes-agent.git")
+    make_repo(tmp_path / "r" / "local-agent" / "hermes-agent")
+    names = sorted(p.name for p in discover_projects(Config(roots=[tmp_path / "r"], scan_depth=2)))
+    assert names == [
+        "hermes-agent (NousResearch)",
+        "hermes-agent (local-agent)",
+        "hermes-agent (ranggaoscar)",
+    ]

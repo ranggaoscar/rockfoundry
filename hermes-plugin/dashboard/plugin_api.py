@@ -84,7 +84,7 @@ async def list_projects():
 async def project_detail(slug: str):
     store = _store()
     if slug not in store.list_slugs():
-        raise HTTPException(status_code=404, detail="Proyek gak ketemu")
+        raise HTTPException(status_code=404, detail="Project not found")
     f = store.read_facts(slug)
     narrative = cached_narrative(store.narrative_path(slug))
     folders = summarize_folders(f)
@@ -106,10 +106,10 @@ async def project_detail(slug: str):
 async def refresh(slug: str):
     cfg = load_config()
     if cfg is None:
-        raise HTTPException(status_code=409, detail="Belum ada config")
+        raise HTTPException(status_code=409, detail="No config yet")
     results = scan(cfg, _store(), only=slug, gh=GhClient())
     if not results:
-        raise HTTPException(status_code=404, detail="Proyek gak ketemu")
+        raise HTTPException(status_code=404, detail="Project not found")
     return _clean(asdict(results[0]))
 
 

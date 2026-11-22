@@ -90,15 +90,15 @@ def decision_badges(f: ProjectFacts, today: date) -> list[Badge]:
             badges.append(
                 Badge(
                     "merged_after_release",
-                    f"{len(after)} PR baru sejak rilis {fmt_date(f.release.date)} — udah live belum?",
+                    f"{len(after)} new PRs since the {fmt_date(f.release.date)} release — are they live?",
                 )
             )
     classified = f if any(w.status for w in f.workdirs) else classify_all(f, today, 30)
     hanging = [w for w in classified.workdirs if w.status == "hanging"]
     if hanging:
-        badges.append(Badge("hanging_work", f"{len(hanging)} kerjaan menggantung"))
+        badges.append(Badge("hanging_work", f"{len(hanging)} pieces of hanging work"))
     if f.main_behind > MAIN_BEHIND_LIMIT:
-        badges.append(Badge("main_folder_behind", f"Folder utama ketinggalan {f.main_behind} perubahan"))
+        badges.append(Badge("main_folder_behind", f"Main folder is {f.main_behind} changes behind"))
     if f.guide_docs_off_default:
-        badges.append(Badge("docs_off_default", "Catatan penting cuma ada di cabang samping"))
+        badges.append(Badge("docs_off_default", "Release notes only exist on a side branch"))
     return badges

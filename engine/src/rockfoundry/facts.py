@@ -185,8 +185,8 @@ def collect_facts(project: Project, cfg: Config, gh, fetch: bool = False) -> Pro
     risky = sorted({key for _, risks in pairs for key in risks})
     if risky:
         notes.append(
-            f"Setting git di repo ini bisa menjalankan program ({', '.join(risky)}); "
-            "Rock Foundry gak ngecek perubahan atau fetch di sini."
+            f"This repo's git config can run programs ({', '.join(risky)}); "
+            "Rock Foundry skips the change check and fetch here."
         )
 
     count = int(try_git(["rev-list", "--count", default_ref], repo) or 0) if default_ref else 0

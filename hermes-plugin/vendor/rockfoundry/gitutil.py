@@ -47,9 +47,9 @@ def git(args: list[str], cwd: Path, timeout: float = 30) -> str:
             timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise GitError(f"git {args[0]} gagal: {exc.__class__.__name__}") from exc
+        raise GitError(f"git {args[0]} failed: {exc.__class__.__name__}") from exc
     if proc.returncode != 0:
-        raise GitError(f"git {args[0]} gagal ({proc.returncode})")
+        raise GitError(f"git {args[0]} failed ({proc.returncode})")
     return proc.stdout.strip()
 
 

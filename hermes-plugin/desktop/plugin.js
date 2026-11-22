@@ -10,18 +10,18 @@ const DOT = {
   slow: 'var(--ui-text-tertiary)',
   sleeping: 'var(--ui-text-quaternary)'
 }
-const ACTIVITY_LABEL = { active: 'Aktif', slow: 'Pelan', sleeping: 'Tidur' }
+const ACTIVITY_LABEL = { active: 'Active', slow: 'Slow', sleeping: 'Asleep' }
 
 // ---------- small helpers ----------
 
 function ago(iso) {
-  if (!iso) return 'belum ada aktivitas'
+  if (!iso) return 'no activity yet'
   const days = Math.round((Date.now() - new Date(iso + 'T12:00:00').getTime()) / 86400000)
-  if (days <= 0) return 'hari ini'
-  if (days === 1) return 'kemarin'
-  if (days < 14) return `${days} hari lalu`
-  if (days < 60) return `${Math.floor(days / 7)} minggu lalu`
-  return `${Math.floor(days / 30)} bulan lalu`
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 14) return `${days} days ago`
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`
+  return `${Math.floor(days / 30)} months ago`
 }
 
 function initials(name) {
@@ -161,19 +161,19 @@ async function startChat(ctx, prompt) {
   }
   try {
     await navigator.clipboard.writeText(prompt)
-    host.notify({ kind: 'info', message: 'Prompt udah dicopy, tinggal paste di chat baru.' })
+    host.notify({ kind: 'info', message: 'Prompt copied. Paste it into the new chat.' })
   } catch {
-    host.notify({ kind: 'error', message: 'Gak bisa buka chat baru. Coba lagi.' })
+    host.notify({ kind: 'error', message: 'Could not open a new chat. Try again.' })
   }
 }
 
 function prompts(project, detail) {
-  const where = `Kartu proyeknya ada di ${detail.card_path}. Baca dulu, terutama bagian "Jangan disentuh".`
+  const where = `The project card is at ${detail.card_path}. Read it first, especially "Do not touch".`
   return {
-    resume: `Gua mau lanjutin proyek ${project.name}. ${where} Ceritain posisinya sekarang dalam bahasa biasa, terus usulin langkah berikutnya. Jangan ubah apa pun sebelum gua setuju.`,
-    brainstorm: `Ayo brainstorm fitur baru buat ${project.name}. ${where} Ajak gua ngobrol dulu dan jangan ubah file apa pun.`,
+    resume: `I want to continue ${project.name}. ${where} Tell me in plain words where it stands, then suggest the next step. Don't change anything until I agree.`,
+    brainstorm: `Let's brainstorm new features for ${project.name}. ${where} Talk it through with me first and don't change any files.`,
     opportunity: text =>
-      `Kerjain peluang ini di proyek ${project.name}: "${text}". ${where} Jelasin rencananya dalam bahasa biasa dan tunggu gua setuju sebelum ngubah apa pun.`
+      `Work on this opportunity in ${project.name}: "${text}". ${where} Explain the plan in plain words and wait for my OK before changing anything.`
   }
 }
 
@@ -292,7 +292,7 @@ function Tile({ ctx, project, index, onOpen }) {
         className: 'rf-body',
         children: [
           jsx('div', { className: 'rf-name', children: project.name }),
-          jsx('div', { className: 'rf-what', children: project.what_is || `${project.workdirs} folder kerja` }),
+          jsx('div', { className: 'rf-what', children: project.what_is || `${project.workdirs} work folder${project.workdirs === 1 ? '' : 's'}` }),
           jsxs('div', {
             className: 'rf-meta',
             children: [
@@ -304,7 +304,7 @@ function Tile({ ctx, project, index, onOpen }) {
         ]
       }),
       project.badges.length > 0 &&
-        jsx('div', { className: 'rf-note', children: `${project.badges.length} perlu diputusin` })
+        jsx('div', { className: 'rf-note', children: `${project.badges.length} to decide` })
     ]
   })
 }
@@ -332,8 +332,8 @@ function ProjectPage({ ctx, project, onBack }) {
   }, [project.image_url])
   const hue = hueOf(project.name)
   const shell = children => jsxs('div', { className: 'rf-desk rf-page', children: [jsx('style', { children: DESK_CSS }), children] })
-  if (!detail) return shell(jsx('div', { className: 'rf-sub', style: { padding: 32 }, children: 'Memuat kartu…' }))
-  if (detail.error) return shell(jsx('div', { style: { padding: 32 }, children: 'Kartu gak bisa dimuat. Coba Refresh atau buka lagi.' }))
+  if (!detail) return shell(jsx('div', { className: 'rf-sub', style: { padding: 32 }, children: 'Loading card…' }))
+  if (detail.error) return shell(jsx('div', { style: { padding: 32 }, children: 'Could not load this card. Try Refresh or open it again.' }))
   const p = prompts(project, detail)
   const f = detail.facts
   const refresh = async () => {
@@ -343,7 +343,7 @@ function ProjectPage({ ctx, project, onBack }) {
   }
   const opportunities = detail.narrative?.opportunities ?? []
   return shell(jsxs('div', { className: 'rf-page-inner', children: [
-    jsx('button', { type: 'button', className: 'rf-back', onClick: onBack, children: '← Meja proyek' }),
+    jsx('button', { type: 'button', className: 'rf-back', onClick: onBack, children: '← Project desk' }),
     jsxs('article', {
       className: 'rf-sheet',
       style: {
@@ -359,24 +359,31 @@ function ProjectPage({ ctx, project, onBack }) {
           }),
           jsxs('div', { style: { minWidth: 0 }, children: [
             jsx('h1', { className: 'rf-title', children: project.name }),
-            jsx('div', { className: 'rf-sub', children: project.what_is || `${project.workdirs} folder kerja, terakhir dikerjain ${ago(project.last_activity)}` }),
+            jsx('div', { className: 'rf-sub', children: project.what_is || `${project.workdirs} work folders, last worked on ${ago(project.last_activity)}` }),
             jsxs('div', { className: 'rf-actions', children: [
-              jsx('button', { type: 'button', className: 'rf-btn rf-btn-main', onClick: () => startChat(ctx, p.resume), children: 'Lanjutin' }),
+              jsx('button', { type: 'button', className: 'rf-btn rf-btn-main', onClick: () => startChat(ctx, p.resume), children: 'Continue' }),
               jsx('button', { type: 'button', className: 'rf-btn', onClick: () => startChat(ctx, p.brainstorm), children: 'Brainstorm' }),
-              jsx('button', { type: 'button', className: 'rf-btn', onClick: refresh, disabled: busy, children: busy ? 'Memperbarui…' : 'Refresh' })
+              jsx('button', { type: 'button', className: 'rf-btn', onClick: refresh, disabled: busy, children: busy ? 'Refreshing…' : 'Refresh' }),
+              // The page backend has no model access; the AI summary runs through Hermes chat.
+              !detail.narrative && jsx('button', {
+                type: 'button',
+                className: 'rf-btn',
+                onClick: () => startChat(ctx, `/project refresh ${project.slug}`),
+                children: 'Summarize with AI'
+              })
             ] })
           ] })
         ] }),
         jsxs('div', { className: 'rf-stats', children: [
-          jsx(Stat, { label: 'Live terakhir', value: f.release ? new Date(f.release.date + 'T12:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Belum tercatat', tilt: '-0.8deg' }),
-          jsx(Stat, { label: 'Menggantung', value: `${detail.folders.hanging.length} kerjaan`, tilt: '0.6deg' }),
-          jsx(Stat, { label: 'Bisa diberesin', value: `${detail.folders.tidy.length} folder`, tilt: '-0.3deg' })
+          jsx(Stat, { label: 'Last release', value: f.release ? new Date(f.release.date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not recorded', tilt: '-0.8deg' }),
+          jsx(Stat, { label: 'Hanging work', value: `${detail.folders.hanging.length} folders`, tilt: '0.6deg' }),
+          jsx(Stat, { label: 'Safe to tidy', value: `${detail.folders.tidy.length} folders`, tilt: '-0.3deg' })
         ] }),
         opportunities.length > 0 && jsxs('section', { className: 'rf-opps', children: [
-          jsx('h3', { className: 'rf-opps-title', children: 'Peluang' }),
+          jsx('h3', { className: 'rf-opps-title', children: 'Opportunities' }),
           ...opportunities.map((o, i) => jsxs('div', { className: 'rf-opp', children: [
             jsx('span', { children: o }),
-            jsx('button', { type: 'button', className: 'rf-btn', onClick: () => startChat(ctx, p.opportunity(o)), children: 'Kerjain' })
+            jsx('button', { type: 'button', className: 'rf-btn', onClick: () => startChat(ctx, p.opportunity(o)), children: 'Work on it' })
           ] }, i))
         ] }),
         jsx('div', { className: 'rf-card-md', children: jsx(Blocks, { blocks: parseBlocks(detail.card_markdown.split('\n')), skipTitle: true }) })
@@ -390,17 +397,17 @@ function Setup({ ctx, onDone }) {
   const [error, setError] = useState('')
   const save = async () => {
     const roots = text.split('\n').map(s => s.trim()).filter(Boolean)
-    if (!roots.length) return setError('Isi minimal satu folder.')
+    if (!roots.length) return setError('Add at least one folder.')
     try {
       await ctx.rest('/setup', { method: 'POST', body: { roots } })
       onDone()
     } catch {
-      setError('Ada folder yang gak ketemu. Cek lagi path-nya.')
+      setError('Some folders were not found. Check the paths.')
     }
   }
   return jsxs('div', { style: { padding: 28, maxWidth: 560 }, children: [
-    jsx('div', { style: { fontSize: 18, fontWeight: 600 }, children: 'Folder proyek lu di mana?' }),
-    jsx('p', { style: { ...muted, fontSize: 13 }, children: 'Satu folder per baris. Rock Foundry cuma membaca, gak pernah mengubah isi proyek.' }),
+    jsx('div', { style: { fontSize: 18, fontWeight: 600 }, children: 'Where are your projects?' }),
+    jsx('p', { style: { ...muted, fontSize: 13 }, children: 'One folder per line. Rock Foundry only reads; it never changes your projects.' }),
     jsx('textarea', {
       value: text,
       onChange: e => { setText(e.target.value); setError('') },
@@ -409,7 +416,7 @@ function Setup({ ctx, onDone }) {
       style: { width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--ui-stroke-secondary)', background: 'transparent', color: 'inherit', fontFamily: 'inherit' }
     }),
     error && jsx('div', { style: { color: 'var(--ui-danger, #d33)', fontSize: 12, marginTop: 6 }, children: error }),
-    jsx('div', { style: { marginTop: 10 }, children: jsx(Button, { onClick: save, children: 'Simpan dan scan' }) })
+    jsx('div', { style: { marginTop: 10 }, children: jsx(Button, { onClick: save, children: 'Save and scan' }) })
   ] })
 }
 
@@ -427,17 +434,17 @@ function ProjectsPage({ ctx }) {
   }, [])
   useEffect(() => { load() }, [load])
 
-  if (state.phase === 'loading') return jsx('div', { style: { padding: 24, ...muted }, children: 'Memuat proyek…' })
-  if (state.phase === 'error') return jsx('div', { style: { padding: 24 }, children: 'Rock Foundry belum bisa dihubungi. Coba restart Hermes.' })
+  if (state.phase === 'loading') return jsx('div', { style: { padding: 24, ...muted }, children: 'Loading projects…' })
+  if (state.phase === 'error') return jsx('div', { style: { padding: 24 }, children: 'Could not reach Rock Foundry. Try restarting Hermes.' })
   if (state.phase === 'setup') return jsx(Setup, { ctx, onDone: load })
   if (open) return jsx(ProjectPage, { ctx, project: open, onBack: () => { setOpen(null); load() } })
   if (!state.projects.length)
-    return jsx('div', { style: { padding: 24 }, children: 'Belum ada proyek. Buka Hermes di folder proyek lu, atau jalankan /proyek refresh.' })
+    return jsx('div', { style: { padding: 24 }, children: 'No projects yet. Work in a project folder with Hermes, or run /project refresh.' })
   return jsxs('div', { className: 'rf-desk', children: [
     jsx('style', { children: DESK_CSS }),
     jsxs('div', { className: 'rf-head', children: [
-      jsx('h1', { className: 'rf-title', children: 'Meja proyek' }),
-      jsx('div', { className: 'rf-sub', children: `${state.projects.length} proyek, yang terakhir dikerjain di depan` })
+      jsx('h1', { className: 'rf-title', children: 'Project desk' }),
+      jsx('div', { className: 'rf-sub', children: `${state.projects.length} projects, most recently worked on first` })
     ] }),
     jsx('div', {
       className: 'rf-grid',

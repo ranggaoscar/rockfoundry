@@ -38,13 +38,13 @@ def _new_events(previous: ProjectFacts | None, current: ProjectFacts, now: datet
             HistoryEvent(
                 now,
                 "release",
-                f"Rilis baru tercatat: {current.release.name} ({fmt_date(current.release.date)})",
+                f"New release recorded: {current.release.name} ({fmt_date(current.release.date)})",
             )
         )
     seen = {p.number for p in (previous.prs or []) if p.state == "MERGED"}
     fresh = [p for p in (current.prs or []) if p.state == "MERGED" and p.number not in seen]
     if previous.prs is not None and fresh:
-        events.append(HistoryEvent(now, "pr_merged", f"{len(fresh)} PR baru masuk versi utama"))
+        events.append(HistoryEvent(now, "pr_merged", f"{len(fresh)} new PRs merged into the main version"))
     return events
 
 

@@ -83,7 +83,7 @@ def test_cli_list_json(two_projects_cfg, rf_home, capsys):
 def test_cli_scan_without_config_non_tty(rf_home, monkeypatch, capsys):
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     assert main(["scan"]) == 2
-    assert "Belum ada config" in capsys.readouterr().out
+    assert "No config yet" in capsys.readouterr().out
 
 
 def test_cli_note_shows_in_card(two_projects_cfg, rf_home, capsys):

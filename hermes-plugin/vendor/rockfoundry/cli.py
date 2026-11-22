@@ -23,11 +23,11 @@ from rockfoundry.narrative import make_provider
 from rockfoundry.scan import render_from_store, scan
 from rockfoundry.store import HistoryEvent, ProjectStore
 
-NO_CONFIG = "Belum ada config. Jalankan: rockfoundry scan (di terminal) untuk memilih folder."
+NO_CONFIG = "No config yet. Run `rockfoundry scan` in a terminal to choose your project folders."
 
 
 def _ask_roots() -> list[Path]:
-    print("Folder mana yang berisi proyek lu? Satu per baris, kosongkan baris untuk selesai.")
+    print("Which folders hold your projects? One per line; leave a line empty to finish.")
     roots: list[Path] = []
     while True:
         line = input("> ").strip().strip('"')
@@ -57,10 +57,10 @@ def _cmd_scan(args, store: ProjectStore) -> int:
         force_narrative=args.force_narrative,
     )
     for r in results:
-        mark = "ok " if r.ok else "GAGAL"
-        print(f"{mark} {r.name} ({r.seconds:.1f} dtk)" + ("" if r.ok else f": {r.error}"))
+        mark = "ok    " if r.ok else "FAILED"
+        print(f"{mark} {r.name} ({r.seconds:.1f}s)" + ("" if r.ok else f": {r.error}"))
     if args.project and not results:
-        print(f"Proyek '{args.project}' gak ketemu.")
+        print(f"Project '{args.project}' not found.")
         return 1
     return 0 if all(r.ok for r in results) else 1
 
@@ -92,18 +92,18 @@ def _cmd_list(args, store: ProjectStore) -> int:
         print(json.dumps(sorted(rows, key=lambda r: r["slug"]), ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        print("Belum ada proyek. Jalankan: rockfoundry scan")
+        print("No projects yet. Run: rockfoundry scan")
     today = date.today()
     for r in rows:
         last = date.fromisoformat(r["last_activity"]) if r["last_activity"] else None
-        print(f"{r['name']:<36} {r['activity']:<9} {ago(last, today):<16} {r['workdirs']} folder")
+        print(f"{r['name']:<36} {r['activity']:<9} {ago(last, today):<16} {r['workdirs']} folders")
     return 0
 
 
 def _cmd_card(args, store: ProjectStore) -> int:
     card = store.read_card(args.slug)
     if card is None:
-        print(f"Proyek '{args.slug}' gak ketemu. Lihat: rockfoundry list")
+        print(f"Project '{args.slug}' not found. See: rockfoundry list")
         return 1
     print(card)
     return 0
@@ -111,11 +111,11 @@ def _cmd_card(args, store: ProjectStore) -> int:
 
 def _cmd_note(args, store: ProjectStore) -> int:
     if store.read_facts(args.slug) is None:
-        print(f"Proyek '{args.slug}' gak ketemu. Lihat: rockfoundry list")
+        print(f"Project '{args.slug}' not found. See: rockfoundry list")
         return 1
     store.append_history(args.slug, HistoryEvent(datetime.now(), "note", args.text))
     render_from_store(store, args.slug, date.today())
-    print("Catatan disimpan.")
+    print("Note saved.")
     return 0
 
 
@@ -123,33 +123,33 @@ def _cmd_doctor(args, store: ProjectStore) -> int:
     cfg = load_config()
     git_version = try_git(["--version"], Path.cwd()) or "TIDAK ADA"
     print(f"git            : {git_version}")
-    print(f"GitHub CLI     : {'siap' if GhClient().available() else 'tidak tersedia / belum login'}")
-    print(f"claude (narasi): {'ada' if shutil.which('claude') else 'tidak ada'}")
+    print(f"GitHub CLI     : {'ready' if GhClient().available() else 'not available / not logged in'}")
+    print(f"claude (AI)    : {'found' if shutil.which('claude') else 'not found'}")
     print(f"Rock Foundry   : {rockfoundry_home()}")
-    print(f"Config         : {default_config_path() if cfg else 'belum ada'}")
+    print(f"Config         : {default_config_path() if cfg else 'not created yet'}")
     for root in cfg.roots if cfg else []:
-        print(f"  folder {'ada ' if root.is_dir() else 'HILANG'} {root}")
+        print(f"  folder {'ok     ' if root.is_dir() else 'MISSING'} {root}")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    parser = argparse.ArgumentParser(prog="rockfoundry", description="Buku proyek buat builder.")
+    parser = argparse.ArgumentParser(prog="rockfoundry", description="Project memory for builders.")
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("scan", help="Perbarui kartu semua proyek")
+    p = sub.add_parser("scan", help="Refresh every project card")
     p.add_argument("--project")
     p.add_argument("--llm", choices=["none", "claude"], default="none")
     p.add_argument("--fetch", action="store_true")
     p.add_argument("--force-narrative", action="store_true")
-    p = sub.add_parser("list", help="Daftar proyek")
+    p = sub.add_parser("list", help="List projects")
     p.add_argument("--json", action="store_true")
-    p = sub.add_parser("card", help="Tampilkan kartu proyek")
+    p = sub.add_parser("card", help="Show a project card")
     p.add_argument("slug")
-    p = sub.add_parser("note", help="Tambah catatan ke riwayat")
+    p = sub.add_parser("note", help="Add a note to the history")
     p.add_argument("slug")
     p.add_argument("text")
-    sub.add_parser("doctor", help="Cek kesiapan")
+    sub.add_parser("doctor", help="Check your setup")
     args = parser.parse_args(argv)
     store = ProjectStore(rockfoundry_home())
     handlers = {

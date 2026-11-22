@@ -28,6 +28,7 @@ class Project:
     main_path: Path
     workdirs: list[Workdir]
     notes: list[str] = field(default_factory=list)
+    owner: str | None = None
 
 
 def normalize_remote(url: str | None) -> str | None:
@@ -50,6 +51,14 @@ def _raw_repo_name(url: str | None) -> str | None:
         return None
     parts = [s for s in re.split(r"[/:\\]", url.strip()) if s]
     return re.sub(r"\.git$", "", parts[-1]) or None if parts else None
+
+
+def _raw_owner(url: str | None) -> str | None:
+    """Owner segment of a hosted remote, keeping its original case (never credentials)."""
+    if not url or not normalize_remote(url) or normalize_remote(url).count("/") < 2:
+        return None
+    parts = [s for s in re.split(r"[/:\\]", url.strip()) if s]
+    return parts[-2] if len(parts) >= 2 and "@" not in parts[-2] else None
 
 
 def _slugify(text: str) -> str:
@@ -150,9 +159,22 @@ def discover_projects(cfg: Config) -> list[Project]:
                 main_path=main_path,
                 workdirs=sorted(workdirs.values(), key=lambda w: str(w.path).lower()),
                 notes=notes,
+                owner=_raw_owner(g["raw"]),
             )
         )
+    _tell_apart(projects, {s for s, o in cfg.projects.items() if o.name})
     return sorted(projects, key=lambda p: p.slug)
+
+
+def _tell_apart(projects: list[Project], named_by_owner: set[str]) -> None:
+    """Give same-named projects a suffix: the remote owner, or else the parent folder."""
+    counts: dict[str, int] = {}
+    for p in projects:
+        counts[p.name.lower()] = counts.get(p.name.lower(), 0) + 1
+    for p in projects:
+        if counts[p.name.lower()] < 2 or p.slug in named_by_owner:
+            continue
+        p.name = f"{p.name} ({p.owner or p.main_path.parent.name})"
 
 
 def _pick_main(folders: list[Path], repo_name: str | None) -> Path:

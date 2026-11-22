@@ -5,7 +5,7 @@ Rock Foundry writes one folder per project under `~/.rockfoundry/projects/<slug>
 
 | File | For | Notes |
 |---|---|---|
-| `card.md` | people (and agents) | Plain Indonesian. Git terms only inside the collapsed "Catatan teknis buat agent" block. |
+| `card.md` | people (and agents) | Plain English. Git terms only inside the collapsed "Technical notes for agents" block. |
 | `facts.json` | machines | Everything collected without AI. `schema_version: 1`. |
 | `narrative.json` | cache | Last AI-written sections plus the facts hash they were made from. |
 | `history.jsonl` | timeline | Append-only events: `session`, `release`, `pr_merged`, `note`, `scan`. |
@@ -13,17 +13,17 @@ Rock Foundry writes one folder per project under `~/.rockfoundry/projects/<slug>
 
 ## Card sections (in order)
 
-1. **Apa ini** — one sentence (AI), start date, number of changes, number of work folders.
-2. **Posisi sekarang** — last recorded release, PRs merged since, what is unknown, last activity.
-3. **Lagi menggantung** — work folders touched recently that are not in the main version.
-4. **Rapihin folder** — where the work folders are, how many are live, which are safe to tidy.
-5. **Jangan disentuh** — rules taken from the project's own guide docs (AI, guide docs only).
-6. **Perlu lu putusin** — badges computed from facts (no AI).
-7. **Peluang** — 3–5 ideas from facts and docs only, labelled "belum ada riset kompetitor".
-8. **Riwayat singkat** — start, releases, merged PRs per day, Hermes sessions, notes.
-9. **Catatan teknis buat agent** — remote, default branch, release marker, guide docs, every work folder.
+1. **What this is** — one sentence (AI), start date, number of changes, number of work folders.
+2. **Where it stands** — last recorded release, PRs merged since, what is unknown, last activity.
+3. **Hanging work** — work folders touched recently that are not in the main version.
+4. **Folder cleanup** — where the work folders are, how many are live, which are safe to tidy.
+5. **Do not touch** — rules taken from the project's own guide docs (AI, guide docs only).
+6. **Decisions for you** — badges computed from facts (no AI).
+7. **Opportunities** — 3–5 ideas from facts and docs only, labelled "no competitor research yet".
+8. **History** — start, releases, merged PRs per day, Hermes sessions, notes.
+9. **Technical notes for agents** — remote, default branch, release marker, guide docs, every work folder.
 
-Sections that need AI say "belum diringkas" when no narrative exists.
+Sections that need AI say "Not summarized yet" when no narrative exists.
 
 ## `facts.json` (schema 1)
 
