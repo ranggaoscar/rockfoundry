@@ -16,7 +16,7 @@ from rockfoundry.facts import ProjectFacts, collect_facts
 from rockfoundry.fmt import fmt_date
 from rockfoundry.gh import GhClient
 from rockfoundry.images import find_logo
-from rockfoundry.narrative import NarrativeProvider, cached_narrative, get_narrative
+from rockfoundry.narrative import NarrativeProvider, cached_narrative, get_narrative, narrative_error
 from rockfoundry.safety import redact
 from rockfoundry.store import HistoryEvent, ProjectStore
 
@@ -65,6 +65,7 @@ def render_from_store(store: ProjectStore, slug: str, today: date) -> str | None
         cached_narrative(store.narrative_path(slug)),
         store.read_history(slug),
         today,
+        narrative_error=narrative_error(store.narrative_path(slug)),
     )
     store.write_card(slug, card)
     return card
@@ -108,6 +109,9 @@ def scan(
                     narrative,
                     store.read_history(project.slug),
                     today,
+                    narrative_error=None
+                    if narrative
+                    else narrative_error(store.narrative_path(project.slug)),
                 ),
             )
             results.append(ScanResult(project.slug, project.name, True, None, time.perf_counter() - started))

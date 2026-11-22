@@ -24,6 +24,12 @@ gets a **Projects** page (gallery + project page); chat gets `/project`; the age
 - Background threads after session end and on refresh. No cron is created; `/project schedule` prints a `hermes cron create` command for the user to run.
 - Desktop half uses only `@hermes/plugin-sdk` and `react`; no self-updater; no binaries.
 
+## Known issues
+
+- After install or update, the gateway must restart (`hermes gateway restart`) for the Python half; a Desktop Rescan only reloads the page.
+- `on_session_end` fires per turn, so the session line in a card's history is de-duplicated for 30 minutes.
+- Sessions link to projects through file paths seen in tool calls; terminal-only work is not linked.
+
 ## Checks
 
 - `hermes plugins validate` passes at the pinned sha (17/17, security scan: safe).

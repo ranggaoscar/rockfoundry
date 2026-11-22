@@ -110,3 +110,35 @@ def test_manifest_declares_tool_hooks_and_floor():
     text = (PLUGIN / "plugin.yaml").read_text(encoding="utf-8")
     assert 'requires_hermes: ">=0.23.3"' in text
     assert "rockfoundry_refresh_projects" in text
+
+
+def test_model_gets_room_to_answer(scanned):
+    mod = load("rockfoundry_plugin_budget", PLUGIN / "__init__.py")
+    seen = {}
+    ctx = FakeCtx()
+
+    def complete(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(text="{}")
+
+    ctx.llm = SimpleNamespace(complete=complete)
+    mod.make_provider(ctx)("hello")
+    assert seen["max_tokens"] >= 12000
+
+
+def test_repeated_turns_do_not_duplicate_history(scanned, rf_home):
+    from rockfoundry.store import ProjectStore
+
+    ctx = FakeCtx()
+    plugin().register(ctx)
+    for _ in range(3):
+        ctx.hooks["post_tool_call"](
+            tool_name="read_file",
+            args={"path": str(scanned / "HUB" / "file1.txt")},
+            result="",
+            task_id="t",
+            session_id="s1",
+        )
+        ctx.hooks["on_session_end"](session_id="s1", completed=True)
+    sessions = [e for e in ProjectStore(rf_home).read_history("hub") if e.kind == "session"]
+    assert len(sessions) == 1

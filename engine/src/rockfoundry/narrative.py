@@ -17,6 +17,7 @@ from rockfoundry.safety import redact
 
 NarrativeProvider = Callable[[str], str]
 PROVIDER_TIMEOUT = 180
+PROMPT_DOC_BUDGET = 10_000
 
 
 @dataclass
@@ -67,7 +68,25 @@ def facts_hash(f: ProjectFacts) -> str:
 def build_prompt(f: ProjectFacts) -> str:
     data = facts_to_dict(f)
     docs = data.pop("guide_docs")
-    data["workdirs"] = data["workdirs"][:60]
+    folders = data.pop("workdirs")
+    by_status: dict[str, int] = {}
+    for w in folders:
+        by_status[w["status"] or "unknown"] = by_status.get(w["status"] or "unknown", 0) + 1
+    data["work_folders"] = {
+        "total": len(folders),
+        "by_status": by_status,
+        "recent_hanging": [
+            w["path"].replace("\\", "/").rsplit("/", 1)[-1] for w in folders if w["status"] == "hanging"
+        ][:15],
+    }
+    budget = PROMPT_DOC_BUDGET
+    trimmed = {}
+    for path, text in docs.items():
+        if budget <= 0:
+            break
+        trimmed[path] = text[:budget]
+        budget -= len(trimmed[path])
+    docs = trimmed
     data["prs"] = [{"merged_at": pr["merged_at"], "state": pr["state"]} for pr in (data["prs"] or [])[:40]]
     doc_text = "\n\n".join(
         f'<document path="{html.escape(path, quote=True)}">\n{html.escape(text)}\n</document>'
@@ -137,11 +156,18 @@ def get_narrative(
     if provider is None:
         return None
     try:
-        narrative = _parse(provider(build_prompt(f)))
-    except Exception:
+        raw = provider(build_prompt(f))
+    except Exception as exc:
+        _record_error(cache_path, f"the model call failed ({exc.__class__.__name__})")
         return None
+    if not (raw or "").strip():
+        _record_error(cache_path, "the model returned no text (it may have run out of tokens)")
+        return None
+    narrative = _parse(raw)
     if narrative is None:
+        _record_error(cache_path, "the model's reply was not valid JSON")
         return None
+    _error_path(cache_path).unlink(missing_ok=True)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = cache_path.with_suffix(".tmp")
     tmp.write_text(
@@ -149,6 +175,28 @@ def get_narrative(
     )
     tmp.replace(cache_path)
     return narrative
+
+
+def _error_path(cache_path: Path) -> Path:
+    return cache_path.with_name("narrative_error.json")
+
+
+def _record_error(cache_path: Path, reason: str) -> None:
+    from datetime import datetime
+
+    path = _error_path(cache_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"at": datetime.now().isoformat(timespec="minutes"), "reason": reason}), encoding="utf-8"
+    )
+
+
+def narrative_error(cache_path: Path) -> str | None:
+    """Why the last AI summary attempt failed, or None if it did not."""
+    try:
+        return json.loads(_error_path(cache_path).read_text(encoding="utf-8"))["reason"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def cached_narrative(cache_path: Path) -> Narrative | None:

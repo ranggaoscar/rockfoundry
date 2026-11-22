@@ -82,6 +82,9 @@ cp -r rockfoundry/hermes-plugin <HERMES_HOME>/plugins/rockfoundry   # find HERME
 hermes plugins enable rockfoundry
 ```
 
+Then restart the Hermes gateway (`hermes gateway restart`) so the Python half loads; a Desktop
+**Rescan** alone only refreshes the Projects page. Do the same after every plugin update.
+
 Open Hermes Desktop, pick **Projects** in the sidebar and choose your project folders.
 In any Hermes chat: `/project`, `/project <name>`, `/project refresh`, `/project schedule`.
 The weekly schedule from `/project schedule` calls the `rockfoundry` CLI, so install it too (below).

@@ -135,3 +135,25 @@ def test_claude_prompt_goes_through_stdin_not_argv(monkeypatch):
     big = "x" * 50_000
     make_provider("claude")(big)
     assert big not in seen["cmd"] and seen["input"] == big
+
+
+def test_prompt_is_compact_for_big_projects(facts):
+    from rockfoundry.facts import WorkdirFacts
+
+    many = [WorkdirFacts(f"C:/p/HUB-{i}", f"feat/{i}", None, 0, False, False, "hanging") for i in range(120)]
+    big = replace(facts, workdirs=many, guide_docs={"AGENTS.md": "rule. " * 6000})
+    prompt = build_prompt(big)
+    assert len(prompt) < 20_000
+    assert "HUB-119" not in prompt
+
+
+def test_failure_reason_recorded_and_cleared(tmp_path, facts):
+    from rockfoundry.narrative import narrative_error
+
+    cache = tmp_path / "n.json"
+    assert get_narrative(facts, lambda p: "", cache) is None
+    assert "no text" in narrative_error(cache)
+    assert get_narrative(facts, lambda p: "not json", cache, force=True) is None
+    assert "not valid JSON" in narrative_error(cache)
+    assert get_narrative(facts, lambda p: GOOD, cache, force=True) is not None
+    assert narrative_error(cache) is None

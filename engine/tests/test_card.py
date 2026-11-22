@@ -79,3 +79,11 @@ def test_gh_unknown_line():
 def test_card_is_redacted():
     f = replace(bresciahub_like_facts(), notes=["server 203.0.113.7 mati"])
     assert "203.0.113.7" not in render_card(*args(f), today=TODAY)
+
+
+def test_failed_summary_is_explained():
+    f, badges, folders, _, history = args(bresciahub_like_facts(), narrative=None)
+    md = render_card(
+        f, badges, folders, None, history, today=TODAY, narrative_error="the model returned no text"
+    )
+    assert "AI summary failed" in md and "the model returned no text" in md

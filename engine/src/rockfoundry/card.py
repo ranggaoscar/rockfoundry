@@ -20,7 +20,7 @@ def _name(path: str) -> str:
     return PurePath(path.replace("\\", "/")).name
 
 
-def _position(f: ProjectFacts, narrative: Narrative | None, today: date) -> list[str]:
+def _position(f: ProjectFacts, narrative: Narrative | None, today: date, missing: str) -> list[str]:
     rows = []
     if f.release:
         rows.append(f"| ✅ **Last recorded release** | {fmt_date(f.release.date, True)} |")
@@ -42,7 +42,7 @@ def _position(f: ProjectFacts, narrative: Narrative | None, today: date) -> list
                 rows.append(f"| ❓ **Unknown** | Are those {len(merged)} PRs live yet? |")
     rows.append(f"| 🕒 **Last worked on** | {ago(f.last_activity, today)} |")
     out = ["| | |", "|---|---|", *rows, ""]
-    out.append(narrative.position if narrative else NOT_SUMMARIZED)
+    out.append(narrative.position if narrative else missing)
     return out
 
 
@@ -140,7 +140,13 @@ def render_card(
     narrative: Narrative | None,
     history: list[HistoryEvent],
     today: date,
+    narrative_error: str | None = None,
 ) -> str:
+    missing = (
+        f"_AI summary failed: {narrative_error}. Try Summarize with AI again._"
+        if narrative_error
+        else NOT_SUMMARIZED
+    )
     lines = [
         f"# {f.name} — Project card",
         "",
@@ -150,7 +156,7 @@ def render_card(
         "",
         "## What this is",
         "",
-        narrative.what_is if narrative else NOT_SUMMARIZED,
+        narrative.what_is if narrative else missing,
         "",
         f"Started **{fmt_date(f.first_commit, True)}** · {f.commit_count} changes in the main version"
         f" · {folders.total} work folders"
@@ -159,7 +165,7 @@ def render_card(
         "",
         "## Where it stands",
         "",
-        *_position(f, narrative, today),
+        *_position(f, narrative, today, missing),
         "",
         "## Hanging work",
         "",
@@ -171,7 +177,7 @@ def render_card(
         "",
         "## Do not touch",
         "",
-        *([f"- {item}" for item in narrative.do_not_touch] if narrative else [NOT_SUMMARIZED]),
+        *([f"- {item}" for item in narrative.do_not_touch] if narrative else [missing]),
         "",
         "## Decisions for you",
         "",
@@ -181,7 +187,7 @@ def render_card(
         "",
         "> Based on the project's own records only. No competitor research yet.",
         "",
-        *([f"{i}. {o}" for i, o in enumerate(narrative.opportunities, 1)] if narrative else [NOT_SUMMARIZED]),
+        *([f"{i}. {o}" for i, o in enumerate(narrative.opportunities, 1)] if narrative else [missing]),
         "",
         "## History",
         "",

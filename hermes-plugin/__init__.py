@@ -75,7 +75,10 @@ def _refresh_after_session(paths: set[Path]) -> None:
             touched.setdefault(slug, set()).add(_workdir_name(p, slug, store))
     for slug, folders in touched.items():
         scan(cfg, store, only=slug, gh=github_client(cfg))
-        store.append_history(slug, HistoryEvent(datetime.now(), "session", _session_summary(folders)))
+        text = _session_summary(folders)
+        recent = [e for e in store.read_history(slug, limit=20) if e.kind == "session" and e.text == text]
+        if not recent or (datetime.now() - recent[-1].at).total_seconds() > SESSION_DEDUP_MINUTES * 60:
+            store.append_history(slug, HistoryEvent(datetime.now(), "session", text))
         _rerender(store, slug)
 
 
@@ -111,9 +114,23 @@ def _list_text(store: ProjectStore) -> str:
     return "\n".join(lines)
 
 
-def make_command(ctx):
+# Reasoning models spend much of the budget thinking before they write; 1200 left them with nothing.
+NARRATIVE_MAX_TOKENS = 16000
+SESSION_DEDUP_MINUTES = 30
+
+
+def make_provider(ctx):
     def provider(prompt: str) -> str:
-        return ctx.llm.complete(messages=[{"role": "user", "content": prompt}], max_tokens=1200).text
+        result = ctx.llm.complete(
+            messages=[{"role": "user", "content": prompt}], max_tokens=NARRATIVE_MAX_TOKENS
+        )
+        return result.text or ""
+
+    return provider
+
+
+def make_command(ctx):
+    provider = make_provider(ctx)
 
     def handle(raw: str) -> str:
         store = _store()
@@ -150,8 +167,7 @@ def start_refresh(cfg, store: ProjectStore, only: str | None, provider) -> None:
 
 
 def make_tool(ctx):
-    def provider(prompt: str) -> str:
-        return ctx.llm.complete(messages=[{"role": "user", "content": prompt}], max_tokens=1200).text
+    provider = make_provider(ctx)
 
     def handle(args: dict | None = None, **_) -> str:
         cfg = load_config()

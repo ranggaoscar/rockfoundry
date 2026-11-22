@@ -16,6 +16,9 @@ version: "2.0.0"
 screenshots:
   - https://raw.githubusercontent.com/ranggaoscar/rockfoundry/<sha>/docs/images/gallery.png
   - https://raw.githubusercontent.com/ranggaoscar/rockfoundry/<sha>/docs/images/project.png
+known_issues:
+  - After installing or updating, restart the Hermes gateway (hermes gateway restart); a Desktop Rescan only reloads the Projects page.
+  - Sessions are linked to a project through the file paths Hermes tools touch; terminal-only work is not linked.
 capabilities:
   provides_tools:
     - rockfoundry_refresh_projects
