@@ -214,6 +214,42 @@ const DESK_CSS = `
 .rf-note { position:absolute; top: 18px; right: -8px; transform: rotate(4deg);
   background:#ffe16a; color:#4a3b00; font-size: 11.5px; font-weight: 700; padding: 5px 9px 6px;
   box-shadow: 0 6px 10px -4px rgba(74,59,0,.45); }
+.rf-page { padding-bottom: 56px; }
+.rf-page-inner { max-width: 940px; margin: 0 auto; padding: 22px 32px 0; }
+.rf-back { border:0; background: rgba(255,255,255,.65); color:#1f2a24; font: inherit; font-size: 13px; font-weight: 600;
+  padding: 7px 12px; border-radius: 20px; cursor:pointer; box-shadow: 0 1px 2px rgba(31,42,36,.15); }
+.rf-back:hover { background:#fff; }
+.rf-sheet { position:relative; margin-top: 28px; background:#fffdf8; border-radius: 4px 16px 16px 16px; padding: 26px 34px 34px;
+  --ui-text-tertiary:#5d6b62; --ui-stroke-secondary:#e7e0d2;
+  box-shadow: 0 1px 1px rgba(31,42,36,.10), 0 4px 8px rgba(31,42,36,.08), 0 30px 50px -20px rgba(31,42,36,.35); }
+.rf-sheet::before { content:""; position:absolute; top:-13px; left:0; width:34%; height:14px; background: var(--tab); border-radius: 6px 12px 0 0; }
+.rf-sheet-head { display:flex; gap: 22px; align-items:center; }
+.rf-sheet-cover { width: 112px; height: 112px; flex:none; border-radius: 14px; background: var(--cover); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.rf-sheet-cover img { max-width: 72%; max-height: 72%; object-fit: contain; }
+.rf-sheet .rf-title { font-size: 30px; overflow-wrap:anywhere; }
+.rf-actions { display:flex; flex-wrap:wrap; gap: 8px; margin-top: 14px; }
+.rf-btn { font: inherit; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 9px; cursor:pointer;
+  background:#fff; color:#1f2a24; border: 1px solid #d9d2c3; box-shadow: 0 1px 0 rgba(31,42,36,.06); }
+.rf-btn:hover { border-color:#b9b19f; }
+.rf-btn:disabled { opacity:.6; cursor: default; }
+.rf-btn-main { background:#1f5c41; color:#fff; border-color:#1f5c41; }
+.rf-btn-main:hover { background:#174a34; }
+.rf-btn:focus-visible, .rf-back:focus-visible { outline: 3px solid #2f7d57; outline-offset: 2px; }
+.rf-stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 18px; margin: 28px 0 8px; }
+.rf-stat { background:#f4f8f1; border-radius: 6px; padding: 12px 14px; transform: rotate(var(--tilt));
+  box-shadow: 0 1px 1px rgba(31,42,36,.08), 0 8px 14px -8px rgba(31,42,36,.28); border-top: 3px solid var(--tab); }
+.rf-stat-label { font-size: 12px; color:#5d6b62; }
+.rf-stat-value { font-size: 20px; font-weight: 800; letter-spacing:-0.01em; margin-top: 2px; }
+.rf-opps { margin: 26px 0 6px; background:#fff6c4; padding: 14px 18px 10px; border-radius: 3px; transform: rotate(-0.4deg);
+  box-shadow: 0 10px 18px -10px rgba(74,59,0,.45); }
+.rf-opps-title { margin: 0 0 6px; font-size: 15px; }
+.rf-opp { display:flex; align-items:center; justify-content:space-between; gap: 12px; padding: 8px 0; border-top: 1px dashed rgba(74,59,0,.25); font-size: 14px; }
+.rf-card-md { margin-top: 10px; font-size: 14.5px; line-height: 1.6; }
+.rf-card-md h3 { font-size: 17px !important; font-weight: 800 !important; margin-top: 30px !important; padding-bottom: 4px; border-bottom: 3px solid var(--tab); display:inline-block; }
+.rf-card-md table td { font-size: 13.5px; }
+.rf-card-md table td:first-child { white-space: nowrap; }
+.rf-card-md code { background:#f1ece1; padding: 1px 5px; border-radius: 4px; }
+@media (max-width: 640px) { .rf-sheet { padding: 20px; } .rf-sheet-head { flex-direction: column; align-items:flex-start; } }
 @media (prefers-reduced-motion: reduce) { .rf-card { transition:none; } }
 `
 const TILTS = ['-0.7deg', '0.5deg', '-0.25deg', '0.8deg', '-0.5deg', '0.3deg']
@@ -275,64 +311,78 @@ function Tile({ ctx, project, index, onOpen }) {
 
 const DESK_DOT = { active: '#2f9e62', slow: '#c9952e', sleeping: '#9aa39c' }
 
-function Stat({ label, value }) {
+function Stat({ label, value, tilt }) {
   return jsxs('div', {
-    style: { ...card, padding: '8px 12px', flex: 1, minWidth: 120 },
-    children: [jsx('div', { style: { ...muted, fontSize: 11 }, children: label }),
-               jsx('div', { style: { fontSize: 18, fontWeight: 600 }, children: value })]
+    className: 'rf-stat',
+    style: { '--tilt': tilt },
+    children: [jsx('div', { className: 'rf-stat-label', children: label }),
+               jsx('div', { className: 'rf-stat-value', children: value })]
   })
 }
 
 function ProjectPage({ ctx, project, onBack }) {
   const [detail, setDetail] = useState(null)
+  const [image, setImage] = useState(null)
   const [busy, setBusy] = useState(false)
   const load = useCallback(() => ctx.rest(`/projects/${project.slug}`).then(setDetail), [project.slug])
   useEffect(() => { load().catch(() => setDetail({ error: true })) }, [load])
-  if (!detail) return jsx('div', { style: { padding: 24, ...muted }, children: 'Memuat kartu…' })
-  if (detail.error) return jsx('div', { style: { padding: 24 }, children: 'Kartu gak bisa dimuat.' })
+  useEffect(() => {
+    if (!project.image_url) return
+    ctx.rest(project.image_url).then(r => setImage(r.data_url)).catch(() => {})
+  }, [project.image_url])
+  const hue = hueOf(project.name)
+  const shell = children => jsxs('div', { className: 'rf-desk rf-page', children: [jsx('style', { children: DESK_CSS }), children] })
+  if (!detail) return shell(jsx('div', { className: 'rf-sub', style: { padding: 32 }, children: 'Memuat kartu…' }))
+  if (detail.error) return shell(jsx('div', { style: { padding: 32 }, children: 'Kartu gak bisa dimuat. Coba Refresh atau buka lagi.' }))
   const p = prompts(project, detail)
   const f = detail.facts
-  const hanging = detail.folders.hanging.length
   const refresh = async () => {
     setBusy(true)
     try { await ctx.rest(`/projects/${project.slug}/refresh`, { method: 'POST' }); await load() }
     finally { setBusy(false) }
   }
   const opportunities = detail.narrative?.opportunities ?? []
-  return jsxs('div', {
-    style: { padding: '20px 28px', maxWidth: 880 },
-    children: [
-      jsx(Button, { onClick: onBack, children: '← Semua proyek' }),
-      jsxs('div', {
-        style: { display: 'flex', alignItems: 'center', gap: 14, margin: '18px 0 12px' },
-        children: [
-          jsx('div', { style: { ...card, width: 52, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }, children: initials(project.name) }),
-          jsxs('div', { children: [
-            jsx('div', { style: { fontSize: 20, fontWeight: 600 }, children: project.name }),
-            jsx('div', { style: { ...muted, fontSize: 13 }, children: project.what_is || 'Belum diringkas' })
+  return shell(jsxs('div', { className: 'rf-page-inner', children: [
+    jsx('button', { type: 'button', className: 'rf-back', onClick: onBack, children: '← Meja proyek' }),
+    jsxs('article', {
+      className: 'rf-sheet',
+      style: {
+        '--tab': `hsl(${hue} 45% 62%)`,
+        '--cover': image ? `hsl(${hue} 30% 94%)` : `hsl(${hue} 55% 86%)`,
+        '--ink': `hsl(${hue} 45% 28%)`
+      },
+      children: [
+        jsxs('header', { className: 'rf-sheet-head', children: [
+          jsx('div', {
+            className: 'rf-sheet-cover',
+            children: image ? jsx('img', { src: image, alt: '' }) : jsx('span', { className: 'rf-mono', children: initials(project.name) })
+          }),
+          jsxs('div', { style: { minWidth: 0 }, children: [
+            jsx('h1', { className: 'rf-title', children: project.name }),
+            jsx('div', { className: 'rf-sub', children: project.what_is || `${project.workdirs} folder kerja, terakhir dikerjain ${ago(project.last_activity)}` }),
+            jsxs('div', { className: 'rf-actions', children: [
+              jsx('button', { type: 'button', className: 'rf-btn rf-btn-main', onClick: () => startChat(ctx, p.resume), children: 'Lanjutin' }),
+              jsx('button', { type: 'button', className: 'rf-btn', onClick: () => startChat(ctx, p.brainstorm), children: 'Brainstorm' }),
+              jsx('button', { type: 'button', className: 'rf-btn', onClick: refresh, disabled: busy, children: busy ? 'Memperbarui…' : 'Refresh' })
+            ] })
           ] })
-        ]
-      }),
-      jsxs('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' }, children: [
-        jsx(Stat, { label: 'Live terakhir', value: f.release ? f.release.date : '—' }),
-        jsx(Stat, { label: 'Menggantung', value: `${hanging} kerjaan` }),
-        jsx(Stat, { label: 'Bisa diberesin', value: `${detail.folders.tidy.length} folder` })
-      ] }),
-      jsxs('div', { style: { display: 'flex', gap: 8, margin: '14px 0', flexWrap: 'wrap' }, children: [
-        jsx(Button, { onClick: () => startChat(ctx, p.resume), children: 'Lanjutin' }),
-        jsx(Button, { onClick: () => startChat(ctx, p.brainstorm), children: 'Brainstorm' }),
-        jsx(Button, { onClick: refresh, disabled: busy, children: busy ? 'Memperbarui…' : 'Refresh' })
-      ] }),
-      opportunities.length > 0 && jsxs('div', { style: { ...card, padding: '10px 14px', margin: '8px 0 4px' }, children: [
-        jsx('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 6 }, children: 'Peluang' }),
-        ...opportunities.map((o, i) => jsxs('div', {
-          style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '6px 0', borderTop: i ? '1px solid var(--ui-stroke-secondary)' : 'none', fontSize: 13 },
-          children: [jsx('span', { children: o }), jsx(Button, { onClick: () => startChat(ctx, p.opportunity(o)), children: 'Kerjain' })]
-        }, i))
-      ] }),
-      jsx(Blocks, { blocks: parseBlocks(detail.card_markdown.split('\n')), skipTitle: true })
-    ]
-  })
+        ] }),
+        jsxs('div', { className: 'rf-stats', children: [
+          jsx(Stat, { label: 'Live terakhir', value: f.release ? new Date(f.release.date + 'T12:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Belum tercatat', tilt: '-0.8deg' }),
+          jsx(Stat, { label: 'Menggantung', value: `${detail.folders.hanging.length} kerjaan`, tilt: '0.6deg' }),
+          jsx(Stat, { label: 'Bisa diberesin', value: `${detail.folders.tidy.length} folder`, tilt: '-0.3deg' })
+        ] }),
+        opportunities.length > 0 && jsxs('section', { className: 'rf-opps', children: [
+          jsx('h3', { className: 'rf-opps-title', children: 'Peluang' }),
+          ...opportunities.map((o, i) => jsxs('div', { className: 'rf-opp', children: [
+            jsx('span', { children: o }),
+            jsx('button', { type: 'button', className: 'rf-btn', onClick: () => startChat(ctx, p.opportunity(o)), children: 'Kerjain' })
+          ] }, i))
+        ] }),
+        jsx('div', { className: 'rf-card-md', children: jsx(Blocks, { blocks: parseBlocks(detail.card_markdown.split('\n')), skipTitle: true }) })
+      ]
+    })
+  ] }))
 }
 
 function Setup({ ctx, onDone }) {
