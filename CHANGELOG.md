@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0 — 2026-11-22
+
+Rock Foundry becomes a project memory for builders who work with AI agents.
+
+- New read-only engine and `rockfoundry` CLI: project discovery across worktrees and clones,
+  facts from git and GitHub, plain-language project cards, optional cached AI narrative.
+- New Hermes plugin: refresh after each session, `rockfoundry` skill, `/proyek` command, and a
+  Projects gallery in Hermes Desktop.
+- v1 (Product Studio, WebMCP, Work OS) archived at tag `legacy/product-studio`. Entries below
+  describe v1.
+
 ## STRONG DEMO P1 trust fixes
 
 - Replaced first-match domain regex with weighted multi-signal scoring (`scoreDiscoveryDomains`) so weak terms like `quotation` cannot misroute inventory/rental ideas to CRM.

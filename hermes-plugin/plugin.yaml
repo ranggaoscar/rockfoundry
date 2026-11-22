@@ -1,0 +1,7 @@
+name: rockfoundry
+version: 2.0.0
+description: Project memory for builders — a card and a gallery tile for every project Hermes works on.
+author: Rock Foundry contributors
+provides_hooks:
+  - post_tool_call
+  - on_session_end

@@ -1,24 +1,15 @@
 node_modules/
-**/node_modules/
-.next/
-**/.next/
+.pnpm-store/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
 dist/
-**/dist/
-playwright-report/
-test-results/
-coverage/
-*.log
-*.tsbuildinfo
-*.zip
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
-.env
-.env.*
-!.env.example
-
-# Local-only artifacts and preserved legacy working copies
-backups/
-working/
+build/
+*.egg-info/
+.superpowers/
+.env*
+# local-only folders from v1 (never tracked)
 archive/
+backups/

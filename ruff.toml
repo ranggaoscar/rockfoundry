@@ -1,0 +1,10 @@
+line-length = 110
+extend-exclude = ["hermes-plugin/vendor", "docs"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[lint.per-file-ignores]
+"**/tests/*" = ["E501", "E731"]
+"hermes-plugin/__init__.py" = ["E402"]
+"hermes-plugin/dashboard/plugin_api.py" = ["E402"]

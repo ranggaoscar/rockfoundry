@@ -1,0 +1,80 @@
+from types import SimpleNamespace
+
+from conftest import PLUGIN, load
+
+
+class FakeCtx:
+    def __init__(self):
+        self.hooks, self.commands, self.skills = {}, {}, {}
+        self.llm = SimpleNamespace(complete=lambda **k: SimpleNamespace(text="{}"))
+
+    def register_hook(self, name, fn):
+        self.hooks[name] = fn
+
+    def register_command(self, name, fn, description=""):
+        self.commands[name] = fn
+
+    def register_skill(self, name, text):
+        self.skills[name] = text
+
+
+def plugin():
+    mod = load("rockfoundry_plugin", PLUGIN / "__init__.py")
+    mod.run_in_background = lambda fn: fn()
+    return mod
+
+
+def test_register_wires_hooks_command_and_skill():
+    ctx = FakeCtx()
+    plugin().register(ctx)
+    assert {"post_tool_call", "on_session_end"} <= set(ctx.hooks)
+    assert "proyek" in ctx.commands
+    assert "card.md" in ctx.skills["rockfoundry"]
+
+
+def test_session_end_refreshes_project_and_logs_history(scanned, rf_home):
+    from rockfoundry.store import ProjectStore
+
+    ctx = FakeCtx()
+    plugin().register(ctx)
+    ctx.hooks["post_tool_call"](
+        tool_name="terminal",
+        args={"workdir": str(scanned / "HUB")},
+        result="",
+        task_id="t",
+        session_id="s9",
+    )
+    ctx.hooks["on_session_end"](session_id="s9", completed=True)
+    events = ProjectStore(rf_home).read_history("hub")
+    assert events and events[-1].kind == "session" and "HUB" in events[-1].text
+
+
+def test_hooks_never_raise(rf_home):
+    ctx = FakeCtx()
+    plugin().register(ctx)
+    ctx.hooks["post_tool_call"](tool_name="terminal", args=None, session_id=None)
+    ctx.hooks["on_session_end"]()
+
+
+def test_proyek_command(scanned):
+    ctx = FakeCtx()
+    plugin().register(ctx)
+    assert "hub" in ctx.commands["proyek"]("")
+    assert "Kartu Proyek" in ctx.commands["proyek"]("hub")
+    assert "gak ketemu" in ctx.commands["proyek"]("nope")
+    assert "hermes cron create" in ctx.commands["proyek"]("jadwal")
+
+
+def test_weekly_job_never_browses_repo_urls():
+    cron = plugin().WEEKLY_CRON.lower()
+    assert "homepage" not in cron and "browser" not in cron and "screenshot" not in cron
+
+
+def test_full_refresh_runs_in_background(scanned):
+    mod = load("rockfoundry_plugin_bg", PLUGIN / "__init__.py")
+    queued = []
+    mod.run_in_background = queued.append
+    ctx = FakeCtx()
+    mod.register(ctx)
+    reply = ctx.commands["proyek"]("refresh")
+    assert queued and "Lagi memperbarui" in reply

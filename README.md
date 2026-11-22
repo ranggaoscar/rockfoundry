@@ -1,226 +1,92 @@
-# RockFoundry
+# Rock Foundry
 
-**Decide what to build before your coding agent starts inventing it.**
+**A project memory for builders who work with AI agents.**
+Hermes (or any agent) does the work. Rock Foundry remembers it.
 
-RockFoundry is an open-source, local-first product intelligence system that helps builders turn rough ideas into explicit product decisions, product documentation, interactive prototypes, and coding-agent-ready handoffs.
+When you build with AI agents, every task gets its own work folder, branch and chat. After a few
+months nobody remembers where a project started, what is live, what is half-done, or what must
+never be touched — not you, and not the agent that opens the next session. Rock Foundry reads your
+projects (read-only) and keeps one plain-language **project card** per project, plus a
+**Projects gallery** inside Hermes Desktop.
 
-RockFoundry does **not** primarily write the production application. It works before implementation, so your coding agent starts with confirmed product truth instead of filling important gaps with guesses.
+> Looking for v1 (Product Studio, WebMCP, Work OS)? It is archived at the
+> [`legacy/product-studio`](https://github.com/ranggaoscar/rockfoundry/tree/legacy/product-studio) tag.
 
-## See the product
+Bahasa Indonesia: [README.id.md](README.id.md)
 
-<p align="center">
-  <img src="public/readme/home-rock-foundry.png" alt="RockFoundry home — product intelligence before code" width="900">
-</p>
+## What a card tells you
 
-<p align="center"><em>Turn an early idea into decisions your coding agent can trust.</em></p>
+- **What this is** and when it started
+- **Where it stands**: last recorded release, what was merged since, what nobody knows yet
+- **Hanging work**: things built recently that never reached the main version
+- **Folder cleanup**: how many work folders exist, which are already live and safe to tidy
+- **Do not touch**: rules taken from the project's own docs (`AGENTS.md`, `CLAUDE.md`, release notes)
+- **Decisions waiting for you**, **opportunities**, and a **short history**
+- A collapsed **technical block for agents**
 
-| Product workspace                                             | Design generation                                                      |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| ![RockFoundry project workspace](public/readme/dashboard.png) | ![RockFoundry design generation](public/readme/dashboard-generate.png) |
-
-## WebMCP Challenge submission
-
-### Pre-existing RockFoundry
-
-RockFoundry existed before this challenge as a local-first product intelligence workspace: it turns a rough idea into product context, a Product Draft, an interactive Design Preview, and coding-agent-ready handoff material.
-
-- Baseline tag: [`webmcp-baseline-2026-08-27`](https://github.com/ranggaoscar/rockfoundry/tree/webmcp-baseline-2026-08-27)
-- Live demo: [foundry.rockbase.web.id](https://foundry.rockbase.web.id)
-
-### Added for WebMCP Challenge
-
-WebMCP was meaningfully added during the challenge using the native imperative API, `document.modelContext.registerTool()`. Tools are registered only for the relevant page and cleaned up with `AbortController` when that page unmounts:
-
-- Homepage (`/`)
-  - `rockfoundry_start_product`
-- Open project page (`/project/{id}`)
-  - `rockfoundry_inspect_project`
-  - `rockfoundry_generate_product_draft`
-  - `rockfoundry_refine_product`
-  - `rockfoundry_generate_design_preview`
-  - `rockfoundry_prepare_handoff`
-
-The tools reuse RockFoundry's existing APIs and client flows. Product Draft, Design Preview, and final handoff calls retain their existing progress UI and PackageJob behavior; WebMCP adds agent access rather than a parallel product pipeline. Product Package / handoff is independent of the optional AI prototype.
-
-### Judge test flow
-
-1. Open [the live demo](https://foundry.rockbase.web.id).
-2. Call `rockfoundry_start_product` with a short product idea.
-3. On the project page, call `rockfoundry_inspect_project`; refine with `rockfoundry_refine_product` if important product truth is missing.
-4. Call `rockfoundry_generate_product_draft`, then inspect until the Product Draft is current.
-5. Call `rockfoundry_generate_design_preview` when the current draft permits it; this optional visual reference is not a handoff requirement.
-6. Call `rockfoundry_prepare_handoff` to start or reuse the existing Product Package job.
-7. Call `rockfoundry_inspect_project` again and verify `handoff.status`, `handoff.stage`, and `handoff.ready`.
-
-```text
-Idea
-  ↓
-Discover
-  ↓
-Decide
-  ↓
-Design
-  ↓
-Preview & Revise
-  ↓
-Handoff
-  ↓
-Coding Agent
-```
-
-## Why RockFoundry?
-
-A user says:
-
-> Build a CRM for five brands.
-
-A coding agent still needs to guess:
-
-- whether customer identity is shared across brands;
-- which roles can see which records;
-- who owns a new lead;
-- how quotations carry brand ownership;
-- what happens to duplicate contacts.
-
-Those guesses become product behavior. RockFoundry discovers and records the missing decisions before implementation.
-
-Once enough product truth exists, RockFoundry generates the Product Package and coding-agent handoff. An interactive prototype is optional: you can generate, revise, and approve it as a visual reference without making it a handoff prerequisite.
+Example from a real project with 104 agent work folders across two drives: "62 live, 55 safe to
+tidy, 11 need a check first, 9 PRs merged since the last release — are they live?"
 
 ## How it works
 
-1. Describe your idea.
-2. Brainstorm with RockFoundry.
-3. Confirm important product decisions.
-4. Click **Build product package**.
-5. Review the BRD, PRD, ERD, and handoff material.
-6. Optionally generate and revise an interactive prototype.
-7. Download the handoff.
-8. Give the folder to your coding agent.
+1. **Facts without AI.** The engine runs read-only `git` (and optionally `gh`) commands over the
+   folders you choose, and groups every worktree and clone of the same repo into one project.
+2. **Narrative with AI, optional and cached.** "What is this", "do not touch" and "opportunities"
+   are written by a model only when the facts change. Inside Hermes it uses the model you already
+   use; from the CLI it can use `claude -p` with every tool disabled.
+3. **Cards live outside your projects**, in `~/.rockfoundry/projects/<slug>/`.
+4. **Hermes keeps them fresh.** After each Hermes session, the projects it touched are rescanned.
 
-## What your coding agent receives
+## Safety
 
-```text
-my-product/
-├── README.md
-├── AGENT_HANDOFF.md
-│
-├── product/
-│   ├── BRD.md
-│   ├── PRD.md
-│   └── ERD.md
-│
-├── decisions/
-│   ├── decisions.json
-│   ├── DECISIONS.md
-│   ├── DO_NOT_INVENT.md
-│   ├── INVARIANTS.md
-│   └── READINESS.md
-│
-└── design/
-    ├── DESIGN_SPEC.json
-    ├── SCREEN_MAP.json
-    ├── DESIGN_DECISIONS.md
-    └── prototype/                 # optional AI visual reference
-        ├── index.html
-        ├── styles.css
-        └── app.js
-```
+- Never writes inside a project; never runs `git fetch` unless you ask (`--fetch`).
+- Repo config that could make git run a program (custom filters, hooks, credential helpers) is
+  detected, and that repo is skipped for status checks.
+- Files that look like secrets (`.env`, `*credential*`, `*token*`, keys) are never opened.
+- IP addresses, keys and tokens are masked in everything Rock Foundry writes or serves.
+- Project docs reach models as data, never as instructions.
 
-Product truth is authoritative. The approved prototype is the visual and interaction reference. A coding agent may implement it with a different production stack, but must not invent unresolved product behavior.
+Details: [docs/safety.md](docs/safety.md).
 
-## Quick start
+## Install
 
-**Requirements:** Node.js 20+ and pnpm via Corepack.
+Requirements: Python 3.11+ and git. Optional: GitHub CLI (`gh`, logged in) and Hermes Agent.
+
+**Hermes plugin** (the engine is bundled inside):
 
 ```bash
 git clone https://github.com/ranggaoscar/rockfoundry.git
-cd rockfoundry
-corepack enable
-pnpm install
-pnpm dev
+cp -r rockfoundry/hermes-plugin ~/.hermes/plugins/rockfoundry
+hermes plugins enable rockfoundry
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open Hermes Desktop, pick **Projects** in the sidebar and choose your project folders.
+In any Hermes chat: `/proyek`, `/proyek <name>`, `/proyek refresh`, `/proyek jadwal`.
+The weekly schedule from `/proyek jadwal` calls the `rockfoundry` CLI, so install it too (below).
 
-- Local-first: projects use SQLite on your machine.
-- No account required.
-- No Docker required for a normal local run.
-- `pnpm dev` runs the required local Prisma setup automatically.
-- **Offline Mock** works without model credentials.
-- Bring your own model from **Settings** when you want real AI generation.
+**CLI only**:
 
-## AI provider behavior
+```bash
+uv tool install "git+https://github.com/ranggaoscar/rockfoundry#subdirectory=engine"
+rockfoundry scan                 # first run asks which folders to scan
+rockfoundry list
+rockfoundry card <slug>
+rockfoundry note <slug> "Client asked for a chat widget"
+rockfoundry scan --llm claude    # also write the AI sections
+rockfoundry doctor
+```
 
-### Offline Mock
+## Roadmap
 
-- deterministic and network-free;
-- useful for evaluation, testing, and local demos;
-- generates the established mock discovery and prototype behavior without credentials.
+1. **Project memory, cards and gallery** ← this release
+2. Project inbox: user feedback, issues and contributor PRs, triaged by Hermes
+3. Numbers: users and revenue per project
+4. Opportunities ranked by real data
 
-### OpenAI-compatible provider
+## Development
 
-With a configured OpenAI-compatible provider, RockFoundry uses the selected model for discovery. Design Studio generates a unique `DesignSpec` and an `index.html`, `styles.css`, and `app.js` prototype. Conversational design revisions can regenerate that prototype.
-
-Generated prototypes are sandboxed and validated. They are an interactive product reference, **not** production application architecture. Provider credentials stay in local server-side configuration and never enter prototype artifacts or exported handoffs.
-
-See [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md) for supported provider setup and behavior.
-
-## What makes it different
-
-| Tool                               | Primary job                                                                                                               |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| ChatGPT / Claude                   | Brainstorm                                                                                                                |
-| PRD generators                     | Produce documents                                                                                                         |
-| v0 / Lovable / Bolt-style builders | Start building UI or apps                                                                                                 |
-| Coding agents                      | Implement software                                                                                                        |
-| **RockFoundry**                    | Discover missing product decisions, create product truth, prototype the approved product, and hand it to the coding agent |
-
-## Current capabilities
-
-- conversational product discovery;
-- Decision Debt;
-- product decision graph;
-- research and reference evidence;
-- BRD / PRD / ERD generation;
-- Design Studio;
-- AI-generated interactive prototypes;
-- conversational design revision;
-- approved design handoff;
-- local-first SQLite;
-- BYOK / Offline Mock;
-- coding-agent-ready ZIP export.
-
-## Still intentionally out of scope
-
-- production application generation;
-- hosted collaboration;
-- billing;
-- multi-user SaaS features.
-
-## Local-first and privacy
-
-- Projects and SQLite stay on your machine.
-- No RockFoundry login or hosted backend is required.
-- Public URLs and repositories are treated as untrusted reference evidence.
-- Provider keys are kept outside project data, generated documents, logs, and exports.
-
-Read [docs/PRIVACY.md](docs/PRIVACY.md) for the privacy model.
-
-## Docs
-
-| Document                                     | Use                      |
-| -------------------------------------------- | ------------------------ |
-| [README_START_HERE.md](README_START_HERE.md) | contributor entry point  |
-| [PRD.md](PRD.md)                             | current product contract |
-| [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md) | provider setup           |
-| [docs/PRIVACY.md](docs/PRIVACY.md)           | privacy model            |
-| [CONTRIBUTING.md](CONTRIBUTING.md)           | contribution guide       |
-| [LICENSE](LICENSE)                           | license                  |
+See [CONTRIBUTING.md](CONTRIBUTING.md). Card format: [docs/card-format.md](docs/card-format.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
-
-**Hackathon Release Candidate — Design Studio V1**
-
-**Find the missing decisions before they become bad code.**
+MIT
