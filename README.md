@@ -1,4 +1,8 @@
+<p align="center"><img src="assets/logo.svg" width="96" alt="Rock Foundry logo"></p>
+
 # Rock Foundry
+
+![Rock Foundry: project memory for builders who work with AI agents](docs/images/banner.png)
 
 **A project memory for builders who work with AI agents.**
 Hermes (or any agent) does the work. Rock Foundry remembers it.

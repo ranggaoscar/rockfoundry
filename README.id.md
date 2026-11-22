@@ -1,4 +1,8 @@
+<p align="center"><img src="assets/logo.svg" width="96" alt="Logo Rock Foundry"></p>
+
 # Rock Foundry
+
+![Rock Foundry: buku proyek buat builder yang kerja bareng AI agent](docs/images/banner.png)
 
 **Buku proyek buat builder yang kerja bareng AI agent.**
 Hermes (atau agent apa pun) yang ngerjain. Rock Foundry yang inget.

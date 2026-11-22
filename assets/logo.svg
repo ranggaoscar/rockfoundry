@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Rock Foundry">
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity=".38" stroke-width="2"/>
+    </pattern>
+    <clipPath id="tile"><rect width="512" height="512" rx="116"/></clipPath>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#1f2a24" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="512" height="512" fill="#d3ddcd"/>
+    <rect width="512" height="512" fill="url(#grid)"/>
+  </g>
+  <g transform="rotate(-5 256 278)" filter="url(#lift)">
+    <path d="M86 140 q0-18 18-18 h108 q13 0 20 11 l14 23 H86 Z" fill="#6fc48f"/>
+    <rect x="70" y="150" width="372" height="262" rx="26" fill="#fffdf8"/>
+  </g>
+  <g transform="rotate(-5 256 278)">
+    <polygon points="164,343 187,250 257,205 335,234 356,320 294,367" fill="#1f5c41"/>
+    <polygon points="187,250 257,205 252,286" fill="#2f7d57"/>
+    <polygon points="257,205 335,234 252,286" fill="#3a9468"/>
+    <polygon points="335,234 356,320 252,286" fill="#2a6f4e"/>
+    <polygon points="164,343 187,250 252,286" fill="#24654a"/>
+  </g>
+</svg>
