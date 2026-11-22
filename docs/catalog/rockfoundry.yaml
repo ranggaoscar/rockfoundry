@@ -13,6 +13,7 @@ category: desktop
 requires_hermes: ">=0.23.3"
 docs_url: https://github.com/ranggaoscar/rockfoundry#readme
 version: "2.0.0"
+image: https://raw.githubusercontent.com/ranggaoscar/rockfoundry/<sha>/docs/images/banner.png
 screenshots:
   - https://raw.githubusercontent.com/ranggaoscar/rockfoundry/<sha>/docs/images/gallery.png
   - https://raw.githubusercontent.com/ranggaoscar/rockfoundry/<sha>/docs/images/project.png
