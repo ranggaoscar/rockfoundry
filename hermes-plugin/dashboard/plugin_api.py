@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import base64
+import contextvars
 import mimetypes
 import sys
+import threading
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "vendor"))  # bundled engine
@@ -143,5 +145,52 @@ async def post_setup(body: SetupBody):
     missing = [str(r) for r in roots if not r.is_dir()]
     if not roots or missing:
         raise HTTPException(status_code=400, detail={"missing": missing})
-    write_default_config(roots)
-    return {"configured": True, "roots": [r.as_posix() for r in roots]}
+    cfg = write_default_config(roots)
+    _start_full_scan(cfg)  # the first scan starts right away so the gallery fills in
+    return {"configured": True, "roots": [r.as_posix() for r in roots], "scanning": True}
+
+
+# ---- full scans with progress (one at a time) ----
+
+_progress_lock = threading.Lock()
+PROGRESS: dict = {"running": False, "done": 0, "total": 0, "current": "", "finished_at": None}
+
+
+def run_in_background(fn) -> None:
+    ctx = contextvars.copy_context()  # keep the profile's secret scope under multiplexing gateways
+    threading.Thread(target=ctx.run, args=(fn,), daemon=True, name="rockfoundry-scan").start()
+
+
+def _start_full_scan(cfg) -> bool:
+    with _progress_lock:
+        if PROGRESS["running"]:
+            return False
+        PROGRESS.update(running=True, done=0, total=0, current="", finished_at=None)
+
+    def on_progress(done: int, total: int, name: str) -> None:
+        PROGRESS.update(done=done, total=total, current=name)
+
+    def job() -> None:
+        try:
+            scan(cfg, _store(), gh=github_client(cfg), on_progress=on_progress)
+        finally:
+            PROGRESS.update(
+                running=False, current="", finished_at=datetime.now().isoformat(timespec="seconds")
+            )
+
+    run_in_background(job)
+    return True
+
+
+@router.get("/scan")
+async def get_scan():
+    return dict(PROGRESS)
+
+
+@router.post("/scan")
+async def post_scan():
+    cfg = load_config()
+    if cfg is None:
+        raise HTTPException(status_code=409, detail="No config yet")
+    started = _start_full_scan(cfg)
+    return {"started": started, **PROGRESS}

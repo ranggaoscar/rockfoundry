@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -80,12 +81,16 @@ def scan(
     fetch: bool = False,
     today: date | None = None,
     force_narrative: bool = False,
+    on_progress: Callable[[int, int, str], None] | None = None,
 ) -> list[ScanResult]:
+    """Refresh projects. ``on_progress(done, total, current_name)`` is called before each
+    project and once more at the end with an empty name."""
     today = today or date.today()
     results: list[ScanResult] = []
-    for project in discover_projects(cfg):
-        if only and project.slug != only:
-            continue
+    projects = [p for p in discover_projects(cfg) if not only or p.slug == only]
+    for done, project in enumerate(projects):
+        if on_progress:
+            on_progress(done, len(projects), project.name)
         started = time.perf_counter()
         try:
             previous = store.read_facts(project.slug)
@@ -119,6 +124,8 @@ def scan(
             results.append(
                 ScanResult(project.slug, project.name, False, redact(str(exc)), time.perf_counter() - started)
             )
+    if on_progress:
+        on_progress(len(projects), len(projects), "")
     return results
 
 

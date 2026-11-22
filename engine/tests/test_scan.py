@@ -102,3 +102,15 @@ def test_cli_never_prints_remote_credentials(two_projects_cfg, rf_home, capsys):
     out = capsys.readouterr().out
     assert "tok999" not in out
     assert "tok999" not in (rf_home / "projects" / "hub" / "facts.json").read_text(encoding="utf-8")
+
+
+def test_scan_reports_progress(two_projects_cfg, rf_home):
+    seen = []
+    scan(
+        two_projects_cfg,
+        ProjectStore(rf_home),
+        today=TODAY,
+        on_progress=lambda d, t, n: seen.append((d, t, n)),
+    )
+    assert seen[0] == (0, 2, "hub") and seen[-1] == (2, 2, "")
+    assert [d for d, _, _ in seen] == [0, 1, 2]

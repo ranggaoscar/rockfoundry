@@ -65,3 +65,27 @@ def test_image_returned_as_data_url(scanned, client, rf_home):
     body = client.get("/projects/hub/image").json()
     assert body["data_url"].startswith("data:image/svg+xml;base64,")
     assert client.get("/projects").json()[0]["image_url"] == "/projects/hub/image"
+
+
+@pytest.fixture
+def sync_api():
+    api = load("rockfoundry_api_sync", PLUGIN / "dashboard" / "plugin_api.py")
+    api.run_in_background = lambda fn: fn()
+    app = FastAPI()
+    app.include_router(api.router)
+    return TestClient(app)
+
+
+def test_setup_starts_first_scan_and_reports_progress(rf_home, tmp_path, sync_api):
+    from gitfixtures import make_repo
+
+    make_repo(tmp_path / "work" / "HUB", remote="https://github.com/o/hub.git", date="2026-11-20")
+    body = sync_api.post("/setup", json={"roots": [str(tmp_path / "work")]}).json()
+    assert body["scanning"] is True
+    progress = sync_api.get("/scan").json()
+    assert progress["running"] is False and progress["done"] == progress["total"] == 1
+    assert [p["slug"] for p in sync_api.get("/projects").json()] == ["hub"]
+
+
+def test_rescan_needs_config(rf_home, sync_api):
+    assert sync_api.post("/scan").status_code == 409

@@ -250,7 +250,24 @@ const DESK_CSS = `
 .rf-card-md table td:first-child { white-space: nowrap; }
 .rf-card-md code { background:#f1ece1; padding: 1px 5px; border-radius: 4px; }
 @media (max-width: 640px) { .rf-sheet { padding: 20px; } .rf-sheet-head { flex-direction: column; align-items:flex-start; } }
-@media (prefers-reduced-motion: reduce) { .rf-card { transition:none; } }
+.rf-head-side { display:flex; align-items:center; gap: 14px; }
+.rf-tools { display:flex; flex-wrap:wrap; align-items:center; gap: 12px 16px; padding: 10px 32px 0; }
+.rf-input { font: inherit; font-size: 14px; color:#1f2a24; background:#fffdf8; border: 1px solid #d9d2c3; border-radius: 10px; padding: 9px 12px; width: 100%; box-sizing: border-box; margin-top: 12px; }
+.rf-input:focus { outline: 3px solid #2f7d57; outline-offset: 1px; }
+.rf-search { width: 260px; margin-top: 0; box-shadow: 0 1px 0 rgba(31,42,36,.06); }
+.rf-chips { display:flex; flex-wrap:wrap; gap: 6px; }
+.rf-chip { font: inherit; font-size: 12.5px; font-weight: 600; color:#3d4b43; background: rgba(255,255,255,.6); border: 1px solid transparent; border-radius: 20px; padding: 6px 12px; cursor:pointer; }
+.rf-chip:hover { background:#fff; }
+.rf-chip.on { background:#1f5c41; color:#fff; }
+.rf-chip:focus-visible { outline: 3px solid #2f7d57; outline-offset: 2px; }
+.rf-progress { flex: 1; min-width: 260px; background:#fffdf8; border-radius: 10px; padding: 10px 14px; box-shadow: 0 1px 1px rgba(31,42,36,.08), 0 8px 14px -8px rgba(31,42,36,.25); }
+.rf-progress-text { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.rf-bar { height: 6px; background:#e6eee2; border-radius: 6px; overflow:hidden; }
+.rf-bar-fill { height: 100%; background:#2f9e62; border-radius: 6px; transition: width .4s ease; }
+.rf-empty { margin: 30px 32px 0; padding: 18px 20px; background: rgba(255,255,255,.6); border-radius: 12px; font-size: 14px; color:#3d4b43; }
+.rf-error { color:#a3302a; font-size: 13px; margin-top: 8px; }
+@media (max-width: 640px) { .rf-head { flex-direction: column; gap: 8px; } .rf-search { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .rf-card, .rf-bar-fill { transition:none; } }
 `
 const TILTS = ['-0.7deg', '0.5deg', '-0.25deg', '0.8deg', '-0.5deg', '0.3deg']
 
@@ -395,62 +412,138 @@ function ProjectPage({ ctx, project, onBack }) {
 function Setup({ ctx, onDone }) {
   const [text, setText] = useState('')
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const save = async () => {
     const roots = text.split('\n').map(s => s.trim()).filter(Boolean)
     if (!roots.length) return setError('Add at least one folder.')
+    setBusy(true)
     try {
       await ctx.rest('/setup', { method: 'POST', body: { roots } })
       onDone()
     } catch {
       setError('Some folders were not found. Check the paths.')
+    } finally {
+      setBusy(false)
     }
   }
-  return jsxs('div', { style: { padding: 28, maxWidth: 560 }, children: [
-    jsx('div', { style: { fontSize: 18, fontWeight: 600 }, children: 'Where are your projects?' }),
-    jsx('p', { style: { ...muted, fontSize: 13 }, children: 'One folder per line. Rock Foundry only reads; it never changes your projects.' }),
-    jsx('textarea', {
-      value: text,
-      onChange: e => { setText(e.target.value); setError('') },
-      placeholder: 'C:/AI PROJECTS',
-      rows: 4,
-      style: { width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--ui-stroke-secondary)', background: 'transparent', color: 'inherit', fontFamily: 'inherit' }
-    }),
-    error && jsx('div', { style: { color: 'var(--ui-danger, #d33)', fontSize: 12, marginTop: 6 }, children: error }),
-    jsx('div', { style: { marginTop: 10 }, children: jsx(Button, { onClick: save, children: 'Save and scan' }) })
+  return jsxs('div', { className: 'rf-desk rf-page', children: [
+    jsx('style', { children: DESK_CSS }),
+    jsx('div', { className: 'rf-page-inner', children: jsxs('div', { className: 'rf-sheet', style: { '--tab': '#6fc48f', maxWidth: 620 }, children: [
+      jsx('h1', { className: 'rf-title', children: 'Where are your projects?' }),
+      jsx('p', { className: 'rf-sub', children: 'One folder per line. Rock Foundry only reads; it never changes your projects.' }),
+      jsx('textarea', {
+        className: 'rf-input',
+        value: text,
+        onChange: e => { setText(e.target.value); setError('') },
+        placeholder: 'C:/Projects',
+        rows: 4,
+        'aria-label': 'Project folders, one per line'
+      }),
+      error && jsx('div', { className: 'rf-error', role: 'alert', children: error }),
+      jsx('div', { className: 'rf-actions', children: jsx('button', {
+        type: 'button', className: 'rf-btn rf-btn-main', onClick: save, disabled: busy,
+        children: busy ? 'Saving…' : 'Save and scan'
+      }) })
+    ] }) })
+  ] })
+}
+
+const FILTERS = [
+  { id: 'all', label: 'All', test: () => true },
+  { id: 'active', label: 'Active', test: p => p.activity === 'active' },
+  { id: 'slow', label: 'Slow', test: p => p.activity === 'slow' },
+  { id: 'sleeping', label: 'Asleep', test: p => p.activity === 'sleeping' },
+  { id: 'decide', label: 'To decide', test: p => p.badges.length > 0 }
+]
+
+function ScanProgress({ scan }) {
+  const pct = scan.total ? Math.round((scan.done / scan.total) * 100) : 0
+  return jsxs('div', { className: 'rf-progress', role: 'status', 'aria-live': 'polite', children: [
+    jsx('div', { className: 'rf-progress-text', children: scan.total
+      ? `Scanning ${Math.min(scan.done + 1, scan.total)} of ${scan.total}${scan.current ? ` · ${scan.current}` : ''}`
+      : 'Finding your projects…' }),
+    jsx('div', { className: 'rf-bar', children: jsx('div', { className: 'rf-bar-fill', style: { width: `${pct}%` } }) })
   ] })
 }
 
 function ProjectsPage({ ctx }) {
   const [state, setState] = useState({ phase: 'loading' })
+  const [scan, setScan] = useState({ running: false })
   const [open, setOpen] = useState(null)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
+
+  const loadProjects = useCallback(async () => {
+    setState({ phase: 'ready', projects: await ctx.rest('/projects') })
+  }, [])
+
+  const watchScan = useCallback(async () => {
+    try {
+      const s = await ctx.rest('/scan')
+      setScan(s)
+      if (s.running) {
+        setTimeout(watchScan, 1000)
+      } else {
+        await loadProjects()
+      }
+    } catch {
+      setScan({ running: false })
+    }
+  }, [loadProjects])
+
   const load = useCallback(async () => {
     try {
       const setup = await ctx.rest('/setup')
       if (!setup.configured) return setState({ phase: 'setup' })
-      setState({ phase: 'ready', projects: await ctx.rest('/projects') })
+      await loadProjects()
+      watchScan()
     } catch {
       setState({ phase: 'error' })
     }
-  }, [])
+  }, [loadProjects, watchScan])
   useEffect(() => { load() }, [load])
 
-  if (state.phase === 'loading') return jsx('div', { style: { padding: 24, ...muted }, children: 'Loading projects…' })
-  if (state.phase === 'error') return jsx('div', { style: { padding: 24 }, children: 'Could not reach Rock Foundry. Try restarting Hermes.' })
+  const rescan = async () => {
+    try { await ctx.rest('/scan', { method: 'POST' }) } finally { watchScan() }
+  }
+
+  const shell = children => jsxs('div', { className: 'rf-desk', children: [jsx('style', { children: DESK_CSS }), ...children] })
+  if (state.phase === 'loading') return shell([jsx('div', { className: 'rf-sub', style: { padding: 32 }, children: 'Loading projects…' })])
+  if (state.phase === 'error') return shell([jsx('div', { style: { padding: 32 }, children: 'Could not reach Rock Foundry. Restart the Hermes gateway, then open this page again.' })])
   if (state.phase === 'setup') return jsx(Setup, { ctx, onDone: load })
-  if (open) return jsx(ProjectPage, { ctx, project: open, onBack: () => { setOpen(null); load() } })
-  if (!state.projects.length)
-    return jsx('div', { style: { padding: 24 }, children: 'No projects yet. Work in a project folder with Hermes, or run /project refresh.' })
-  return jsxs('div', { className: 'rf-desk', children: [
-    jsx('style', { children: DESK_CSS }),
+  if (open) return jsx(ProjectPage, { ctx, project: open, onBack: () => { setOpen(null); loadProjects() } })
+
+  const q = query.trim().toLowerCase()
+  const test = FILTERS.find(f => f.id === filter).test
+  const shown = state.projects.filter(p => test(p) && (!q || `${p.name} ${p.what_is || ''}`.toLowerCase().includes(q)))
+
+  return shell([
     jsxs('div', { className: 'rf-head', children: [
       jsx('h1', { className: 'rf-title', children: 'Project desk' }),
-      jsx('div', { className: 'rf-sub', children: `${state.projects.length} projects, most recently worked on first` })
-    ] }),
+      jsxs('div', { className: 'rf-head-side', children: [
+        jsx('span', { className: 'rf-sub', children: `${state.projects.length} projects, most recently worked on first` }),
+        jsx('button', { type: 'button', className: 'rf-btn', onClick: rescan, disabled: scan.running, children: scan.running ? 'Scanning…' : 'Rescan all' })
+      ] })
+    ] }, 'head'),
+    scan.running && jsx('div', { className: 'rf-tools', children: jsx(ScanProgress, { scan }) }, 'progress'),
+    state.projects.length > 0 && jsxs('div', { className: 'rf-tools', children: [
+      jsx('input', {
+        type: 'search', className: 'rf-input rf-search', value: query, placeholder: 'Search projects',
+        'aria-label': 'Search projects', onChange: e => setQuery(e.target.value)
+      }),
+      jsx('div', { className: 'rf-chips', role: 'group', 'aria-label': 'Filter projects', children: FILTERS.map(f => jsx('button', {
+        type: 'button', className: `rf-chip${filter === f.id ? ' on' : ''}`, 'aria-pressed': filter === f.id,
+        onClick: () => setFilter(f.id),
+        children: `${f.label} ${state.projects.filter(f.test).length}`
+      }, f.id)) })
+    ] }, 'tools'),
+    !state.projects.length && !scan.running && jsx('div', { className: 'rf-empty', children: 'No projects found yet. Check your folders with Rescan all, or work in a project folder with Hermes.' }, 'empty'),
+    state.projects.length > 0 && !shown.length && jsx('div', { className: 'rf-empty', children: 'No projects match. Clear the search or pick another filter.' }, 'nomatch'),
     jsx('div', {
       className: 'rf-grid',
-      children: state.projects.map((p, i) => jsx(Tile, { ctx, project: p, index: i, onOpen: () => setOpen(p) }, p.slug))
-    })
-  ] })
+      children: shown.map((p, i) => jsx(Tile, { ctx, project: p, index: i, onOpen: () => setOpen(p) }, p.slug))
+    }, 'grid')
+  ])
 }
 
 export default {

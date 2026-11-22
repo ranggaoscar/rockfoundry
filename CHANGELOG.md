@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0 — 2026-11-23
+
+- The first scan starts as soon as you choose your project folders, with a progress bar
+  ("Scanning 12 of 40 · BresciaHub"); **Rescan all** runs a full scan from the gallery.
+- Search and filters (All, Active, Slow, Asleep, To decide) in the Projects gallery.
+- The setup screen uses the same workbench look as the gallery.
+
 ## 2.0.0 — 2026-11-22
 
 Rock Foundry becomes a project memory for builders who work with AI agents.
