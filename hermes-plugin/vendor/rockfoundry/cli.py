@@ -20,7 +20,7 @@ from rockfoundry.fmt import ago
 from rockfoundry.gh import GhClient
 from rockfoundry.gitutil import try_git
 from rockfoundry.narrative import make_provider
-from rockfoundry.scan import render_from_store, scan
+from rockfoundry.scan import github_client, render_from_store, scan
 from rockfoundry.store import HistoryEvent, ProjectStore
 
 NO_CONFIG = "No config yet. Run `rockfoundry scan` in a terminal to choose your project folders."
@@ -52,7 +52,7 @@ def _cmd_scan(args, store: ProjectStore) -> int:
         store,
         only=args.project,
         provider=make_provider(args.llm),
-        gh=GhClient(),
+        gh=github_client(cfg),
         fetch=args.fetch,
         force_narrative=args.force_narrative,
     )

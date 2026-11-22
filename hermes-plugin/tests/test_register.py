@@ -6,11 +6,15 @@ from conftest import PLUGIN, load
 
 class FakeCtx:
     def __init__(self):
-        self.hooks, self.commands, self.skills = {}, {}, {}
+        self.hooks, self.commands, self.skills, self.tools = {}, {}, {}, {}
         self.llm = SimpleNamespace(complete=lambda **k: SimpleNamespace(text="{}"))
 
     def register_hook(self, name, fn):
         self.hooks[name] = fn
+
+    def register_tool(self, name, toolset, schema, handler, **kwargs):
+        assert schema["name"] == name
+        self.tools[name] = handler
 
     def register_command(self, name, fn, description=""):
         self.commands[name] = fn
@@ -83,3 +87,26 @@ def test_full_refresh_runs_in_background(scanned):
     mod.register(ctx)
     reply = ctx.commands["project"]("refresh")
     assert queued and "Refreshing" in reply
+
+
+def test_refresh_tool_runs_in_background(scanned):
+    import json
+
+    mod = load("rockfoundry_plugin_tool", PLUGIN / "__init__.py")
+    queued = []
+    mod.run_in_background = queued.append
+    ctx = FakeCtx()
+    mod.register(ctx)
+    out = json.loads(ctx.tools["rockfoundry_refresh_projects"]({"project": "hub"}))
+    assert out["status"] == "started" and queued
+
+
+def test_weekly_job_uses_hermes_tool_not_vendor_cli():
+    cron = plugin().WEEKLY_CRON
+    assert "rockfoundry_refresh_projects" in cron and "claude" not in cron.lower()
+
+
+def test_manifest_declares_tool_hooks_and_floor():
+    text = (PLUGIN / "plugin.yaml").read_text(encoding="utf-8")
+    assert 'requires_hermes: ">=0.23.3"' in text
+    assert "rockfoundry_refresh_projects" in text

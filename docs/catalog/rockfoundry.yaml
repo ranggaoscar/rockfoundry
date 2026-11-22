@@ -1,0 +1,26 @@
+# Draft entry for NousResearch/hermes-agent plugin-catalog/rockfoundry.yaml.
+# Fill `sha` with the full 40-character commit that was tested, right before opening the PR.
+name: rockfoundry
+repo: https://github.com/ranggaoscar/rockfoundry
+sha: <40-hex commit sha of the tested release>
+subdir: hermes-plugin
+title: Rock Foundry
+description: Project memory for builders who work with AI agents. Read-only project cards and a Projects
+  gallery for every repo and worktree Hermes works in, refreshed after each session.
+maintainer: ranggaoscar
+tier: community
+category: desktop
+requires_hermes: ">=0.23.3"
+docs_url: https://github.com/ranggaoscar/rockfoundry#readme
+version: "2.0.0"
+screenshots:
+  - https://raw.githubusercontent.com/ranggaoscar/rockfoundry/<sha>/docs/images/gallery.png
+  - https://raw.githubusercontent.com/ranggaoscar/rockfoundry/<sha>/docs/images/project.png
+capabilities:
+  provides_tools:
+    - rockfoundry_refresh_projects
+  provides_hooks:
+    - post_tool_call
+    - on_session_end
+  provides_middleware: []
+  requires_env: []

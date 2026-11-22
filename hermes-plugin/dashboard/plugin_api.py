@@ -16,10 +16,9 @@ from pydantic import BaseModel
 from rockfoundry.classify import activity_bucket, decision_badges, summarize_folders
 from rockfoundry.config import load_config, rockfoundry_home, write_default_config
 from rockfoundry.facts import facts_to_dict
-from rockfoundry.gh import GhClient
 from rockfoundry.narrative import cached_narrative
 from rockfoundry.safety import redact
-from rockfoundry.scan import scan
+from rockfoundry.scan import github_client, scan
 from rockfoundry.store import ProjectStore
 
 router = APIRouter()
@@ -107,7 +106,7 @@ async def refresh(slug: str):
     cfg = load_config()
     if cfg is None:
         raise HTTPException(status_code=409, detail="No config yet")
-    results = scan(cfg, _store(), only=slug, gh=GhClient())
+    results = scan(cfg, _store(), only=slug, gh=github_client(cfg))
     if not results:
         raise HTTPException(status_code=404, detail="Project not found")
     return _clean(asdict(results[0]))

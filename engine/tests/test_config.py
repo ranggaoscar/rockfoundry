@@ -35,3 +35,14 @@ def test_project_override_parsed(rf_home):
     assert cfg.projects["bresciahub"].release_tags == ["prod-*"]
     assert cfg.projects["bresciahub"].homepage == "https://bresciahub.id"
     assert cfg.projects["bresciahub"].name == "BresciaHub"
+
+
+def test_github_lookups_can_be_turned_off(rf_home):
+    from rockfoundry.scan import github_client
+
+    default_config_path().parent.mkdir(parents=True, exist_ok=True)
+    default_config_path().write_text('roots = ["C:/x"]\nuse_github = false\n', encoding="utf-8")
+    cfg = load_config()
+    assert cfg.use_github is False and github_client(cfg) is None
+    cfg.use_github = True
+    assert github_client(cfg) is not None

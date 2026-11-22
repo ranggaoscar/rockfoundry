@@ -54,6 +54,22 @@ tidy, 11 need a check first, 9 PRs merged since the last release — are they li
 
 Details: [docs/safety.md](docs/safety.md).
 
+## What the Hermes plugin does on your machine
+
+So you know before installing:
+
+- **Reads outside its own data.** It scans the project folders you choose (read-only) and writes
+  only to `~/.rockfoundry/` (or `$ROCKFOUNDRY_HOME`).
+- **Runs local commands.** `git` (read-only commands listed in [docs/safety.md](docs/safety.md)) and,
+  unless you set `use_github = false` in `~/.rockfoundry/config.toml`, the GitHub CLI `gh` to read
+  pull-request status. `gh` uses its own login; Rock Foundry never reads any token or credential file.
+- **Network.** Only through `gh` (to GitHub, for your repositories' PRs) and through your current
+  Hermes model when it writes AI summaries. No telemetry, no other services.
+- **Background work.** After a Hermes session ends, the projects it touched are rescanned in a
+  background thread. `/project refresh` and the `rockfoundry_refresh_projects` tool also run in
+  the background. Nothing is scheduled unless you run the command `/project schedule` prints.
+- **No credentials stored, no approvals bypassed.** AI summaries use Hermes's own model access.
+
 ## Install
 
 Requirements: Python 3.11+ and git. Optional: GitHub CLI (`gh`, logged in) and Hermes Agent.

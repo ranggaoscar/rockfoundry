@@ -37,6 +37,7 @@ class Config:
     release_tags: list[str] = field(default_factory=lambda: list(DEFAULT_RELEASE_TAGS))
     deny: list[str] = field(default_factory=lambda: list(DEFAULT_DENY))
     projects: dict[str, ProjectOverride] = field(default_factory=dict)
+    use_github: bool = True  # PR lookups through the user's own `gh` CLI
 
 
 def rockfoundry_home() -> Path:
@@ -69,6 +70,7 @@ def load_config(path: Path | None = None) -> Config | None:
         release_tags=list(data.get("release_tags", DEFAULT_RELEASE_TAGS)),
         deny=list(safety.get("deny", DEFAULT_DENY)),
         projects=projects,
+        use_github=bool(data.get("use_github", True)),
     )
 
 
@@ -84,6 +86,7 @@ def write_default_config(roots: list[Path], path: Path | None = None) -> Config:
         f"scan_depth = {cfg.scan_depth}",
         f"stale_days = {cfg.stale_days}",
         f"release_tags = {_toml_list(cfg.release_tags)}",
+        "use_github = true",
         "",
         "[safety]",
         f"deny = {_toml_list(cfg.deny)}",

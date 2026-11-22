@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
 import sys
 import threading
@@ -12,16 +13,34 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "vendor"))  # bundled engine
 
 from rockfoundry.config import load_config, rockfoundry_home
-from rockfoundry.gh import GhClient
-from rockfoundry.scan import find_project_for_path, scan
+from rockfoundry.scan import find_project_for_path, github_client, scan
 from rockfoundry.store import HistoryEvent, ProjectStore
 
 log = logging.getLogger("rockfoundry")
 HERE = Path(__file__).resolve().parent
 # The weekly job only rescans. It never browses URLs taken from scanned repos (untrusted).
+REFRESH_TOOL = "rockfoundry_refresh_projects"
+REFRESH_SCHEMA = {
+    "name": REFRESH_TOOL,
+    "description": (
+        "Refresh Rock Foundry project cards in the background: rescan the user's project folders "
+        "(read-only) and update the AI summaries with the current model. Use when the user asks to "
+        "refresh or update their project cards, or from the weekly Rock Foundry job."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "project": {
+                "type": "string",
+                "description": "Project slug to refresh; leave out to refresh every project.",
+            }
+        },
+    },
+}
+# The weekly job asks Hermes to call our tool, so summaries use the user's Hermes model.
 WEEKLY_CRON = (
-    'hermes cron create "0 8 * * 1" "Run this terminal command: rockfoundry scan --llm claude. '
-    'Report only the projects that failed." --name rockfoundry-weekly'
+    f'hermes cron create "0 8 * * 1" "Call the {REFRESH_TOOL} tool to refresh every project card, '
+    'then report only the projects that failed." --name rockfoundry-weekly'
 )
 
 
@@ -55,7 +74,7 @@ def _refresh_after_session(paths: set[Path]) -> None:
         if slug:
             touched.setdefault(slug, set()).add(_workdir_name(p, slug, store))
     for slug, folders in touched.items():
-        scan(cfg, store, only=slug, gh=GhClient())
+        scan(cfg, store, only=slug, gh=github_client(cfg))
         store.append_history(slug, HistoryEvent(datetime.now(), "session", _session_summary(folders)))
         _rerender(store, slug)
 
@@ -108,14 +127,7 @@ def make_command(ctx):
             if cfg is None:
                 return "No config yet. Choose your project folders on the Projects page first."
             only = arg.split()[1] if len(arg.split()) > 1 else None
-
-            def job() -> None:
-                results = scan(cfg, store, only=only, provider=provider, gh=GhClient())
-                failed = [r.name for r in results if not r.ok]
-                if failed:
-                    log.warning("rockfoundry refresh failed: %s", ", ".join(failed))
-
-            run_in_background(lambda: _safe(job))
+            start_refresh(cfg, store, only, provider)
             what = f"project {only}" if only else "every project"
             return (
                 f"Refreshing {what} in the background. Cards update in a few minutes; "
@@ -127,8 +139,36 @@ def make_command(ctx):
     return handle
 
 
+def start_refresh(cfg, store: ProjectStore, only: str | None, provider) -> None:
+    def job() -> None:
+        results = scan(cfg, store, only=only, provider=provider, gh=github_client(cfg))
+        failed = [r.name for r in results if not r.ok]
+        if failed:
+            log.warning("rockfoundry refresh failed: %s", ", ".join(failed))
+
+    run_in_background(lambda: _safe(job))
+
+
+def make_tool(ctx):
+    def provider(prompt: str) -> str:
+        return ctx.llm.complete(messages=[{"role": "user", "content": prompt}], max_tokens=1200).text
+
+    def handle(args: dict | None = None, **_) -> str:
+        cfg = load_config()
+        if cfg is None:
+            return json.dumps(
+                {"status": "not_configured", "message": "Choose project folders on the Projects page."}
+            )
+        only = (args or {}).get("project") or None
+        start_refresh(cfg, _store(), only, provider)
+        return json.dumps({"status": "started", "project": only or "all"})
+
+    return handle
+
+
 def register(ctx) -> None:
     sessions = _sibling("sessions").SessionPaths()
+    ctx.register_tool(name=REFRESH_TOOL, toolset="rockfoundry", schema=REFRESH_SCHEMA, handler=make_tool(ctx))
 
     def on_tool(tool_name=None, args=None, session_id=None, **_):
         try:

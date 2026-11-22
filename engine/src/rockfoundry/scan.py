@@ -14,6 +14,7 @@ from rockfoundry.config import Config
 from rockfoundry.discover import discover_projects
 from rockfoundry.facts import ProjectFacts, collect_facts
 from rockfoundry.fmt import fmt_date
+from rockfoundry.gh import GhClient
 from rockfoundry.images import find_logo
 from rockfoundry.narrative import NarrativeProvider, cached_narrative, get_narrative
 from rockfoundry.safety import redact
@@ -46,6 +47,11 @@ def _new_events(previous: ProjectFacts | None, current: ProjectFacts, now: datet
     if previous.prs is not None and fresh:
         events.append(HistoryEvent(now, "pr_merged", f"{len(fresh)} new PRs merged into the main version"))
     return events
+
+
+def github_client(cfg: Config) -> GhClient | None:
+    """GitHub PR lookups are optional (config `use_github = false` turns them off)."""
+    return GhClient() if cfg.use_github else None
 
 
 def render_from_store(store: ProjectStore, slug: str, today: date) -> str | None:
