@@ -176,7 +176,7 @@ def _worktrees(repo: Path, notes: list[str]) -> list[Workdir]:
         if path is None:
             continue
         if not path.exists():
-            notes.append(f"Folder kerja hilang: {path.name}")
+            notes.append(f"Work folder missing: {path.name}")
             continue
         result.append(Workdir(path=path, branch=branch, detached=detached))
     return result

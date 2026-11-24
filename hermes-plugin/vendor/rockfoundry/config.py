@@ -40,9 +40,22 @@ class Config:
     use_github: bool = True  # PR lookups through the user's own `gh` CLI
 
 
+_home_resolver = None  # set by a host (the Hermes plugin points it at its plugin-data folder)
+
+
+def set_home_resolver(resolver) -> None:
+    """Let a host decide where Rock Foundry keeps its files (called on every lookup)."""
+    global _home_resolver
+    _home_resolver = resolver
+
+
 def rockfoundry_home() -> Path:
     env = os.environ.get("ROCKFOUNDRY_HOME")
-    return Path(env) if env else Path.home() / ".rockfoundry"
+    if env:
+        return Path(env)
+    if _home_resolver is not None:
+        return Path(_home_resolver())
+    return Path.home() / ".rockfoundry"
 
 
 def default_config_path() -> Path:

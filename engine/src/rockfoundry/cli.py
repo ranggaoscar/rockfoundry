@@ -121,7 +121,7 @@ def _cmd_note(args, store: ProjectStore) -> int:
 
 def _cmd_doctor(args, store: ProjectStore) -> int:
     cfg = load_config()
-    git_version = try_git(["--version"], Path.cwd()) or "TIDAK ADA"
+    git_version = try_git(["--version"], Path.cwd()) or "NOT FOUND"
     print(f"git            : {git_version}")
     print(f"GitHub CLI     : {'ready' if GhClient().available() else 'not available / not logged in'}")
     print(f"claude (AI)    : {'found' if shutil.which('claude') else 'not found'}")

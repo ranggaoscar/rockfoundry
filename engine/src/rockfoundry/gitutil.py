@@ -7,6 +7,47 @@ import re
 import subprocess
 from pathlib import Path
 
+# Only what git and gh need to run and find their own config/login. Tokens and API keys in the
+# host environment (GH_TOKEN, GITHUB_TOKEN, model keys, ...) are never passed on.
+_ENV_KEEP = {
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PROGRAMDATA",
+    "HOME",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "LANG",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_RUNTIME_DIR",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "GH_CONFIG_DIR",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "NO_PROXY",
+    "https_proxy",
+    "http_proxy",
+    "no_proxy",
+}
+
+
+def child_env() -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k.upper() in {e.upper() for e in _ENV_KEEP}}
+    env.update(GIT_TERMINAL_PROMPT="0", LC_ALL="C", GIT_OPTIONAL_LOCKS="0", GH_PROMPT_DISABLED="1")
+    return env
+
 
 class GitError(Exception):
     pass
@@ -30,11 +71,21 @@ HARDENING = [
     "maintenance.auto=false",
     "-c",
     "gc.auto=0",
+    "-c",
+    "log.showSignature=false",
+    "-c",
+    "gpg.program=",
+    "-c",
+    "gpg.ssh.program=",
+    "-c",
+    "gpg.x509.program=",
+    "-c",
+    "credential.helper=",
 ]
 
 
 def git(args: list[str], cwd: Path, timeout: float = 30) -> str:
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", LC_ALL="C", GIT_OPTIONAL_LOCKS="0")
+    env = child_env()
     try:
         proc = subprocess.run(
             ["git", *HARDENING, *args],
@@ -98,7 +149,7 @@ def exec_config_risks(repo: Path) -> list[str]:
 
 def git_bytes(args: list[str], cwd: Path, timeout: float = 30) -> bytes | None:
     """Like git() but returns raw stdout bytes (for images); None on any failure."""
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", LC_ALL="C", GIT_OPTIONAL_LOCKS="0")
+    env = child_env()
     try:
         proc = subprocess.run(
             ["git", *HARDENING, *args], cwd=cwd, env=env, capture_output=True, timeout=timeout

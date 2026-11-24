@@ -53,3 +53,52 @@ def test_multiline_lfs_value_is_flagged(tmp_path):
     repo = make_repo(tmp_path / "r")
     run(["config", "filter.lfs.clean", "git-lfs clean -- %f\necho pwned"], repo)
     assert exec_config_risks(repo) == ["filter.lfs.clean"]
+
+
+def test_hardening_disables_signature_programs_and_credential_helpers():
+    from rockfoundry.gitutil import HARDENING
+
+    flags = set(HARDENING[1::2])
+    assert {
+        "log.showSignature=false",
+        "gpg.program=",
+        "gpg.ssh.program=",
+        "gpg.x509.program=",
+        "credential.helper=",
+    } <= flags
+
+
+def test_gpg_program_is_flagged(tmp_path):
+    from rockfoundry.gitutil import exec_config_risks
+
+    repo = make_repo(tmp_path / "r")
+    run(["config", "gpg.program", "evil"], repo)
+    assert exec_config_risks(repo) == ["gpg.program"]
+
+
+def test_child_env_drops_tokens_and_keys(monkeypatch):
+    from rockfoundry.gitutil import child_env
+
+    for k in ("GH_TOKEN", "GITHUB_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "HERMES_SECRET"):
+        monkeypatch.setenv(k, "x")
+    env = child_env()
+    assert not {"GH_TOKEN", "GITHUB_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "HERMES_SECRET"} & set(env)
+    assert env.get("PATH") and env["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_gh_runs_with_child_env(monkeypatch):
+    import rockfoundry.gh as gh_mod
+
+    seen = {}
+
+    class Done:
+        returncode, stdout = 0, "[]"
+
+    def fake_run(cmd, **kwargs):
+        seen["env"] = kwargs.get("env")
+        return Done()
+
+    monkeypatch.setenv("GH_TOKEN", "leak")
+    monkeypatch.setattr(gh_mod.subprocess, "run", fake_run)
+    gh_mod.GhClient().pull_requests("o/r")
+    assert seen["env"] is not None and "GH_TOKEN" not in seen["env"]

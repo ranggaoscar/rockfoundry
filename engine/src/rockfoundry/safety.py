@@ -9,7 +9,7 @@ from rockfoundry.config import DEFAULT_DENY
 
 __all__ = ["DEFAULT_DENY", "is_denied", "redact"]
 
-MASK = "[disensor]"
+MASK = "[redacted]"
 
 
 def is_denied(path: str, patterns: list[str]) -> bool:

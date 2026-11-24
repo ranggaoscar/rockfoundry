@@ -25,6 +25,20 @@ from rockfoundry.scan import github_client, scan
 from rockfoundry.store import ProjectStore
 
 router = APIRouter()
+
+
+def _install_storage() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "rockfoundry_plugin_storage", Path(__file__).resolve().parents[1] / "storage.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.install_default()  # data lives in <HERMES_HOME>/plugin-data/rockfoundry
+
+
+_install_storage()
 IMAGE_NAMES = (
     "image-live.png",
     "image.svg",

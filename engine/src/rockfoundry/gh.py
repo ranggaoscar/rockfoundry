@@ -7,6 +7,8 @@ import subprocess
 from dataclasses import dataclass
 from datetime import date
 
+from rockfoundry.gitutil import child_env
+
 
 @dataclass
 class PullRequest:
@@ -21,6 +23,7 @@ def _run(args: list[str], timeout: float = 30) -> str | None:
     try:
         proc = subprocess.run(
             ["gh", *args],
+            env=child_env(),
             capture_output=True,
             text=True,
             encoding="utf-8",

@@ -55,14 +55,14 @@ tidy, 11 need a check first, 9 PRs merged since the last release — are they li
 2. **Narrative with AI, optional and cached.** "What is this", "do not touch" and "opportunities"
    are written by a model only when the facts change. Inside Hermes it uses the model you already
    use; from the CLI it can use `claude -p` with every tool disabled.
-3. **Cards live outside your projects**, in `~/.rockfoundry/projects/<slug>/`.
+3. **Cards live outside your projects**, in `<HERMES_HOME>/plugin-data/rockfoundry/` in Hermes, `~/.rockfoundry/` for the standalone CLI (`projects/<slug>/`).
 4. **Hermes keeps them fresh.** After each Hermes session, the projects it touched are rescanned.
 
 ## Safety
 
 - Never writes inside a project; never runs `git fetch` unless you ask (`--fetch`).
 - Repo config that could make git run a program (custom filters, hooks, credential helpers) is
-  detected, and that repo is skipped for status checks.
+  detected, and Rock Foundry runs no git command in that repo at all.
 - Files that look like secrets (`.env`, `*credential*`, `*token*`, keys) are never opened.
 - IP addresses, keys and tokens are masked in everything Rock Foundry writes or serves.
 - Project docs reach models as data, never as instructions.
@@ -74,10 +74,12 @@ Details: [docs/safety.md](docs/safety.md).
 So you know before installing:
 
 - **Reads outside its own data.** It scans the project folders you choose (read-only) and writes
-  only to `~/.rockfoundry/` (or `$ROCKFOUNDRY_HOME`).
+  only to its data folder: `<HERMES_HOME>/plugin-data/rockfoundry/` (it follows the Hermes
+  profile; data from the old `~/.rockfoundry/` is copied there once).
 - **Runs local commands.** `git` (read-only commands listed in [docs/safety.md](docs/safety.md)) and,
-  unless you set `use_github = false` in `~/.rockfoundry/config.toml`, the GitHub CLI `gh` to read
-  pull-request status. `gh` uses its own login; Rock Foundry never reads any token or credential file.
+  unless you set `use_github = false` in the data folder's `config.toml`, the GitHub CLI `gh` to read
+  pull-request status. `git` and `gh` run with a minimal environment (no tokens or API keys from Hermes), so `gh`
+  uses its own login; Rock Foundry never reads any token or credential file.
 - **Network.** Only through `gh` (to GitHub, for your repositories' PRs) and through your current
   Hermes model when it writes AI summaries. No telemetry, no other services.
 - **Background work.** After a Hermes session ends, the projects it touched are rescanned in a

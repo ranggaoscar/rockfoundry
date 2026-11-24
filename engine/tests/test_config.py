@@ -46,3 +46,14 @@ def test_github_lookups_can_be_turned_off(rf_home):
     assert cfg.use_github is False and github_client(cfg) is None
     cfg.use_github = True
     assert github_client(cfg) is not None
+
+
+def test_home_resolver_order(tmp_path, monkeypatch):
+    import rockfoundry.config as config_mod
+
+    monkeypatch.delenv("ROCKFOUNDRY_HOME", raising=False)
+    monkeypatch.setattr(config_mod, "_home_resolver", None)
+    config_mod.set_home_resolver(lambda: tmp_path / "plugin-data")
+    assert rockfoundry_home() == tmp_path / "plugin-data"
+    monkeypatch.setenv("ROCKFOUNDRY_HOME", str(tmp_path / "env"))
+    assert rockfoundry_home() == tmp_path / "env"

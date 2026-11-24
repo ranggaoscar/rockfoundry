@@ -35,7 +35,7 @@ def test_redacts_keys():
 
 
 def test_redacts_assignments():
-    assert redact("JWT_SECRET=hunter2") == "JWT_SECRET=[disensor]"
+    assert redact("JWT_SECRET=hunter2") == "JWT_SECRET=[redacted]"
 
 
 def test_redacts_jwt_and_long_hex():

@@ -19,7 +19,7 @@ Every call adds `-c core.fsmonitor=false -c core.untrackedCache=false -c core.ho
 Before `status` or `fetch`, Rock Foundry reads the repo's local and worktree config (reading runs
 nothing). Keys such as `filter.*.clean|smudge|process`, `core.hooksPath`, `core.sshCommand`,
 `credential.*`, `remote.*.uploadpack`, `diff.*.textconv` and `include.path` mark the repo as risky:
-status and fetch are skipped and the card says so. Only the exact canonical git-lfs filter commands
+Rock Foundry runs no git command in that repo at all (the card says so). Only the exact canonical git-lfs filter commands
 and `core.fsmonitor=true|false` are accepted; values containing control characters never are.
 
 ## Whole-drive scans
@@ -33,7 +33,7 @@ site-packages, vendor, dist, build, target, cache). Discovery only looks for `.g
 
 Default deny list (any path segment, case-insensitive): `*.env`, `.env*`, `*credential*`,
 `*secret*`, `*token*`, `*.pem`, `*.key`, `id_*`, `auth.json`. Change it under `[safety]` in
-`~/.rockfoundry/config.toml`.
+`config.toml` in the data folder.
 
 ## Redaction
 
@@ -50,4 +50,12 @@ that the prompt declares as data. PR titles are not sent. The CLI provider runs
 
 ## Where files are written
 
-Only `~/.rockfoundry/` (or `$ROCKFOUNDRY_HOME`). Nothing inside scanned folders.
+Only the data folder: `<HERMES_HOME>/plugin-data/rockfoundry/` inside Hermes (it follows the
+active profile), `~/.rockfoundry/` for the standalone CLI, or `$ROCKFOUNDRY_HOME` when set.
+Nothing inside scanned folders.
+
+## Child processes
+
+`git` and `gh` run with a minimal environment: PATH, home/temp/locale/config locations and
+proxy settings only. Tokens and API keys in the Hermes environment (`GH_TOKEN`,
+`GITHUB_TOKEN`, model keys) are never passed on, so `gh` uses its own login.

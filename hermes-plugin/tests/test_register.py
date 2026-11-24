@@ -166,3 +166,10 @@ def test_background_worker_carries_contextvars():
     mod.run_in_background(work)
     assert release.wait(5), "background worker never ran"
     assert seen["value"] == "carried"
+
+
+def test_skill_keeps_cards_below_the_user_and_approvals():
+    text = (PLUGIN / "skills" / "rockfoundry" / "SKILL.md").read_text(encoding="utf-8")
+    assert "outrank" not in text
+    assert "never over the user's instructions" in text and "approvals" in text
+    assert "plugin-data/rockfoundry" in text

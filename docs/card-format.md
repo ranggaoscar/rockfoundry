@@ -1,6 +1,7 @@
 # Card format
 
-Rock Foundry writes one folder per project under `~/.rockfoundry/projects/<slug>/`
+Rock Foundry writes one folder per project under `<data folder>/projects/<slug>/`
+(`<HERMES_HOME>/plugin-data/rockfoundry/` in Hermes, `~/.rockfoundry/` for the CLI)
 (or `$ROCKFOUNDRY_HOME/projects/<slug>/`). Nothing is ever written inside a project folder.
 
 | File | For | Notes |

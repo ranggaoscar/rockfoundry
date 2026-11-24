@@ -188,6 +188,7 @@ def make_tool(ctx):
 
 
 def register(ctx) -> None:
+    _sibling("storage").install_default()  # data lives in <HERMES_HOME>/plugin-data/rockfoundry
     sessions = _sibling("sessions").SessionPaths()
     ctx.register_tool(name=REFRESH_TOOL, toolset="rockfoundry", schema=REFRESH_SCHEMA, handler=make_tool(ctx))
 

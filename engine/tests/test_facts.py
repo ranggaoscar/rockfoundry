@@ -155,3 +155,21 @@ def test_any_release_line_counts_as_live(tmp_path):
     f = collect_facts(project, cfg, None)
     live = {w.branch for w in f.workdirs if w.in_release}
     assert {"release/internal", "release/public"} <= live
+
+
+def test_risky_repo_gets_no_git_calls_beyond_config(tmp_path, monkeypatch):
+    import rockfoundry.facts as facts_mod
+
+    def extra(repo, root):
+        run(["config", "gpg.program", "sh -c 'echo pwned'"], repo)
+        run(["config", "log.showSignature", "true"], repo)
+
+    project, cfg = _project(_hub(tmp_path, extra))
+    calls = []
+    real_try, real_git = facts_mod.try_git, facts_mod.git
+    monkeypatch.setattr(facts_mod, "try_git", lambda a, *k, **kw: calls.append(a[0]) or real_try(a, *k, **kw))
+    monkeypatch.setattr(facts_mod, "git", lambda a, *k, **kw: calls.append(a[0]) or real_git(a, *k, **kw))
+    f = collect_facts(project, cfg, None, fetch=True)
+    assert calls == []
+    assert f.commit_count == 0 and f.guide_docs == {} and all(w.changed_files == -1 for w in f.workdirs)
+    assert any("gpg.program" in n for n in f.notes)

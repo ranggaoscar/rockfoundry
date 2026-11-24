@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.3.0 — 2026-11-24
+
+Changes from the Hermes plugin catalog review:
+
+- A repo whose local git config could run a program now gets **no** git commands at all (not only
+  status/fetch skipped); its card says why. Hardening also turns off `log.showSignature`, every
+  `gpg.*program` and inherited credential helpers.
+- The `rockfoundry` skill now treats a card as the owner's summarised notes: project guidance to
+  weigh, never over the user's instructions or Hermes approvals.
+- `git` and `gh` run with a minimal environment, so tokens and API keys from Hermes
+  (`GH_TOKEN`, `GITHUB_TOKEN`, model keys) are never passed on.
+- Inside Hermes, data now lives in `<HERMES_HOME>/plugin-data/rockfoundry/` (follows the profile);
+  existing `~/.rockfoundry/` data is copied there once.
+- Last Indonesian strings translated (`[redacted]` mask, missing work folder note, doctor output).
+
 ## 2.2.0 — 2026-11-23
 
 - Scan a whole drive: choose C:/, D:/ … (one-click buttons on the setup screen) to find every

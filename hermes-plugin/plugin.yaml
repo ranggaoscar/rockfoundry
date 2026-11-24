@@ -1,5 +1,5 @@
 name: rockfoundry
-version: 2.2.0
+version: 2.3.0
 description: Project memory for builders — a card and a gallery tile for every project Hermes works on.
 author: rock
 requires_hermes: ">=0.23.3"

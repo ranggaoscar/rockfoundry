@@ -108,13 +108,12 @@ def _is_ancestor(repo: Path, rev: str, target: str | None) -> bool:
 def _workdir_facts(
     w: Workdir, default_ref: str | None, release_patterns: list[str] | None
 ) -> tuple[WorkdirFacts, list[str]]:
-    head = try_git(["rev-parse", "--verify", "--quiet", "HEAD"], w.path)
     risks = exec_config_risks(w.path)
-    if risks:  # git status could run a repo-defined program here: don't
-        changed = -1
-    else:
-        status = try_git(["status", "--porcelain", "--untracked-files=no"], w.path) or ""
-        changed = len([ln for ln in status.splitlines() if ln.strip()])
+    if risks:  # this folder's git config could run a program: run no git command here at all
+        return _untouched_workdir(w), risks
+    head = try_git(["rev-parse", "--verify", "--quiet", "HEAD"], w.path)
+    status = try_git(["status", "--porcelain", "--untracked-files=no"], w.path) or ""
+    changed = len([ln for ln in status.splitlines() if ln.strip()])
     facts = WorkdirFacts(
         path=str(w.path),
         branch=w.branch or "(detached)",
@@ -125,6 +124,24 @@ def _workdir_facts(
         in_default=bool(head) and _is_ancestor(w.path, "HEAD", default_ref),
     )
     return facts, risks
+
+
+def _untouched_workdir(w: Workdir) -> WorkdirFacts:
+    return WorkdirFacts(
+        path=str(w.path),
+        branch=w.branch or "(detached)",
+        last_commit=None,
+        changed_files=-1,
+        in_release=False,
+        in_default=False,
+    )
+
+
+def _risky_note(keys: list[str]) -> str:
+    return (
+        f"This repo's git config can run programs ({', '.join(keys)}); "
+        "Rock Foundry runs no git commands in it, so its facts are not shown."
+    )
 
 
 def _is_guide_doc(path: str) -> bool:
@@ -168,7 +185,28 @@ def _github_repo(remote: str | None) -> str | None:
 def collect_facts(project: Project, cfg: Config, gh, fetch: bool = False) -> ProjectFacts:
     repo = project.main_path
     notes = [redact(n) for n in project.notes]
-    if fetch and not exec_config_risks(repo):
+    repo_risks = exec_config_risks(repo)
+    if repo_risks:  # skip every git command in a repo whose config could run a program
+        return ProjectFacts(
+            schema_version=SCHEMA_VERSION,
+            slug=project.slug,
+            name=project.name,
+            remote=project.remote,
+            default_branch=None,
+            first_commit=None,
+            commit_count=0,
+            last_activity=None,
+            release=None,
+            prs=None,
+            workdirs=[_untouched_workdir(w) for w in project.workdirs],
+            main_behind=0,
+            main_ahead=0,
+            guide_docs={},
+            guide_docs_off_default=[],
+            homepage=None,
+            notes=[*notes, _risky_note(repo_risks)],
+        )
+    if fetch:
         try_git(["fetch", "--quiet", "origin"], repo, timeout=120)
     override = cfg.projects.get(project.slug)
     default_branch, default_ref = _default_branch(repo)
@@ -184,10 +222,7 @@ def collect_facts(project: Project, cfg: Config, gh, fetch: bool = False) -> Pro
     workdirs = [facts for facts, _ in pairs]
     risky = sorted({key for _, risks in pairs for key in risks})
     if risky:
-        notes.append(
-            f"This repo's git config can run programs ({', '.join(risky)}); "
-            "Rock Foundry skips the change check and fetch here."
-        )
+        notes.append(_risky_note(risky))
 
     count = int(try_git(["rev-list", "--count", default_ref], repo) or 0) if default_ref else 0
     first = None
